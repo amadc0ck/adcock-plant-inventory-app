@@ -9,20 +9,31 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /* ============================================================
+     COLOR SYSTEM — Adcock Botanical Garden approved palette.
+     Roles are deliberate, not decorative:
+       --moss (Aloe Green)      = secondary controls, inactive nav
+       --orange (Aloe Bloom)    = primary capture action, highlights, selected state
+       --terracotta             = attention / waiting / unresolved
+       --blue (Agave Blue)      = informational, location, photo-related
+       --pink (Cactus Flower)   = special / flowering — used sparingly
+     Background stays Deep Garden Green + Warm Cream + Charcoal;
+     accents are functional cues, not general chrome.
+     ============================================================ */
   :root{
-    --bg:#243E36;         /* Deep Garden Green */
-    --bg-raised:#2C4A40;  /* slightly lifted shade of Deep Garden Green */
-    --parchment:#F5EFE3;  /* Warm Cream */
+    --bg:#243E36;          /* Deep Garden Green */
+    --bg-raised:#2C4A40;
+    --parchment:#F5EFE3;   /* Warm Cream */
     --parchment-dim:#E8E0D0;
-    --ink:#252925;        /* Charcoal */
+    --ink:#252925;         /* Charcoal */
     --ink-soft:#5A6B5D;
-    --cream:#F5EFE3;      /* Warm Cream, used as light text on dark bg */
-    --moss:#70866B;       /* Aloe Green */
+    --cream:#F5EFE3;
+    --moss:#70866B;        /* Aloe Green */
     --moss-dim:#576B53;
-    --chicory:#7CA7A1;    /* Agave Blue */
-    --gold:#7CA7A1;       /* Agave Blue (swapped from Aloe Bloom Orange) */
-    --rust:#D06A4E;       /* Terra Cotta */
-    --pink:#D67A9A;       /* Cactus Flower Pink */
+    --blue:#7CA7A1;        /* Agave Blue */
+    --orange:#F2A65A;      /* Aloe Bloom Orange */
+    --terracotta:#D06A4E;  /* Terra Cotta */
+    --pink:#D67A9A;        /* Cactus Flower Pink */
     --line: rgba(245,239,227,0.14);
   }
   *{box-sizing:border-box;}
@@ -32,26 +43,23 @@
   .mono{font-family:'IBM Plex Mono',monospace;}
   a{color:inherit;}
   button{font-family:inherit;}
-  ::selection{background:var(--gold);color:var(--ink);}
+  ::selection{background:var(--orange);color:var(--ink);}
 
   .container{max-width:640px;margin:0 auto;padding:0 16px;}
 
-  /* Top bar */
   .topbar{position:sticky;top:0;z-index:20;background:linear-gradient(180deg, var(--bg) 70%, transparent);backdrop-filter:blur(6px);padding:22px 0 14px;}
   .topbar .container{display:flex;align-items:baseline;justify-content:space-between;}
   .brand{font-family:'Fraunces',serif;font-weight:500;font-size:22px;letter-spacing:0.2px;}
-  .brand .dot{color:var(--gold);}
-  .subtle{color:var(--ink-soft);opacity:0.8;color:#9FB0A3;font-size:12.5px;}
+  .brand .dot{color:var(--blue);}
+  .subtle{color:#9FB0A3;font-size:12.5px;}
 
-  /* Bottom nav */
   .navbar{position:fixed;bottom:0;left:0;right:0;background:var(--bg-raised);border-top:1px solid var(--line);z-index:30;padding-bottom:env(safe-area-inset-bottom);}
   .navbar .container{display:flex;justify-content:space-around;padding:8px 12px 6px;max-width:640px;}
-  .navbtn{background:none;border:none;color:#8AA090;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;padding:6px 10px;border-radius:10px;cursor:pointer;letter-spacing:0.3px;}
+  .navbtn{background:none;border:none;color:var(--moss);display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;padding:6px 10px;border-radius:10px;cursor:pointer;letter-spacing:0.3px;position:relative;}
   .navbtn.active{color:var(--cream);}
   .navbtn svg{width:20px;height:20px;}
-  .navbtn .badge{position:absolute;transform:translate(10px,-8px);background:var(--rust);color:var(--cream);font-size:9px;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
+  .navbtn .badge{position:absolute;transform:translate(10px,-8px);background:var(--terracotta);color:var(--cream);font-size:9px;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
 
-  /* Cards - specimen tag motif */
   .tag-card{background:var(--parchment);color:var(--ink);border-radius:3px;position:relative;padding:16px 16px 14px 22px;box-shadow:0 1px 0 rgba(0,0,0,0.15), 0 6px 14px -8px rgba(0,0,0,0.4);}
   .tag-card::before{content:"";position:absolute;left:8px;top:14px;width:7px;height:7px;border-radius:50%;background:var(--bg);box-shadow:inset 0 0 0 1px rgba(0,0,0,0.15);}
   .tag-id{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;color:var(--moss-dim);text-transform:uppercase;}
@@ -61,29 +69,39 @@
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;font-weight:600;font-size:14px;padding:11px 16px;cursor:pointer;border:none;transition:opacity .15s;}
   .btn:active{opacity:0.75;}
   .btn-primary{background:var(--moss);color:#0F1712;}
+  .btn-accent{background:var(--orange);color:#3A2408;}
   .btn-secondary{background:transparent;color:var(--cream);border:1px solid var(--line);}
-  .btn-ghost{background:transparent;color:var(--chicory);padding:6px 8px;font-size:13px;}
-  .btn-danger{background:transparent;color:var(--rust);border:1px solid rgba(168,92,60,0.4);}
+  .btn-ghost{background:transparent;color:var(--blue);padding:6px 8px;font-size:13px;}
+  .btn-danger{background:transparent;color:var(--terracotta);border:1px solid rgba(208,106,78,0.4);}
   .btn:disabled{opacity:0.4;cursor:default;}
   .btn-block{width:100%;}
+  .btn-sm{padding:7px 12px;font-size:12.5px;}
+  .btn-on-cream{color:var(--ink);border-color:rgba(37,41,37,0.2);}
 
   input,select,textarea{background:var(--bg);border:1px solid var(--line);color:var(--cream);border-radius:8px;padding:11px 12px;font-size:15px;font-family:inherit;width:100%;}
   input:focus,select:focus,textarea:focus{outline:2px solid var(--moss);outline-offset:1px;}
   label{font-size:12px;color:#9FB0A3;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;margin-top:14px;}
   label:first-child{margin-top:0;}
+  .field-help{font-size:11.5px;color:#7E9084;margin-top:4px;}
+  .checkbox-row{display:flex;align-items:center;gap:9px;margin-top:14px;}
+  .checkbox-row input{width:auto;}
+  .checkbox-row label{margin:0;text-transform:none;font-size:14px;color:var(--cream);letter-spacing:0;}
 
   .empty{text-align:center;padding:60px 20px;color:#8AA090;}
   .empty .display{font-size:19px;color:var(--cream);margin-bottom:6px;}
 
   .pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;letter-spacing:0.3px;}
-  .pill-moss{background:rgba(107,143,113,0.2);color:#9FCBA6;}
-  .pill-gold{background:rgba(201,162,39,0.18);color:var(--gold);}
-  .pill-rust{background:rgba(168,92,60,0.18);color:#E0987A;}
+  .pill-moss{background:rgba(112,134,107,0.2);color:#B7C9B2;}
+  .pill-orange{background:rgba(242,166,90,0.2);color:var(--orange);}
+  .pill-terracotta{background:rgba(208,106,78,0.2);color:#E8A78F;}
+  .pill-blue{background:rgba(124,167,161,0.2);color:#AECDC8;}
+  .pill-pink{background:rgba(214,122,154,0.2);color:#E7A9BF;}
+  .pill-outline{background:transparent;border:1px solid var(--line);color:#9FB0A3;}
 
   .screen{padding-top:6px;padding-bottom:24px;animation:fade .25s ease;}
   @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
 
-  .fab{position:fixed;right:20px;bottom:92px;z-index:25;width:56px;height:56px;border-radius:50%;background:var(--moss);color:#0F1712;border:none;box-shadow:0 8px 20px -6px rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .fab{position:fixed;right:20px;bottom:92px;z-index:25;width:56px;height:56px;border-radius:50%;background:var(--orange);color:#3A2408;border:none;box-shadow:0 8px 20px -6px rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;cursor:pointer;}
   .fab svg{width:26px;height:26px;}
 
   .modal-backdrop{position:fixed;inset:0;background:rgba(10,15,11,0.7);z-index:50;display:flex;align-items:flex-end;justify-content:center;}
@@ -91,9 +109,12 @@
   .modal-handle{width:36px;height:4px;background:var(--line);border-radius:3px;margin:0 auto 16px;}
 
   .divider{height:1px;background:var(--line);margin:18px 0;}
+  .section-label{font-family:'Fraunces',serif;font-size:14px;font-style:italic;color:var(--blue);margin:22px 0 4px;}
+  .section-label:first-child{margin-top:0;}
 
   .row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .stack{display:flex;flex-direction:column;gap:10px;}
+  .wrap-gap{display:flex;flex-wrap:wrap;gap:6px;}
 
   .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
   .login-box{width:100%;max-width:360px;}
@@ -101,15 +122,23 @@
   .toast.error{background:#5A2A20;color:#F5D5C6;}
 
   .photo-row{display:flex;gap:12px;align-items:flex-start;}
-  .photo-icon{width:52px;height:52px;border-radius:6px;background:var(--parchment-dim);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--moss-dim);}
+  .photo-icon{width:52px;height:52px;border-radius:6px;background:rgba(124,167,161,0.15);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--blue);}
   .photo-icon svg{width:24px;height:24px;}
+  .photo-icon.on-cream{background:var(--parchment-dim);color:var(--moss-dim);}
 
   .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
 
-  .search-input{margin-bottom:16px;}
+  .search-input{margin-bottom:12px;}
   .connect-status{display:flex;align-items:center;gap:8px;}
   .dot-status{width:8px;height:8px;border-radius:50%;}
+
+  .filter-bar{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px;}
+  .filter-bar select{width:auto;flex-shrink:0;font-size:13px;padding:8px 10px;background:var(--bg-raised);}
+
+  .loc-group{margin-bottom:18px;}
+  .loc-group-title{font-family:'Fraunces',serif;font-style:italic;font-size:15px;color:var(--blue);margin-bottom:8px;padding-left:2px;}
+  .loc-child{margin-left:16px;}
 </style>
 </head>
 <body>
@@ -118,9 +147,7 @@
 
 <script>
 /* ============================================================
-   CONFIG — replace with your actual Supabase publishable key.
-   Find it at: Supabase Dashboard > Project Settings > API Keys
-   This key is safe to embed in client code — it's designed for it.
+   CONFIG
    ============================================================ */
 const CONFIG = {
   SUPABASE_URL: "https://fsckwgicmvviefuivgza.supabase.co",
@@ -128,21 +155,21 @@ const CONFIG = {
 };
 
 /* ============================================================
-   STATE — in-memory only. Note: this means a page refresh
-   requires logging in again. That's a deliberate MVP trade-off,
-   not a bug — see note in Settings tab. Fine to add persistent
-   storage once this is deployed to its own real domain.
+   STATE — in-memory only (see note in Settings tab)
    ============================================================ */
 const state = {
   configKey: CONFIG.SUPABASE_PUBLISHABLE_KEY,
-  session: null, // { access_token, email }
+  session: null,
   tab: "inbox",
   photos: [],
   plants: [],
   locations: [],
-  driveToken: null, // { expires_at } summary only
+  driveToken: null,
   loading: false,
-  modal: null, // { type, data }
+  modal: null,
+  plantSearch: "",
+  attachSearch: "",
+  plantFilters: { category: "", status: "", idStatus: "", original: "" },
 };
 
 /* ============================================================
@@ -157,13 +184,10 @@ function apiHeaders(extra = {}) {
 }
 
 async function restGet(table, query = "") {
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}${query}`, {
-    headers: apiHeaders(),
-  });
+  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}${query}`, { headers: apiHeaders() });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
-
 async function restPost(table, body) {
   const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}`, {
     method: "POST",
@@ -173,7 +197,6 @@ async function restPost(table, body) {
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
-
 async function restPatch(table, idFilter, body) {
   const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?${idFilter}`, {
     method: "PATCH",
@@ -229,8 +252,8 @@ async function loadAll() {
   try {
     const [photos, plants, locations, tokens] = await Promise.all([
       restGet("photos", "?select=*&order=uploaded_at.desc"),
-      restGet("plants", "?select=*&order=common_name.asc"),
-      restGet("locations", "?select=*&order=name.asc"),
+      restGet("plants", "?select=*&order=accession_number.asc"),
+      restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
       restGet("google_auth_tokens", "?select=expires_at&limit=1"),
     ]);
     state.photos = photos;
@@ -245,6 +268,65 @@ async function loadAll() {
 }
 
 /* ============================================================
+   DOMAIN HELPERS — display names, location hierarchy
+   ============================================================ */
+function plantDisplayName(pl) {
+  if (pl.botanical_name) return pl.botanical_name;
+  if (pl.common_name) return pl.common_name;
+  return "Unidentified Plant";
+}
+
+function locationById(id) {
+  return state.locations.find((l) => l.id === id);
+}
+
+function locationPath(loc) {
+  if (!loc) return "";
+  const parts = [loc.name];
+  let cur = loc;
+  let guard = 0;
+  while (cur.parent_location_id && guard < 10) {
+    const parent = locationById(cur.parent_location_id);
+    if (!parent) break;
+    parts.unshift(parent.name);
+    cur = parent;
+    guard++;
+  }
+  return parts.join(" > ");
+}
+
+// Flat, depth-aware list for building <select> options that show hierarchy via indentation
+function locationOptionList() {
+  const byParent = {};
+  state.locations.forEach((l) => {
+    const key = l.parent_location_id || "root";
+    (byParent[key] = byParent[key] || []).push(l);
+  });
+  const sortFn = (a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name);
+  const out = [];
+  function walk(parentKey, depth) {
+    const kids = (byParent[parentKey] || []).sort(sortFn);
+    kids.forEach((l) => {
+      out.push({ id: l.id, label: "  ".repeat(depth) + (depth > 0 ? "— " : "") + l.name, depth });
+      walk(l.id, depth + 1);
+    });
+  }
+  walk("root", 0);
+  return out;
+}
+
+function locationTypeLabel(t) {
+  const map = { area: "Area", row: "Row", slot: "Slot", container: "Container", indoor: "Indoor", hospital: "Hospital", work_area: "Work Area", other: "Other", pot: "Pot", bed: "Bed", greenhouse: "Greenhouse", hanging: "Hanging" };
+  return map[t] || t || "Location";
+}
+
+const STATUS_LABELS = { active: "Active", dormant: "Dormant", given_away: "Given Away", dead: "Dead", deaccessioned: "Deaccessioned" };
+const ID_STATUS_LABELS = { confirmed: "Confirmed", tentative: "Tentative", unidentified: "Unidentified" };
+const HEALTH_LABELS = { healthy: "Healthy", watch: "Watch", recovery: "Recovery", unknown: "Unknown" };
+const CATEGORY_LABELS = { current: "Current", historical: "Historical" };
+const ACQ_SOURCE_LABELS = { nursery: "Nursery", gift: "Gift", propagation: "Propagation", rescue: "Rescue", original_collection: "Original Collection", unknown: "Unknown", other: "Other" };
+
+/* ============================================================
    UI HELPERS
    ============================================================ */
 function toast(msg, isError = false) {
@@ -254,13 +336,10 @@ function toast(msg, isError = false) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3200);
 }
-
 function fmtDate(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
-
 function icon(name) {
   const icons = {
     inbox: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12h4l2 3h4l2-3h4M4 12l1.5-6.5A2 2 0 0 1 7.44 4h9.12a2 2 0 0 1 1.94 1.5L20 12M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/></svg>`,
@@ -268,7 +347,6 @@ function icon(name) {
     map: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 20 3.5 17.5V4L9 6.5m0 13.5 6-2m-6 2V6.5m6 11.5 5.5 2.5V6.5L15 4m0 14V4m0 2.5L9 4"/></svg>`,
     settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>`,
     camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>`,
-    plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
     photo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>`,
     back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>`,
   };
@@ -278,20 +356,10 @@ function icon(name) {
 /* ============================================================
    ROUTER / NAV
    ============================================================ */
-function goTab(tab) {
-  state.tab = tab;
-  state.modal = null;
-  render();
-}
-
-function openModal(type, data = {}) {
-  state.modal = { type, data };
-  render();
-}
-function closeModal() {
-  state.modal = null;
-  render();
-}
+function goTab(tab) { state.tab = tab; state.modal = null; render(); }
+function openModal(type, data = {}) { state.modal = { type, data }; render(); }
+function closeModal() { state.modal = null; render(); }
+function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
 
 /* ============================================================
    SCREENS
@@ -301,21 +369,15 @@ function screenLogin() {
   <div class="login-wrap">
     <div class="login-box">
       <div style="text-align:center;margin-bottom:34px;">
-        <div class="display" style="font-size:15px;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:8px;">Personal Collection Tool</div>
+        <div class="display" style="font-size:15px;letter-spacing:2px;color:var(--orange);text-transform:uppercase;margin-bottom:8px;">Personal Collection Tool</div>
         <h1 class="display" style="margin:0;">
           <span style="display:block;font-size:40px;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Adcock</span>
           <span style="display:block;font-size:22px;font-weight:500;font-style:italic;margin-top:2px;">Botanical Garden</span>
         </h1>
       </div>
       <form id="login-form" class="stack">
-        <div>
-          <label>Email</label>
-          <input type="email" id="login-email" required autocomplete="username" />
-        </div>
-        <div>
-          <label>Password</label>
-          <input type="password" id="login-password" required autocomplete="current-password" />
-        </div>
+        <div><label>Email</label><input type="email" id="login-email" required autocomplete="username" /></div>
+        <div><label>Password</label><input type="password" id="login-password" required autocomplete="current-password" /></div>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:18px;" ${state.loading ? "disabled" : ""}>
           ${state.loading ? '<span class="spinner"></span>' : "Sign in"}
         </button>
@@ -332,18 +394,12 @@ function screenInbox() {
     <div class="container">
       <div class="row" style="margin-bottom:4px;">
         <h2 class="display" style="font-size:22px;font-weight:500;margin:0;">Inbox</h2>
-        ${unassigned.length ? `<span class="pill pill-gold">${unassigned.length} waiting</span>` : ""}
+        ${unassigned.length ? `<span class="pill pill-terracotta">${unassigned.length} waiting</span>` : ""}
       </div>
       <p class="subtle" style="margin-bottom:20px;">Photos land here first — confirm or attach them to a plant.</p>
-
       ${unassigned.length === 0 ? `
-        <div class="empty">
-          <div class="display">Nothing waiting</div>
-          <div>Tap the camera button to add a photo.</div>
-        </div>` : `
-        <div class="stack">
-          ${unassigned.map(photoRow).join("")}
-        </div>`}
+        <div class="empty"><div class="display">Nothing waiting</div><div>Tap the camera button to add a photo.</div></div>` : `
+        <div class="stack">${unassigned.map(photoRow).join("")}</div>`}
     </div>
   </div>`;
 }
@@ -352,13 +408,13 @@ function photoRow(p) {
   return `
   <div class="tag-card">
     <div class="photo-row">
-      <div class="photo-icon">${icon("photo")}</div>
+      <div class="photo-icon on-cream">${icon("photo")}</div>
       <div style="flex:1;min-width:0;">
         <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
         <div style="font-size:14px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
         <div style="display:flex;gap:8px;margin-top:10px;">
-          <button class="btn btn-secondary" style="padding:7px 12px;font-size:12.5px;color:var(--ink);border-color:rgba(31,42,34,0.2);" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
-          <button class="btn btn-secondary" style="padding:7px 12px;font-size:12.5px;color:var(--ink);border-color:rgba(31,42,34,0.2);" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
+          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
+          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
         </div>
       </div>
     </div>
@@ -367,54 +423,80 @@ function photoRow(p) {
 
 function screenPlants() {
   const q = (state.plantSearch || "").toLowerCase();
-  const list = state.plants.filter(
-    (pl) => !q || pl.common_name?.toLowerCase().includes(q) || pl.botanical_name?.toLowerCase().includes(q)
-  );
+  const f = state.plantFilters;
+  const list = state.plants.filter((pl) => {
+    if (q) {
+      const hay = [pl.accession_number, pl.common_name, pl.botanical_name, pl.cultivar].filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (f.category && pl.collection_category !== f.category) return false;
+    if (f.status && pl.status !== f.status) return false;
+    if (f.idStatus && pl.identification_status !== f.idStatus) return false;
+    if (f.original === "yes" && !pl.original_collection) return false;
+    if (f.original === "no" && pl.original_collection) return false;
+    return true;
+  });
+
   return `
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
-      <input class="search-input" placeholder="Search your collection…" value="${escapeHtml(state.plantSearch || "")}" oninput="state.plantSearch=this.value;render()" />
+      <input class="search-input" placeholder="Search name, accession #, cultivar…" value="${escapeHtml(state.plantSearch || "")}" oninput="state.plantSearch=this.value;render()" />
+      <div class="filter-bar">
+        <select onchange="state.plantFilters.category=this.value;render()">
+          <option value="">All collection</option>
+          <option value="current" ${f.category === "current" ? "selected" : ""}>Current</option>
+          <option value="historical" ${f.category === "historical" ? "selected" : ""}>Historical</option>
+        </select>
+        <select onchange="state.plantFilters.status=this.value;render()">
+          <option value="">All status</option>
+          ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${f.status === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <select onchange="state.plantFilters.idStatus=this.value;render()">
+          <option value="">All ID status</option>
+          ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${f.idStatus === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <select onchange="state.plantFilters.original=this.value;render()">
+          <option value="">Original: any</option>
+          <option value="yes" ${f.original === "yes" ? "selected" : ""}>Original only</option>
+          <option value="no" ${f.original === "no" ? "selected" : ""}>Non-original</option>
+        </select>
+      </div>
       ${list.length === 0 ? `
-        <div class="empty">
-          <div class="display">${state.plants.length === 0 ? "No plants yet" : "No matches"}</div>
-          <div>${state.plants.length === 0 ? "Add your first plant from the Inbox or the + button." : "Try a different search."}</div>
-        </div>` : `
-        <div class="stack">
-          ${list.map(plantRow).join("")}
-        </div>`}
+        <div class="empty"><div class="display">${state.plants.length === 0 ? "No plants yet" : "No matches"}</div>
+        <div>${state.plants.length === 0 ? "Add your first plant from the Inbox or a photo." : "Try different search or filters."}</div></div>` : `
+        <div class="stack">${list.map(plantRow).join("")}</div>`}
     </div>
   </div>`;
 }
 
 function plantRow(pl) {
-  const loc = state.locations.find((l) => l.id === pl.location_id);
+  const loc = locationById(pl.location_id);
   const photoCount = state.photos.filter((p) => p.plant_id === pl.id).length;
   return `
   <div class="tag-card" onclick="openPlant('${pl.id}')" style="cursor:pointer;">
     <div class="row">
       <div style="min-width:0;">
-        <div class="tag-id">${pl.status === "active" ? "" : pl.status.toUpperCase() + " · "}${loc ? escapeHtml(loc.name) : "No location set"}</div>
-        <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:500;margin-top:2px;">${escapeHtml(pl.common_name)}</div>
-        ${pl.botanical_name ? `<div style="font-size:12.5px;font-style:italic;color:var(--ink-soft);">${escapeHtml(pl.botanical_name)}</div>` : ""}
+        <div class="tag-id">${pl.accession_number}</div>
+        <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:500;margin-top:2px;font-style:${pl.botanical_name ? "italic" : "normal"};">${escapeHtml(plantDisplayName(pl))}</div>
+        <div class="wrap-gap" style="margin-top:6px;">
+          ${pl.collection_category === "historical" ? `<span class="pill pill-outline">Historical</span>` : ""}
+          ${pl.original_collection ? `<span class="pill pill-pink">Original</span>` : ""}
+          ${pl.identification_status !== "confirmed" ? `<span class="pill pill-outline">${ID_STATUS_LABELS[pl.identification_status]}</span>` : ""}
+          ${pl.status !== "active" ? `<span class="pill pill-terracotta">${STATUS_LABELS[pl.status]}</span>` : ""}
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">${loc ? escapeHtml(locationPath(loc)) : "No location set"}</div>
       </div>
-      <div style="text-align:right;flex-shrink:0;">
-        <div class="mono" style="font-size:11px;color:var(--moss-dim);">${photoCount} photo${photoCount === 1 ? "" : "s"}</div>
-      </div>
+      <div class="mono" style="font-size:11px;color:var(--moss-dim);flex-shrink:0;">${photoCount} photo${photoCount === 1 ? "" : "s"}</div>
     </div>
   </div>`;
-}
-
-function openPlant(id) {
-  state.tab = "plantDetail";
-  state.currentPlantId = id;
-  render();
 }
 
 function screenPlantDetail() {
   const pl = state.plants.find((p) => p.id === state.currentPlantId);
   if (!pl) return `<div class="screen container"><p>Plant not found.</p></div>`;
-  const loc = state.locations.find((l) => l.id === pl.location_id);
+  const loc = locationById(pl.location_id);
+  const parent = pl.parent_plant_id ? state.plants.find((p) => p.id === pl.parent_plant_id) : null;
   const photos = state.photos.filter((p) => p.plant_id === pl.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
 
   return `
@@ -423,114 +505,124 @@ function screenPlantDetail() {
       <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('plants')">${icon("back")} Plants</button>
 
       <div class="tag-card" style="padding:18px 18px 16px 24px;">
-        <div class="tag-id">${loc ? escapeHtml(loc.name) : "No location set"}</div>
-        <div class="display" style="font-size:24px;font-weight:500;margin-top:3px;">${escapeHtml(pl.common_name)}</div>
-        ${pl.botanical_name ? `<div style="font-style:italic;color:var(--ink-soft);font-size:14px;margin-top:2px;">${escapeHtml(pl.botanical_name)}${pl.cultivar ? " '" + escapeHtml(pl.cultivar) + "'" : ""}</div>` : ""}
-        <div style="margin-top:10px;"><span class="pill ${pl.status === "active" ? "pill-moss" : "pill-rust"}">${pl.status}</span></div>
+        <div class="tag-id">${pl.accession_number}</div>
+        <div class="display" style="font-size:24px;font-weight:500;margin-top:3px;font-style:${pl.botanical_name ? "italic" : "normal"};">${escapeHtml(plantDisplayName(pl))}</div>
+        ${pl.botanical_name && pl.common_name ? `<div style="color:var(--ink-soft);font-size:14px;margin-top:2px;">${escapeHtml(pl.common_name)}</div>` : ""}
+        ${pl.cultivar ? `<div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">'${escapeHtml(pl.cultivar)}'</div>` : ""}
+
+        <div class="wrap-gap" style="margin-top:12px;">
+          <span class="pill ${pl.status === "active" ? "pill-moss" : "pill-terracotta"}">${STATUS_LABELS[pl.status]}</span>
+          <span class="pill pill-outline">${CATEGORY_LABELS[pl.collection_category]}</span>
+          <span class="pill ${pl.identification_status === "confirmed" ? "pill-moss" : "pill-outline"}">${ID_STATUS_LABELS[pl.identification_status]}</span>
+          ${pl.original_collection ? `<span class="pill pill-pink">Original Collection</span>` : ""}
+          <span class="pill pill-blue">${HEALTH_LABELS[pl.health_status]}</span>
+        </div>
+
+        <div style="font-size:13px;color:var(--ink-soft);margin-top:12px;">📍 ${loc ? escapeHtml(locationPath(loc)) : "No location set"}</div>
+        ${parent ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:4px;">Propagated from <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}</div>` : ""}
+
         ${pl.notes ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);">${escapeHtml(pl.notes)}</div>` : ""}
-        <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit details</button>
+        <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit full record</button>
       </div>
+
+      ${(pl.identification_notes || pl.acquisition_source_type || pl.acquisition_source_name || pl.acquisition_notes || pl.date_acquired) ? `
+      <div class="surface" style="padding:16px;margin-top:14px;">
+        ${pl.identification_notes ? `<div class="section-label">Identification notes</div><div style="font-size:13.5px;color:#C9D6CC;">${escapeHtml(pl.identification_notes)}</div>` : ""}
+        ${(pl.acquisition_source_type || pl.acquisition_source_name || pl.date_acquired || pl.acquisition_notes) ? `
+          <div class="section-label">Provenance</div>
+          <div style="font-size:13.5px;color:#C9D6CC;line-height:1.6;">
+            ${pl.date_acquired ? `Acquired: ${fmtDate(pl.date_acquired)}<br/>` : ""}
+            ${pl.acquisition_source_type ? `Source: ${ACQ_SOURCE_LABELS[pl.acquisition_source_type]}${pl.acquisition_source_name ? " — " + escapeHtml(pl.acquisition_source_name) : ""}<br/>` : ""}
+            ${pl.acquisition_notes ? escapeHtml(pl.acquisition_notes) : ""}
+          </div>` : ""}
+      </div>` : ""}
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
         <span class="subtle">${photos.length} total</span>
       </div>
 
-      ${photos.length === 0 ? `
-        <div class="empty" style="padding:40px 20px;">
-          <div>No photos attached yet.</div>
-        </div>` : `
+      ${photos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
         <div class="stack">
           ${photos.map((p) => `
             <div class="surface" style="padding:14px;">
               <div class="row">
                 <div class="photo-row">
-                  <div class="photo-icon" style="background:rgba(107,143,113,0.15);color:var(--moss);">${icon("photo")}</div>
+                  <div class="photo-icon">${icon("photo")}</div>
                   <div>
                     <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(p.uploaded_at)}</div>
                     <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
                   </div>
                 </div>
-                ${p.is_primary ? `<span class="pill pill-gold">Primary</span>` : ""}
+                ${p.is_primary ? `<span class="pill pill-orange">Primary</span>` : ""}
               </div>
-            </div>
-          `).join("")}
+            </div>`).join("")}
         </div>`}
     </div>
   </div>`;
 }
 
 function screenLocations() {
+  const topLevel = state.locations.filter((l) => !l.parent_location_id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
+
+  function renderNode(l, depth) {
+    const children = state.locations.filter((c) => c.parent_location_id === l.id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
+    const count = state.plants.filter((p) => p.location_id === l.id).length;
+    return `
+      <div class="tag-card ${depth > 0 ? "loc-child" : ""}" style="${depth > 0 ? "margin-top:8px;" : ""}">
+        <div class="row">
+          <div>
+            <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
+            <div style="font-family:'Fraunces',serif;font-size:15px;font-weight:500;margin-top:2px;">${escapeHtml(l.name)}</div>
+          </div>
+          <div class="mono" style="font-size:11px;color:var(--moss-dim);">${count} plant${count === 1 ? "" : "s"}</div>
+        </div>
+      </div>
+      ${children.map((c) => renderNode(c, depth + 1)).join("")}
+    `;
+  }
+
   return `
   <div class="screen">
     <div class="container">
       <div class="row" style="margin-bottom:16px;">
         <h2 class="display" style="font-size:22px;font-weight:500;margin:0;">Locations</h2>
-        <button class="btn btn-secondary" style="padding:7px 12px;font-size:13px;" onclick="openModal('newLocation')">+ Add</button>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('newLocation')">+ Add</button>
       </div>
       ${state.locations.length === 0 ? `
-        <div class="empty">
-          <div class="display">No locations yet</div>
-          <div>Add pots, beds, or spaces to organize your plants.</div>
-        </div>` : `
-        <div class="stack">
-          ${state.locations.map((l) => {
-            const count = state.plants.filter((p) => p.location_id === l.id).length;
-            return `
-            <div class="tag-card">
-              <div class="row">
-                <div>
-                  <div class="tag-id">${l.type || "location"}</div>
-                  <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:500;margin-top:2px;">${escapeHtml(l.name)}</div>
-                </div>
-                <div class="mono" style="font-size:11px;color:var(--moss-dim);">${count} plant${count === 1 ? "" : "s"}</div>
-              </div>
-            </div>`;
-          }).join("")}
-        </div>`}
+        <div class="empty"><div class="display">No locations yet</div><div>Add areas, rows, or containers to organize your plants.</div></div>` : `
+        <div class="stack">${topLevel.map((l) => renderNode(l, 0)).join("")}</div>`}
     </div>
   </div>`;
 }
 
 function screenSettings() {
   const connected = !!state.driveToken;
-  const expiresAt = state.driveToken ? new Date(state.driveToken.expires_at) : null;
-  const refreshLikelyStale = false; // access_token expiry != refresh_token expiry; status shown is informational
   return `
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 20px;">Settings</h2>
-
       <div class="surface" style="padding:16px;">
         <div class="row">
           <div class="connect-status">
-            <span class="dot-status" style="background:${connected ? "var(--moss)" : "var(--rust)"};"></span>
-            <div>
-              <div style="font-weight:600;font-size:14.5px;">Google Drive</div>
-              <div class="subtle">${connected ? "Connected" : "Not connected"}</div>
-            </div>
+            <span class="dot-status" style="background:${connected ? "var(--moss)" : "var(--terracotta)"};"></span>
+            <div><div style="font-weight:600;font-size:14.5px;">Google Drive</div><div class="subtle">${connected ? "Connected" : "Not connected"}</div></div>
           </div>
-          <button class="btn btn-primary" style="padding:9px 14px;font-size:13px;" onclick="handleConnectDrive()">
-            ${connected ? "Reconnect" : "Connect"}
-          </button>
+          <button class="btn btn-primary btn-sm" onclick="handleConnectDrive()">${connected ? "Reconnect" : "Connect"}</button>
         </div>
         <p class="subtle" style="margin-top:12px;line-height:1.5;">
           Drive access can expire roughly every 7 days while this app is in personal-use (unverified) mode.
           If uploads start failing, come back here and tap Reconnect — takes about 10 seconds.
         </p>
       </div>
-
       <div class="divider"></div>
-
       <div class="surface" style="padding:16px;">
         <div style="font-weight:600;font-size:14.5px;">Signed in as</div>
         <div class="subtle" style="margin-top:4px;">${state.session?.email || ""}</div>
-        <button class="btn btn-danger" style="margin-top:14px;padding:9px 14px;font-size:13px;" onclick="logout()">Sign out</button>
+        <button class="btn btn-danger btn-sm" style="margin-top:14px;" onclick="logout()">Sign out</button>
       </div>
-
       <p class="subtle" style="margin-top:20px;line-height:1.5;">
-        Note: sessions aren't remembered across page reloads yet in this build — you'll need to
-        sign in again if you refresh or close the app. This is expected for now.
+        Note: sessions aren't remembered across page reloads yet — you'll need to sign in again if you refresh. Expected for now.
       </p>
     </div>
   </div>`;
@@ -539,75 +631,135 @@ function screenSettings() {
 /* ============================================================
    MODALS
    ============================================================ */
+function locationSelectOptions(selectedId) {
+  return `<option value="">— None —</option>` + locationOptionList().map((o) =>
+    `<option value="${o.id}" ${selectedId === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`
+  ).join("");
+}
+
 function modalContent() {
   if (!state.modal) return "";
   const { type, data } = state.modal;
 
   if (type === "attach") {
     const q = (state.attachSearch || "").toLowerCase();
-    const matches = state.plants.filter((p) => !q || p.common_name.toLowerCase().includes(q));
+    const matches = state.plants.filter((p) => !q || [p.accession_number, p.common_name, p.botanical_name].filter(Boolean).join(" ").toLowerCase().includes(q));
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Attach to plant</h3>
-      <input placeholder="Search plants…" value="${escapeHtml(state.attachSearch || "")}" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${matches.length === 0 ? `<p class="subtle">No plants match. Try "New plant" instead.</p>` : matches.map((p) => `
-          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;" onclick="attachPhotoToPlant('${data.photoId}','${p.id}')">${escapeHtml(p.common_name)}</button>
-        `).join("")}
+          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="attachPhotoToPlant('${data.photoId}','${p.id}')">
+            <span class="mono" style="opacity:0.6;margin-right:6px;">${p.accession_number}</span>${escapeHtml(plantDisplayName(p))}
+          </button>`).join("")}
       </div>
-      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>
-    `;
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "newPlantFromPhoto" || type === "newPlant") {
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">New plant</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">New plant</h3>
+      <p class="subtle" style="margin:0 0 14px;">Accession number is generated automatically. Everything below is optional except location can be set later too.</p>
       <form id="new-plant-form">
-        <label>Common name *</label>
-        <input id="np-common" required />
         <label>Botanical name</label>
-        <input id="np-botanical" />
-        <label>Location</label>
-        <select id="np-location">
-          <option value="">— None —</option>
-          ${state.locations.map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("")}
+        <input id="np-botanical" placeholder="e.g. Cephalocereus senilis" />
+        <label>Common name</label>
+        <input id="np-common" placeholder="e.g. Old Man Cactus" />
+        <label>Identification status</label>
+        <select id="np-idstatus">
+          ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === "unidentified" ? "selected" : ""}>${v}</option>`).join("")}
         </select>
+        <label>Location</label>
+        <select id="np-location">${locationSelectOptions(null)}</select>
+        <label>Collection</label>
+        <select id="np-category">
+          <option value="current" selected>Current</option>
+          <option value="historical">Historical</option>
+        </select>
+        <div class="checkbox-row">
+          <input type="checkbox" id="np-original" />
+          <label for="np-original">Part of the original collection</label>
+        </div>
         <label>Notes</label>
         <textarea id="np-notes" rows="2"></textarea>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Create plant</button>
       </form>
-      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>
-    `;
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "editPlant") {
     const pl = state.plants.find((p) => p.id === data.plantId);
+    const otherPlants = state.plants.filter((p) => p.id !== pl.id);
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Edit plant</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Edit full record</h3>
+      <p class="mono subtle" style="margin:0 0 14px;">${pl.accession_number} · permanent, cannot be changed</p>
       <form id="edit-plant-form">
-        <label>Common name *</label>
-        <input id="ep-common" required value="${escapeHtml(pl.common_name)}" />
+
+        <div class="section-label">Identity</div>
         <label>Botanical name</label>
         <input id="ep-botanical" value="${escapeHtml(pl.botanical_name || "")}" />
+        <label>Common name</label>
+        <input id="ep-common" value="${escapeHtml(pl.common_name || "")}" />
         <label>Cultivar</label>
         <input id="ep-cultivar" value="${escapeHtml(pl.cultivar || "")}" />
+        <label>Identification status</label>
+        <select id="ep-idstatus">
+          ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${pl.identification_status === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Identification notes</label>
+        <textarea id="ep-idnotes" rows="2" placeholder="e.g. Possible Echinopsis, species uncertain">${escapeHtml(pl.identification_notes || "")}</textarea>
+
+        <div class="section-label">Collection</div>
+        <label>Category</label>
+        <select id="ep-category">
+          <option value="current" ${pl.collection_category === "current" ? "selected" : ""}>Current</option>
+          <option value="historical" ${pl.collection_category === "historical" ? "selected" : ""}>Historical</option>
+        </select>
+        <div class="checkbox-row">
+          <input type="checkbox" id="ep-original" ${pl.original_collection ? "checked" : ""} />
+          <label for="ep-original">Part of the original collection</label>
+        </div>
         <label>Status</label>
         <select id="ep-status">
-          ${["active", "dormant", "given_away", "dead"].map((s) => `<option value="${s}" ${pl.status === s ? "selected" : ""}>${s}</option>`).join("")}
+          ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${pl.status === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
-        <label>Location</label>
-        <select id="ep-location">
+        <label>Health</label>
+        <select id="ep-health">
+          ${Object.entries(HEALTH_LABELS).map(([k, v]) => `<option value="${k}" ${pl.health_status === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+
+        <div class="section-label">Provenance</div>
+        <label>Date acquired</label>
+        <input type="date" id="ep-dateacquired" value="${pl.date_acquired || ""}" />
+        <label>Acquisition source type</label>
+        <select id="ep-acqtype">
+          <option value="">— Unspecified —</option>
+          ${Object.entries(ACQ_SOURCE_LABELS).map(([k, v]) => `<option value="${k}" ${pl.acquisition_source_type === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Acquisition source name</label>
+        <input id="ep-acqname" placeholder="e.g. Ruth Bancroft Garden" value="${escapeHtml(pl.acquisition_source_name || "")}" />
+        <label>Acquisition notes</label>
+        <textarea id="ep-acqnotes" rows="2" placeholder="Approximate date, context, who gave it to you…">${escapeHtml(pl.acquisition_notes || "")}</textarea>
+        <label>Propagated from (parent plant)</label>
+        <select id="ep-parent">
           <option value="">— None —</option>
-          ${state.locations.map((l) => `<option value="${l.id}" ${pl.location_id === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}
+          ${otherPlants.map((p) => `<option value="${p.id}" ${pl.parent_plant_id === p.id ? "selected" : ""}>${p.accession_number} — ${escapeHtml(plantDisplayName(p))}</option>`).join("")}
         </select>
-        <label>Notes</label>
+
+        <div class="section-label">Location</div>
+        <label>Current location</label>
+        <select id="ep-location">${locationSelectOptions(pl.location_id)}</select>
+        <div class="field-help">Changing this logs the move — the previous location is kept in history automatically.</div>
+
+        <div class="section-label">Notes</div>
         <textarea id="ep-notes" rows="2">${escapeHtml(pl.notes || "")}</textarea>
+
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Save changes</button>
       </form>
-      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>
-    `;
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "newLocation") {
@@ -616,21 +768,26 @@ function modalContent() {
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">New location</h3>
       <form id="new-location-form">
         <label>Name *</label>
-        <input id="nl-name" required placeholder="e.g. Back patio, blue pot" />
+        <input id="nl-name" required placeholder="e.g. Bucket 12" />
         <label>Type</label>
         <select id="nl-type">
           <option value="">— Unspecified —</option>
-          <option value="pot">Pot</option>
-          <option value="bed">Bed</option>
+          <option value="area">Area</option>
+          <option value="row">Row</option>
+          <option value="slot">Slot</option>
+          <option value="container">Container</option>
           <option value="indoor">Indoor</option>
-          <option value="greenhouse">Greenhouse</option>
-          <option value="hanging">Hanging</option>
+          <option value="hospital">Hospital</option>
+          <option value="work_area">Work Area</option>
           <option value="other">Other</option>
         </select>
+        <label>Parent location</label>
+        <select id="nl-parent">${locationSelectOptions(null)}</select>
+        <label>Code (optional)</label>
+        <input id="nl-code" placeholder="e.g. W-T-12" />
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Add location</button>
       </form>
-      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>
-    `;
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "upload") {
@@ -641,10 +798,9 @@ function modalContent() {
         <input type="file" id="upload-file" accept="image/*" required style="padding:10px;" />
         <label>Notes (optional)</label>
         <textarea id="upload-notes" rows="2" placeholder="e.g. new growth on the west side"></textarea>
-        <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;" id="upload-submit-btn">Upload to Inbox</button>
+        <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn">Upload to Inbox</button>
       </form>
-      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>
-    `;
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
   return "";
@@ -654,29 +810,18 @@ function modalContent() {
    ACTIONS
    ============================================================ */
 async function handleConnectDrive() {
-  try {
-    await startDriveConnect();
-  } catch (e) {
-    toast(e.message, true);
-  }
+  try { await startDriveConnect(); } catch (e) { toast(e.message, true); }
 }
-
 async function attachPhotoToPlant(photoId, plantId) {
   try {
     await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
     toast("Photo attached");
     closeModal();
     await loadAll();
-  } catch (e) {
-    toast(e.message, true);
-  }
+  } catch (e) { toast(e.message, true); }
 }
-
 function logout() {
-  state.session = null;
-  state.photos = [];
-  state.plants = [];
-  state.locations = [];
+  state.session = null; state.photos = []; state.plants = []; state.locations = [];
   render();
 }
 
@@ -697,41 +842,32 @@ function navBar() {
     { id: "settings", label: "Settings", icon: "settings" },
   ];
   return `
-  <div class="navbar">
-    <div class="container">
-      ${tabs.map((t) => `
-        <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") ? "active" : ""}" onclick="goTab('${t.id}')" style="position:relative;">
-          ${icon(t.icon)}
-          <span>${t.label}</span>
-          ${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
-        </button>
-      `).join("")}
-    </div>
-  </div>`;
+  <div class="navbar"><div class="container">
+    ${tabs.map((t) => `
+      <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") ? "active" : ""}" onclick="goTab('${t.id}')">
+        ${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
+      </button>`).join("")}
+  </div></div>`;
 }
 
 function topBar() {
   return `
-  <div class="topbar">
-    <div class="container">
-      <div class="brand">Adcock<span class="dot">·</span>Botanical Garden</div>
-      <div class="subtle">${state.session?.email || ""}</div>
-    </div>
-  </div>`;
+  <div class="topbar"><div class="container">
+    <div class="brand">Adcock<span class="dot">·</span>Botanical Garden</div>
+    <div class="subtle">${state.session?.email || ""}</div>
+  </div></div>`;
 }
 
 function configGate() {
   return `
-  <div class="login-wrap">
-    <div class="login-box">
-      <h1 class="display" style="font-size:22px;font-weight:500;margin-bottom:6px;">One-time setup</h1>
-      <p class="subtle" style="margin-bottom:20px;line-height:1.5;">Paste your Supabase publishable key (Project Settings → API Keys). This isn't sensitive — it's meant to live in client code.</p>
-      <form id="config-form">
-        <input id="config-key-input" placeholder="sb_publishable_..." required />
-        <button type="submit" class="btn btn-primary btn-block" style="margin-top:16px;">Continue</button>
-      </form>
-    </div>
-  </div>`;
+  <div class="login-wrap"><div class="login-box">
+    <h1 class="display" style="font-size:22px;font-weight:500;margin-bottom:6px;">One-time setup</h1>
+    <p class="subtle" style="margin-bottom:20px;line-height:1.5;">Paste your Supabase publishable key (Project Settings → API Keys).</p>
+    <form id="config-form">
+      <input id="config-key-input" placeholder="sb_publishable_..." required />
+      <button type="submit" class="btn btn-primary btn-block" style="margin-top:16px;">Continue</button>
+    </form>
+  </div></div>`;
 }
 
 function render() {
@@ -783,7 +919,6 @@ function render() {
     ${navBar()}
     ${state.modal ? `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${modalContent()}</div></div>` : ""}
   `;
-
   wireModalForms();
 }
 
@@ -792,9 +927,8 @@ function wireModalForms() {
   if (uploadForm) {
     uploadForm.onsubmit = async (e) => {
       e.preventDefault();
-      const fileInput = document.getElementById("upload-file");
+      const file = document.getElementById("upload-file").files[0];
       const notes = document.getElementById("upload-notes").value;
-      const file = fileInput.files[0];
       if (!file) return;
       const btn = document.getElementById("upload-submit-btn");
       btn.disabled = true;
@@ -818,21 +952,22 @@ function wireModalForms() {
       e.preventDefault();
       try {
         const body = {
-          common_name: document.getElementById("np-common").value,
           botanical_name: document.getElementById("np-botanical").value || null,
+          common_name: document.getElementById("np-common").value || null,
+          identification_status: document.getElementById("np-idstatus").value,
           location_id: document.getElementById("np-location").value || null,
+          collection_category: document.getElementById("np-category").value,
+          original_collection: document.getElementById("np-original").checked,
           notes: document.getElementById("np-notes").value || null,
         };
         const [newPlant] = await restPost("plants", body);
         if (state.modal.type === "newPlantFromPhoto") {
           await restPatch("photos", `id=eq.${state.modal.data.photoId}`, { plant_id: newPlant.id });
         }
-        toast("Plant created");
+        toast(`Created ${newPlant.accession_number}`);
         closeModal();
         await loadAll();
-      } catch (e) {
-        toast(e.message, true);
-      }
+      } catch (e) { toast(e.message, true); }
     };
   }
 
@@ -842,10 +977,20 @@ function wireModalForms() {
       e.preventDefault();
       try {
         const body = {
-          common_name: document.getElementById("ep-common").value,
           botanical_name: document.getElementById("ep-botanical").value || null,
+          common_name: document.getElementById("ep-common").value || null,
           cultivar: document.getElementById("ep-cultivar").value || null,
+          identification_status: document.getElementById("ep-idstatus").value,
+          identification_notes: document.getElementById("ep-idnotes").value || null,
+          collection_category: document.getElementById("ep-category").value,
+          original_collection: document.getElementById("ep-original").checked,
           status: document.getElementById("ep-status").value,
+          health_status: document.getElementById("ep-health").value,
+          date_acquired: document.getElementById("ep-dateacquired").value || null,
+          acquisition_source_type: document.getElementById("ep-acqtype").value || null,
+          acquisition_source_name: document.getElementById("ep-acqname").value || null,
+          acquisition_notes: document.getElementById("ep-acqnotes").value || null,
+          parent_plant_id: document.getElementById("ep-parent").value || null,
           location_id: document.getElementById("ep-location").value || null,
           notes: document.getElementById("ep-notes").value || null,
           updated_at: new Date().toISOString(),
@@ -854,9 +999,7 @@ function wireModalForms() {
         toast("Saved");
         closeModal();
         await loadAll();
-      } catch (e) {
-        toast(e.message, true);
-      }
+      } catch (e) { toast(e.message, true); }
     };
   }
 
@@ -868,14 +1011,14 @@ function wireModalForms() {
         const body = {
           name: document.getElementById("nl-name").value,
           type: document.getElementById("nl-type").value || null,
+          parent_location_id: document.getElementById("nl-parent").value || null,
+          code: document.getElementById("nl-code").value || null,
         };
         await restPost("locations", body);
         toast("Location added");
         closeModal();
         await loadAll();
-      } catch (e) {
-        toast(e.message, true);
-      }
+      } catch (e) { toast(e.message, true); }
     };
   }
 }

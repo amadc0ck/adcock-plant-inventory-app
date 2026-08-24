@@ -4,7 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Adcock Botanical Garden</title>
-<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiQWRjb2NrIFBsYW50IEludmVudG9yeSIsInNob3J0X25hbWUiOiJQbGFudHMiLCJkaXNwbGF5Ijoic3RhbmRhbG9uZSIsImJhY2tncm91bmRfY29sb3IiOiIjMjQzRTM2IiwidGhlbWVfY29sb3IiOiIjMjQzRTM2In0=" />
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjogIkFkY29jayBCb3RhbmljYWwgR2FyZGVuIiwgInNob3J0X25hbWUiOiAiQUJHIFBsYW50cyIsICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLCAiYmFja2dyb3VuZF9jb2xvciI6ICIjMjQzRTM2IiwgInRoZW1lX2NvbG9yIjogIiMyNDNFMzYiLCAiaWNvbnMiOiBbeyJzcmMiOiAiYXNzZXRzL2ljb24tMTkyLnBuZyIsICJzaXplcyI6ICIxOTJ4MTkyIiwgInR5cGUiOiAiaW1hZ2UvcG5nIn0sIHsic3JjIjogImFzc2V0cy9pY29uLTUxMi5wbmciLCAic2l6ZXMiOiAiNTEyeDUxMiIsICJ0eXBlIjogImltYWdlL3BuZyJ9XX0=" />
+<link rel="icon" type="image/png" href="assets/favicon.png" />
+<link rel="apple-touch-icon" href="assets/icon-192.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -32,7 +34,7 @@
     --moss-dim:#576B53;
     --blue:#7CA7A1;        /* Agave Blue */
     --orange:#F2A65A;      /* Aloe Bloom Orange */
-    --terracotta:#D06A4E;  /* Terra Cotta */
+    --terracotta:#D97474;  /* Terra Cotta */
     --pink:#D67A9A;        /* Cactus Flower Pink */
     --line: rgba(245,239,227,0.14);
   }
@@ -160,8 +162,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.2.0";
-const APP_UPDATED = "2026-08-23";
+const APP_VERSION = "1.4.0";
+const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -267,6 +269,13 @@ async function restPatch(table, idFilter, body) {
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+async function restDelete(table, idFilter) {
+  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?${idFilter}`, {
+    method: "DELETE",
+    headers: apiHeaders(),
+  });
+  if (!res.ok) throw new Error(await res.text());
 }
 
 async function login(email, password) {
@@ -479,6 +488,7 @@ function photoRow(p) {
         <div style="display:flex;gap:8px;margin-top:10px;">
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
+          <button class="btn btn-danger btn-sm" onclick="deletePhoto('${p.id}')">Delete</button>
         </div>
       </div>
     </div>
@@ -882,6 +892,14 @@ async function attachPhotoToPlant(photoId, plantId) {
     await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
     toast("Photo attached");
     closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+async function deletePhoto(photoId) {
+  if (!confirm("Delete this photo? The record is removed from the app, but the file stays in your Google Drive folder.")) return;
+  try {
+    await restDelete("photos", `id=eq.${photoId}`);
+    toast("Photo deleted");
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

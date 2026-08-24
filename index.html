@@ -52,8 +52,8 @@
 
   .sticky-header-group{position:sticky;top:0;z-index:20;background:var(--bg);}
   .topbar{padding:22px 0 14px;border-bottom:1px solid var(--line);}
-  .topbar-row{display:flex;align-items:center;justify-content:space-between;}
-  .topbar-side{display:flex;align-items:center;gap:6px;width:64px;}
+  .topbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .topbar-right-group{display:flex;align-items:center;gap:4px;flex-shrink:0;}
   .icon-only-btn{background:none;border:none;color:#9FB0A3;padding:6px;cursor:pointer;display:flex;}
   .icon-only-btn svg{width:19px;height:19px;}
   .status-light-btn{background:none;border:none;padding:6px;cursor:default;display:flex;}
@@ -262,7 +262,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.28.0";
+const APP_VERSION = "1.28.1";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2286,15 +2286,13 @@ function topBar() {
   return `
   <div class="sticky-header-group">
     <div class="topbar"><div class="container topbar-row">
-      <div class="topbar-side">
+      <div class="brand" style="justify-content:flex-start;flex:1;">
+        <img src="assets/logo-horizontal-dark.png" alt="Adcock Botanical Garden" style="max-width:200px;" />
+      </div>
+      <div class="topbar-right-group">
         <button class="status-light-btn" onclick="${driveOk ? "" : "goTab('settings')"}" title="${driveOk ? "Google Drive connected" : "Google Drive needs to reconnect — tap to fix"}">
           <span class="status-light" style="background:${driveOk ? "var(--moss)" : "var(--terracotta)"};"></span>
         </button>
-      </div>
-      <div class="brand">
-        <img src="assets/logo-horizontal-dark.png" alt="Adcock Botanical Garden" />
-      </div>
-      <div class="topbar-side" style="justify-content:flex-end;">
         <button class="icon-only-btn" onclick="openModal('appInfo')" aria-label="App info">${icon("info")}</button>
         <button class="icon-only-btn" onclick="goTab('settings')" aria-label="Settings">${icon("settings")}</button>
       </div>

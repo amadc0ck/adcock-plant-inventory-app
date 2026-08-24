@@ -3,26 +3,27 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Adcock Plant Inventory</title>
-<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiQWRjb2NrIFBsYW50IEludmVudG9yeSIsInNob3J0X25hbWUiOiJQbGFudHMiLCJkaXNwbGF5Ijoic3RhbmRhbG9uZSIsImJhY2tncm91bmRfY29sb3IiOiIjMTQyMDFhIiwidGhlbWVfY29sb3IiOiIjMTQyMDFhIn0=" />
+<title>Adcock Botanical Garden</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiQWRjb2NrIFBsYW50IEludmVudG9yeSIsInNob3J0X25hbWUiOiJQbGFudHMiLCJkaXNwbGF5Ijoic3RhbmRhbG9uZSIsImJhY2tncm91bmRfY29sb3IiOiIjMjQzRTM2IiwidGhlbWVfY29sb3IiOiIjMjQzRTM2In0=" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#14201A;
-    --bg-raised:#1B2A22;
-    --parchment:#EDE6D6;
-    --parchment-dim:#DCD3BE;
-    --ink:#1F2A22;
-    --ink-soft:#4A5A4E;
-    --cream:#F0EDE3;
-    --moss:#6B8F71;
-    --moss-dim:#4E6B54;
-    --chicory:#5B7C99;
-    --gold:#C9A227;
-    --rust:#A85C3C;
-    --line: rgba(237,230,214,0.14);
+    --bg:#243E36;         /* Deep Garden Green */
+    --bg-raised:#2C4A40;  /* slightly lifted shade of Deep Garden Green */
+    --parchment:#F5EFE3;  /* Warm Cream */
+    --parchment-dim:#E8E0D0;
+    --ink:#252925;        /* Charcoal */
+    --ink-soft:#5A6B5D;
+    --cream:#F5EFE3;      /* Warm Cream, used as light text on dark bg */
+    --moss:#70866B;       /* Aloe Green */
+    --moss-dim:#576B53;
+    --chicory:#7CA7A1;    /* Agave Blue */
+    --gold:#7CA7A1;       /* Agave Blue (swapped from Aloe Bloom Orange) */
+    --rust:#D06A4E;       /* Terra Cotta */
+    --pink:#D67A9A;       /* Cactus Flower Pink */
+    --line: rgba(245,239,227,0.14);
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
@@ -300,8 +301,8 @@ function screenLogin() {
   <div class="login-wrap">
     <div class="login-box">
       <div style="text-align:center;margin-bottom:34px;">
-        <div class="display" style="font-size:15px;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:8px;">Est. Personal Collection</div>
-        <h1 class="display" style="font-size:30px;font-weight:500;margin:0;">Adcock Plant<br/>Inventory</h1>
+        <div class="display" style="font-size:15px;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:8px;">Personal Collection Tool</div>
+        <h1 class="display" style="font-size:30px;font-weight:500;margin:0;">Adcock<br/>Botanical Garden</h1>
       </div>
       <form id="login-form" class="stack">
         <div>
@@ -710,7 +711,7 @@ function topBar() {
   return `
   <div class="topbar">
     <div class="container">
-      <div class="brand">Adcock<span class="dot">·</span>Plants</div>
+      <div class="brand">Adcock<span class="dot">·</span>Botanical Garden</div>
       <div class="subtle">${state.session?.email || ""}</div>
     </div>
   </div>`;

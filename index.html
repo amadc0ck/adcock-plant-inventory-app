@@ -220,7 +220,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.16.0";
+const APP_VERSION = "1.17.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -471,6 +471,20 @@ function plantsAtLocation(locationId) {
   const allIds = new Set([...primaryIds, ...additionalIds]);
   return state.plants.filter((p) => allIds.has(p.id));
 }
+function directChildLocations(locationId) {
+  return state.locations.filter((l) => l.parent_location_id === locationId).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
+}
+function descendantLocationIds(locationId) {
+  const direct = directChildLocations(locationId).map((l) => l.id);
+  return direct.concat(direct.flatMap((id) => descendantLocationIds(id)));
+}
+// Plant count including everything nested underneath this location
+function aggregatePlantCount(locationId) {
+  const idSet = new Set([locationId, ...descendantLocationIds(locationId)]);
+  const primaryIds = state.plants.filter((p) => idSet.has(p.location_id)).map((p) => p.id);
+  const additionalIds = state.plantLocations.filter((pll) => idSet.has(pll.location_id)).map((pll) => pll.plant_id);
+  return new Set([...primaryIds, ...additionalIds]).size;
+}
 
 function locationPath(loc) {
   if (!loc) return "";
@@ -621,7 +635,7 @@ function screenLogin() {
 }
 
 function screenInbox() {
-  const unassigned = state.photos.filter((p) => !p.plant_id);
+  const unassigned = state.photos.filter((p) => !p.plant_id && !p.location_id);
   return `
   <div class="screen">
     <div class="container">
@@ -875,12 +889,12 @@ function screenPlantDetail() {
 function screenLocations() {
   const topLevel = state.locations.filter((l) => !l.parent_location_id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
 
-  function renderNode(l, depth) {
-    const children = state.locations.filter((c) => c.parent_location_id === l.id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
-    const plantCount = plantsAtLocation(l.id).length;
+  function locationCard(l) {
+    const plantCount = aggregatePlantCount(l.id);
     const photoCount = state.photos.filter((p) => p.location_id === l.id).length;
+    const childCount = directChildLocations(l.id).length;
     return `
-      <div class="tag-card ${depth > 0 ? "loc-child" : ""}" style="${depth > 0 ? "margin-top:8px;" : ""}cursor:pointer;" onclick="openLocation('${l.id}')">
+      <div class="tag-card" style="cursor:pointer;" onclick="openLocation('${l.id}')">
         <div class="row">
           <div>
             <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
@@ -888,15 +902,14 @@ function screenLocations() {
           </div>
           <div style="text-align:right;">
             <div class="mono" style="font-size:11px;color:var(--moss-dim);">${plantCount} plant${plantCount === 1 ? "" : "s"}${photoCount ? ` · ${photoCount} photo${photoCount === 1 ? "" : "s"}` : ""}</div>
+            ${childCount ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${childCount} inside →</div>` : ""}
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;">
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('editLocation',{locationId:'${l.id}'})">Edit</button>
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('upload',{locationId:'${l.id}'})">Add photo</button>
         </div>
-      </div>
-      ${children.map((c) => renderNode(c, depth + 1)).join("")}
-    `;
+      </div>`;
   }
 
   return `
@@ -908,7 +921,7 @@ function screenLocations() {
       </div>
       ${state.locations.length === 0 ? `
         <div class="empty"><div class="display">No locations yet</div><div>Add areas, rows, or containers to organize your plants.</div></div>` : `
-        <div class="stack">${topLevel.map((l) => renderNode(l, 0)).join("")}</div>`}
+        <div class="stack">${topLevel.map(locationCard).join("")}</div>`}
     </div>
   </div>`;
 }
@@ -922,7 +935,7 @@ function screenLocationDetail() {
   return `
   <div class="screen">
     <div class="container">
-      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('locations')">${icon("back")} Locations</button>
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${l.parent_location_id ? `openLocation('${l.parent_location_id}')` : "goTab('locations')"}">${icon("back")} ${l.parent_location_id ? escapeHtml(locationById(l.parent_location_id).name) : "Locations"}</button>
 
       <div class="tag-card">
         <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
@@ -931,6 +944,35 @@ function screenLocationDetail() {
         ${l.notes ? `<div style="font-size:13.5px;color:var(--ink-soft);margin-top:10px;">${escapeHtml(l.notes)}</div>` : ""}
         <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
       </div>
+
+      ${(() => {
+        const children = directChildLocations(l.id);
+        if (children.length === 0) return "";
+        return `
+          <div class="row" style="margin-top:24px;margin-bottom:12px;">
+            <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Inside this ${locationTypeLabel(l.type).toLowerCase()}</h3>
+            <span class="subtle">${children.length} total</span>
+          </div>
+          <div class="stack">
+            ${children.map((c) => {
+              const count = aggregatePlantCount(c.id);
+              const grandchildren = directChildLocations(c.id).length;
+              return `
+              <div class="tag-card" style="cursor:pointer;padding:12px 14px;" onclick="openLocation('${c.id}')">
+                <div class="row">
+                  <div>
+                    <div class="tag-id">${locationTypeLabel(c.type)}${c.code ? " · " + escapeHtml(c.code) : ""}</div>
+                    <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;margin-top:1px;">${escapeHtml(c.name)}</div>
+                  </div>
+                  <div style="text-align:right;">
+                    <div class="mono" style="font-size:11px;color:var(--moss-dim);">${count} plant${count === 1 ? "" : "s"}</div>
+                    ${grandchildren ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${grandchildren} inside →</div>` : ""}
+                  </div>
+                </div>
+              </div>`;
+            }).join("")}
+          </div>`;
+      })()}
 
       <div class="row" style="margin-top:24px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Plants here</h3>

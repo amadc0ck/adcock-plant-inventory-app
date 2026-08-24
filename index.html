@@ -221,7 +221,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.21.0";
+const APP_VERSION = "1.21.1";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1067,6 +1067,7 @@ function screenLocationDetail() {
                 <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachToLocalPlant',{photoId:'${p.id}', locationId:'${l.id}'})">Add to plant here</button>
                 <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('tagLocations',{photoId:'${p.id}'})">Tag other containers</button>
                 <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
+                <button class="btn btn-danger btn-sm" onclick="removePhotoFromLocation('${p.id}','${l.id}')">${p.location_id === l.id ? "Unattach from here" : "Remove tag"}</button>
               </div>
             </div>`;
           }).join("")}
@@ -1673,6 +1674,31 @@ async function attachPhotoToLocation(photoId, locationId) {
     await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId });
     toast("Photo attached to container");
     closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+async function removePhotoFromLocation(photoId, locationId) {
+  if (!confirm("Remove this photo from this location?")) return;
+  try {
+    const photo = state.photos.find((p) => p.id === photoId);
+    if (photo.location_id === locationId) {
+      // Removing the primary attachment — if the photo is tagged to
+      // other containers too, promote one of those to primary instead
+      // of dropping the photo back into the Inbox unexpectedly.
+      const others = additionalLocationRowsForPhoto(photoId);
+      if (others.length > 0) {
+        const promote = others[0];
+        await restPatch("photos", `id=eq.${photoId}`, { location_id: promote.location_id });
+        await restDelete("photo_locations", `id=eq.${promote.id}`);
+      } else {
+        await restPatch("photos", `id=eq.${photoId}`, { location_id: null });
+      }
+    } else {
+      // Just a tagged (non-primary) relationship — remove that tag only
+      const row = state.photoLocations.find((r) => r.photo_id === photoId && r.location_id === locationId);
+      if (row) await restDelete("photo_locations", `id=eq.${row.id}`);
+    }
+    toast("Removed from this location");
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

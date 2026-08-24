@@ -220,7 +220,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.19.0";
+const APP_VERSION = "1.20.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1037,6 +1037,7 @@ function screenLocationDetail() {
               </div>
               <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
                 ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss</button>`}
+                <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachToLocalPlant',{photoId:'${p.id}', locationId:'${l.id}'})">Add to plant here</button>
                 <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
               </div>
             </div>`;
@@ -1145,6 +1146,22 @@ function modalContent() {
           }).join("")}
         </div>`}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Close</button>`;
+  }
+
+  if (type === "attachToLocalPlant") {
+    const localPlants = plantsAtLocation(data.locationId);
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add to a plant here</h3>
+      <p class="subtle" style="margin:0 0 14px;">Tags this photo to a plant already in this container — doesn't affect the plant's other photos.</p>
+      ${localPlants.length === 0 ? `<p class="subtle">No plants assigned to this location yet. Use "New plant from this photo" instead.</p>` : `
+        <div class="stack">
+          ${localPlants.map((pl) => `
+            <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="attachPhotoToExistingPlant('${data.photoId}','${pl.id}')">
+              <span class="mono" style="opacity:0.6;margin-right:6px;">${pl.accession_number}</span>${escapeHtml(plantDisplayName(pl))}
+            </button>`).join("")}
+        </div>`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "attachLocation") {
@@ -1587,6 +1604,19 @@ async function attachPhotoToLocation(photoId, locationId) {
   try {
     await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId });
     toast("Photo attached to container");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+async function attachPhotoToExistingPlant(photoId, plantId) {
+  try {
+    const photo = state.photos.find((p) => p.id === photoId);
+    if (photo && !photo.plant_id) {
+      await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
+    } else {
+      await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
+    }
+    toast("Photo added to plant");
     closeModal();
     await loadAll();
   } catch (e) { toast(e.message, true); }

@@ -220,7 +220,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.14.0";
+const APP_VERSION = "1.15.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -553,6 +553,7 @@ function goTab(tab) { state.tab = tab; state.modal = null; render(); }
 function openModal(type, data = {}) { state.modal = { type, data }; render(); }
 function closeModal() { state.modal = null; render(); }
 function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
+function openLocation(id) { state.tab = "locationDetail"; state.currentLocationId = id; render(); }
 
 function plantPhotosOrdered(plantId) {
   return state.photos.filter((p) => p.plant_id === plantId).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
@@ -694,8 +695,9 @@ function screenPlants() {
         <button class="btn btn-secondary btn-sm" onclick="openModal('plantFilters')">
           Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
         </button>
-        ${activeFilterCount ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="state.plantFilters={category:'',status:'',idStatus:'',original:'',location:''};render()">Clear</button>` : ""}
+        <button class="btn btn-accent btn-sm" onclick="openModal('newPlant')">+ New Plant</button>
       </div>
+      ${activeFilterCount ? `<button class="btn-ghost" style="font-size:12.5px;margin-top:-10px;" onclick="state.plantFilters={category:'',status:'',idStatus:'',original:'',location:''};render()">Clear filters</button>` : ""}
       ${(q || activeFilterCount) ? `<div class="subtle" style="margin:-8px 0 16px;">${list.length} of ${state.plants.length} plants</div>` : ""}
       ${list.length === 0 ? `
         <div class="empty"><div class="display">${state.plants.length === 0 ? "No plants yet" : "No matches"}</div>
@@ -877,7 +879,7 @@ function screenLocations() {
     const plantCount = plantsAtLocation(l.id).length;
     const photoCount = state.photos.filter((p) => p.location_id === l.id).length;
     return `
-      <div class="tag-card ${depth > 0 ? "loc-child" : ""}" style="${depth > 0 ? "margin-top:8px;" : ""}">
+      <div class="tag-card ${depth > 0 ? "loc-child" : ""}" style="${depth > 0 ? "margin-top:8px;" : ""}cursor:pointer;" onclick="openLocation('${l.id}')">
         <div class="row">
           <div>
             <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
@@ -888,8 +890,8 @@ function screenLocations() {
           </div>
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;">
-          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit</button>
-          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('upload',{locationId:'${l.id}'})">Add photo</button>
+          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('editLocation',{locationId:'${l.id}'})">Edit</button>
+          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('upload',{locationId:'${l.id}'})">Add photo</button>
         </div>
       </div>
       ${children.map((c) => renderNode(c, depth + 1)).join("")}
@@ -906,6 +908,70 @@ function screenLocations() {
       ${state.locations.length === 0 ? `
         <div class="empty"><div class="display">No locations yet</div><div>Add areas, rows, or containers to organize your plants.</div></div>` : `
         <div class="stack">${topLevel.map((l) => renderNode(l, 0)).join("")}</div>`}
+    </div>
+  </div>`;
+}
+
+function screenLocationDetail() {
+  const l = locationById(state.currentLocationId);
+  if (!l) return `<div class="screen container"><p>Location not found.</p></div>`;
+  const plants = plantsAtLocation(l.id);
+  const photos = state.photos.filter((p) => p.location_id === l.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+
+  return `
+  <div class="screen">
+    <div class="container">
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('locations')">${icon("back")} Locations</button>
+
+      <div class="tag-card">
+        <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
+        <div class="display" style="font-size:22px;font-weight:600;margin-top:3px;">${escapeHtml(l.name)}</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px;">${escapeHtml(locationPath(l))}</div>
+        ${l.notes ? `<div style="font-size:13.5px;color:var(--ink-soft);margin-top:10px;">${escapeHtml(l.notes)}</div>` : ""}
+        <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
+      </div>
+
+      <div class="row" style="margin-top:24px;margin-bottom:12px;">
+        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Plants here</h3>
+        <span class="subtle">${plants.length} total</span>
+      </div>
+      ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
+        <div class="stack">${plants.map(plantRow).join("")}</div>`}
+
+      <div class="row" style="margin-top:26px;margin-bottom:12px;">
+        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Container photos</h3>
+        <span class="subtle">${photos.length} total</span>
+      </div>
+      <p class="subtle" style="margin:-6px 0 14px;">Identify or create plants straight from a photo below — no need to re-upload the same shot for each specimen.</p>
+
+      ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : `
+        <div class="stack">
+          ${photos.map((p) => {
+            const cachedUrl = state.photoUrlCache[p.drive_file_id];
+            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
+            const suggestion = pendingIdentification(p.id);
+            const isIdentifying = state.identifyingPhotoId === p.id;
+            const claimedBy = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
+            const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
+            const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
+            return `
+            <div class="tag-card">
+              <div class="photo-row">
+                <div class="photo-icon on-cream" style="cursor:${cachedUrl ? "pointer" : "default"};">${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+                <div style="flex:1;min-width:0;">
+                  <div class="tag-id">${fmtDate(p.uploaded_at)}</div>
+                  <div style="font-size:13.5px;color:var(--ink-soft);margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
+                  ${claimedBy || taggedPlants.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:4px;">Identified: ${[claimedBy, ...taggedPlants].filter(Boolean).map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
+                  ${suggestion ? `<div style="margin-top:6px;padding:6px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;">Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""}</div>` : ""}
+                </div>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+                ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss</button>`}
+                <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant from this photo</button>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>`}
     </div>
   </div>`;
 }
@@ -1443,7 +1509,7 @@ function navBar() {
   return `
   <div class="navbar"><div class="container">
     ${tabs.map((t) => `
-      <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") ? "active" : ""}" onclick="goTab('${t.id}')">
+      <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") || (t.id === "locations" && state.tab === "locationDetail") ? "active" : ""}" onclick="goTab('${t.id}')">
         ${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
       </button>`).join("")}
   </div></div>`;
@@ -1516,6 +1582,7 @@ function render() {
   else if (state.tab === "plants") screen = screenPlants();
   else if (state.tab === "plantDetail") screen = screenPlantDetail();
   else if (state.tab === "locations") screen = screenLocations();
+  else if (state.tab === "locationDetail") screen = screenLocationDetail();
   else if (state.tab === "settings") screen = screenSettings();
 
   app.innerHTML = `
@@ -1631,7 +1698,16 @@ function wireModalForms() {
         };
         const [newPlant] = await restPost("plants", body);
         if (state.modal.type === "newPlantFromPhoto") {
-          await restPatch("photos", `id=eq.${state.modal.data.photoId}`, { plant_id: newPlant.id });
+          const sourcePhoto = state.photos.find((p) => p.id === state.modal.data.photoId);
+          if (sourcePhoto && !sourcePhoto.plant_id) {
+            // First plant identified from this photo — it becomes the primary attachment
+            await restPatch("photos", `id=eq.${state.modal.data.photoId}`, { plant_id: newPlant.id });
+          } else {
+            // Photo already belongs to another plant (e.g. a container shot with
+            // several specimens) — tag this one instead of stealing the attachment,
+            // so the same photo can seed multiple plant records without re-uploading.
+            await restPost("photo_plants", { photo_id: state.modal.data.photoId, plant_id: newPlant.id });
+          }
           const suggestion = pendingIdentification(state.modal.data.photoId);
           if (suggestion) {
             await restPatch("identifications", `id=eq.${suggestion.id}`, {

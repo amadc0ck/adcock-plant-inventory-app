@@ -203,6 +203,7 @@
   /* Plant Detail hero image (profile picture) */
   .plant-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;cursor:pointer;}
   .plant-hero-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
+  .inbox-photo-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;}
   .plant-hero-empty svg{width:36px;height:36px;}
   .plant-hero-empty span{font-size:12.5px;}
   .hero-change-btn{position:absolute;margin-top:-40px;margin-left:12px;background:rgba(37,41,37,0.72);color:var(--parchment);border:none;font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;backdrop-filter:blur(4px);}
@@ -249,7 +250,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.23.1";
+const APP_VERSION = "1.24.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -809,28 +810,26 @@ function photoRow(p, selectMode) {
   const isIdentifying = state.identifyingPhotoId === p.id;
   const isSelected = state.inboxSelected.has(p.id);
   return `
-  <div class="tag-card" style="${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
-    <div class="photo-row">
-      <div style="position:relative;flex-shrink:0;">
-        ${selectMode ? `<div class="select-check ${isSelected ? "checked" : ""}">${isSelected ? icon("check") : ""}</div>` : ""}
-        <div class="photo-icon on-cream" style="cursor:${cachedUrl && !selectMode ? "pointer" : "default"};" ${cachedUrl && !selectMode ? `onclick="event.stopPropagation();openInboxLightbox('${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
-      </div>
-      <div style="flex:1;min-width:0;">
-        <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
-        <div style="font-size:14px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
-        ${suggestion ? `
-          <div style="margin-top:8px;padding:8px 10px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:13px;${selectMode ? "" : "cursor:pointer;"}" ${selectMode ? "" : `onclick="event.stopPropagation();openModal('identificationDetail',{photoId:'${p.id}'})"`}>
-            Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""}${selectMode ? "" : ` <span style="color:var(--blue);">— compare →</span>`}
-          </div>` : ""}
-        ${!selectMode ? `
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
-          ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")} ${isIdentifying ? "Identifying…" : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss suggestion</button>`}
-          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
-          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
-          <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")} New plant</button>
-          <button class="btn btn-danger btn-sm icon-btn" onclick="deletePhoto('${p.id}')" aria-label="Delete">${icon("trash")}</button>
+  <div class="tag-card" style="padding:0;overflow:hidden;${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
+    <div class="inbox-photo-hero" ${cachedUrl && !selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${cachedUrl && !selectMode ? "pointer" : "default"};">
+      ${selectMode ? `<div class="select-check ${isSelected ? "checked" : ""}" style="top:8px;left:8px;">${isSelected ? icon("check") : ""}</div>` : ""}
+      ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-hero-empty">${icon("photo")}</div>`}
+    </div>
+    <div style="padding:12px 14px 14px;">
+      <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
+      <div style="font-size:13.5px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
+      ${suggestion ? `
+        <div style="margin-top:8px;padding:7px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;${selectMode ? "" : "cursor:pointer;"}" ${selectMode ? "" : `onclick="event.stopPropagation();openModal('identificationDetail',{photoId:'${p.id}'})"`}>
+          Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""}${selectMode ? "" : ` <span style="color:var(--blue);">— compare →</span>`}
         </div>` : ""}
-      </div>
+      ${!selectMode ? `
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px;">
+        ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")} ${isIdentifying ? "Identifying…" : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss</button>`}
+        <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("link")} Plant</button>
+        <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Container</button>
+        <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")} New</button>
+        <button class="btn btn-danger btn-sm icon-btn" onclick="deletePhoto('${p.id}')" aria-label="Delete">${icon("trash")}</button>
+      </div>` : ""}
     </div>
   </div>`;
 }

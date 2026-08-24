@@ -169,6 +169,9 @@
   .plant-list-thumb-empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--moss-dim);}
   .plant-list-thumb-empty svg{width:26px;height:26px;}
 
+  .thumb-delete-btn{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(37,41,37,0.75);color:var(--parchment);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+  .thumb-delete-btn svg{width:12px;height:12px;}
+
   /* Plant Detail hero image (profile picture) */
   .plant-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;cursor:pointer;}
   .plant-hero-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
@@ -217,7 +220,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.12.1";
+const APP_VERSION = "1.13.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -813,6 +816,7 @@ function screenPlantDetail() {
               <div style="display:flex;gap:16px;margin-top:8px;">
                 <button class="btn-ghost" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">Tag other plants</button>
                 ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
+                <button class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">Delete</button>
               </div>
             </div>`;
           }).join("")}
@@ -1141,9 +1145,12 @@ function modalContent() {
             const cachedUrl = state.photoUrlCache[p.drive_file_id];
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
             return `
-            <button onclick="setPrimaryPhoto('${data.plantId}','${p.id}')" style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
-              ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
-            </button>`;
+            <div style="position:relative;aspect-ratio:1;">
+              <button onclick="setPrimaryPhoto('${data.plantId}','${p.id}')" style="width:100%;height:100%;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
+                ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
+              </button>
+              <button onclick="event.stopPropagation();deletePhoto('${p.id}')" class="thumb-delete-btn" aria-label="Delete photo">${icon("close")}</button>
+            </div>`;
           }).join("")}
         </div>` : ""}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
@@ -1306,6 +1313,10 @@ async function attachPhotoToPlant(photoId, plantId) {
 async function deletePhoto(photoId) {
   if (!confirm("Delete this photo? The record is removed from the app, but the file stays in your Google Drive folder.")) return;
   try {
+    // Clear it as any plant's profile picture first (FK would otherwise block deletion)
+    await restPatch("plants", `primary_photo_id=eq.${photoId}`, { primary_photo_id: null });
+    // Remove any multi-plant tags pointing at this photo
+    await restDelete("photo_plants", `photo_id=eq.${photoId}`);
     await restDelete("photos", `id=eq.${photoId}`);
     toast("Photo deleted");
     await loadAll();

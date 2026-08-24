@@ -217,7 +217,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.12.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -686,7 +686,7 @@ function plantRow(pl) {
   return `
   <div class="tag-card plant-list-card" onclick="openPlant('${pl.id}')">
     <div class="plant-list-thumb">
-      ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+      ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
     </div>
     <div style="flex:1;min-width:0;">
       <div class="tag-id">${pl.accession_number}</div>
@@ -712,6 +712,9 @@ function screenPlantDetail() {
   const loc = locationById(pl.location_id);
   const parent = pl.parent_plant_id ? state.plants.find((p) => p.id === pl.parent_plant_id) : null;
   const photos = state.photos.filter((p) => p.plant_id === pl.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  // Reference/ID photos (e.g. a profile picture that isn't a dated
+  // observation of this exact specimen) are excluded from the timeline list.
+  const timelinePhotos = photos.filter((p) => p.photo_type !== "identification");
 
   const primaryPhoto = pl.primary_photo_id ? photos.find((p) => p.id === pl.primary_photo_id) : null;
   const heroPhoto = primaryPhoto || photos[0] || null;
@@ -724,12 +727,12 @@ function screenPlantDetail() {
       <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('plants')">${icon("back")} Plants</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
-        <div class="plant-hero" ${heroUrl ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : ""}>
+        <div class="plant-hero" ${heroUrl ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : `onclick="openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})"`}>
           ${heroUrl
-            ? `<img src="${heroUrl}" style="width:100%;height:100%;object-fit:cover;" />`
-            : `<div class="plant-hero-empty">${icon("photo")}<span>No profile picture yet</span></div>`}
+            ? `<img src="${heroUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />`
+            : `<div class="plant-hero-empty">${icon("photo")}<span>Tap to add a profile picture</span></div>`}
         </div>
-        ${photos.length > 0 ? `<button class="hero-change-btn" onclick="event.stopPropagation();openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})">Change photo</button>` : ""}
+        <button class="hero-change-btn" onclick="event.stopPropagation();openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})">${heroUrl ? "Change photo" : "Add photo"}</button>
 
         <div style="padding:18px 18px 16px 22px;">
           <div class="tag-id">${pl.accession_number}</div>
@@ -783,12 +786,12 @@ function screenPlantDetail() {
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
-        <span class="subtle">${photos.length} total</span>
+        <span class="subtle">${timelinePhotos.length} total</span>
       </div>
 
-      ${photos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
+      ${timelinePhotos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
         <div class="stack">
-          ${photos.map((p) => {
+          ${timelinePhotos.map((p) => {
             const cachedUrl = state.photoUrlCache[p.drive_file_id];
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
             const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
@@ -1122,9 +1125,18 @@ function modalContent() {
     const photos = plantPhotosOrdered(data.plantId);
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Choose profile picture</h3>
-      ${photos.length === 0 ? `<p class="subtle">No photos on this plant yet.</p>` : `
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:50vh;overflow-y:auto;">
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Choose profile picture</h3>
+      <p class="subtle" style="margin:0 0 14px;">Upload a fresh photo (a reference/ID image is fine — it won't need to be a dated observation), or pick from existing photos below.</p>
+
+      <form id="profile-photo-upload-form">
+        <input type="file" id="profile-photo-file" accept="image/*" required style="padding:10px;" />
+        <button type="submit" class="btn btn-accent btn-block" style="margin-top:12px;" id="profile-photo-submit-btn">Upload and use as profile picture</button>
+      </form>
+
+      ${photos.length > 0 ? `
+        <div class="divider"></div>
+        <p class="subtle" style="margin:0 0 10px;">Or choose an existing photo</p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:38vh;overflow-y:auto;">
           ${photos.map((p) => {
             const cachedUrl = state.photoUrlCache[p.drive_file_id];
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
@@ -1133,7 +1145,7 @@ function modalContent() {
               ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
             </button>`;
           }).join("")}
-        </div>`}
+        </div>` : ""}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
@@ -1462,6 +1474,34 @@ function renderLightbox() {
 }
 
 function wireModalForms() {
+  const profilePhotoForm = document.getElementById("profile-photo-upload-form");
+  if (profilePhotoForm) {
+    profilePhotoForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const file = document.getElementById("profile-photo-file").files[0];
+      if (!file) return;
+      const btn = document.getElementById("profile-photo-submit-btn");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
+      try {
+        const plantId = state.modal.data.plantId;
+        const newPhoto = await uploadPhoto(file, plantId, null, null);
+        // Tag as an identification/reference photo so it doesn't clutter
+        // the dated observation timeline — it's a stand-in image, not
+        // necessarily a photo of this exact specimen taken today.
+        await restPatch("photos", `id=eq.${newPhoto.id}`, { photo_type: "identification" });
+        await restPatch("plants", `id=eq.${plantId}`, { primary_photo_id: newPhoto.id, updated_at: new Date().toISOString() });
+        toast("Profile picture updated");
+        closeModal();
+        await loadAll();
+      } catch (e) {
+        toast(e.message, true);
+        btn.disabled = false;
+        btn.textContent = "Upload and use as profile picture";
+      }
+    };
+  }
+
   const uploadForm = document.getElementById("upload-form");
   if (uploadForm) {
     uploadForm.onsubmit = async (e) => {

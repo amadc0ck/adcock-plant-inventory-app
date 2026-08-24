@@ -206,7 +206,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.10.0";
+const APP_VERSION = "1.10.1";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1307,9 +1307,8 @@ function topBar() {
   return `
   <div class="topbar"><div class="container">
     <div class="brand">
-      <img src="assets/logo-horizontal.png" alt="Adcock Botanical Garden" style="height:28px;width:auto;display:block;" />
+      <img src="assets/logo-horizontal.png" alt="Adcock Botanical Garden" style="width:100%;height:auto;display:block;" />
     </div>
-    <div class="subtle">${state.session?.email || ""}</div>
   </div></div>`;
 }
 

@@ -221,7 +221,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.20.1";
+const APP_VERSION = "1.20.2";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1791,6 +1791,7 @@ function renderLightbox() {
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
       ${!suggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifying ? "disabled" : ""} onclick="event.stopPropagation();identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('identificationDetail',{photoId:'${p.id}'})">Compare</button>`}
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
+      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
       <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
       <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">Delete</button>
     </div>

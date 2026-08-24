@@ -177,7 +177,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.8.2";
+const APP_VERSION = "1.9.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -200,6 +200,8 @@ const state = {
   photoUrlCache: {},
   photoFetchInFlight: new Set(),
   photoPlants: [],
+  identifications: [],
+  identifyingPhotoId: null,
 };
 
 /* ============================================================
@@ -366,18 +368,20 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications] = await Promise.all([
       restGet("photos", "?select=*&order=uploaded_at.desc"),
       restGet("plants", "?select=*&order=accession_number.asc"),
       restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
       restGet("google_auth_tokens", "?select=expires_at&limit=1"),
       restGet("photo_plants", "?select=*"),
+      restGet("identifications", "?select=*&order=created_at.desc"),
     ]);
     state.photos = photos;
     state.plants = plants;
     state.locations = locations;
     state.driveToken = tokens[0] || null;
     state.photoPlants = photoPlants;
+    state.identifications = identifications;
   } catch (e) {
     toast(e.message, true);
   }
@@ -396,6 +400,9 @@ function plantDisplayName(pl) {
 
 function locationById(id) {
   return state.locations.find((l) => l.id === id);
+}
+function pendingIdentification(photoId) {
+  return state.identifications.find((i) => i.photo_id === photoId && i.status === "pending");
 }
 
 function locationPath(loc) {
@@ -526,6 +533,8 @@ function screenInbox() {
 function photoRow(p) {
   const cachedUrl = state.photoUrlCache[p.drive_file_id];
   if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
+  const suggestion = pendingIdentification(p.id);
+  const isIdentifying = state.identifyingPhotoId === p.id;
   return `
   <div class="tag-card">
     <div class="photo-row">
@@ -533,7 +542,12 @@ function photoRow(p) {
       <div style="flex:1;min-width:0;">
         <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
         <div style="font-size:14px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
-        <div style="display:flex;gap:8px;margin-top:10px;">
+        ${suggestion ? `
+          <div style="margin-top:8px;padding:8px 10px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:13px;">
+            Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""}
+          </div>` : ""}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+          ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span> Identifying…' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss suggestion</button>`}
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
           <button class="btn btn-danger btn-sm" onclick="deletePhoto('${p.id}')">Delete</button>
@@ -651,7 +665,11 @@ function screenPlantDetail() {
         ${parent ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:4px;">Propagated from <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}</div>` : ""}
 
         ${pl.notes ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);">${escapeHtml(pl.notes)}</div>` : ""}
-        <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit full record</button>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;">
+          <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit full record</button>
+          <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="moveToHospital('${pl.id}')">Move to Plant Hospital</button>
+          <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">Propagate from this plant</button>
+        </div>
       </div>
 
       ${(pl.identification_notes || pl.acquisition_source_type || pl.acquisition_source_name || pl.acquisition_notes || pl.date_acquired) ? `
@@ -814,18 +832,20 @@ function modalContent() {
   }
 
   if (type === "newPlantFromPhoto" || type === "newPlant") {
+    const suggestion = type === "newPlantFromPhoto" ? pendingIdentification(data.photoId) : null;
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">New plant</h3>
       <p class="subtle" style="margin:0 0 14px;">Accession number is generated automatically. Everything below is optional except location can be set later too.</p>
+      ${suggestion ? `<p style="font-size:12.5px;color:var(--blue);margin:0 0 14px;">Pre-filled from AI suggestion — double check before saving.</p>` : ""}
       <form id="new-plant-form">
         <label>Botanical name</label>
-        <input id="np-botanical" placeholder="e.g. Cephalocereus senilis" />
+        <input id="np-botanical" placeholder="e.g. Cephalocereus senilis" value="${suggestion ? escapeHtml(suggestion.suggested_name) : ""}" />
         <label>Common name</label>
         <input id="np-common" placeholder="e.g. Old Man Cactus" />
         <label>Identification status</label>
         <select id="np-idstatus">
-          ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === "unidentified" ? "selected" : ""}>${v}</option>`).join("")}
+          ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === (suggestion ? "tentative" : "unidentified") ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Location</label>
         <select id="np-location">${locationSelectOptions(null)}</select>
@@ -972,6 +992,27 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "propagatePlant") {
+    const parent = state.plants.find((p) => p.id === data.parentId);
+    const workArea = state.locations.find((l) => l.name === "Propagation / Work Area" && !l.parent_location_id);
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Propagate plant</h3>
+      <p class="subtle" style="margin:0 0 14px;">From <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}. Gets its own new accession number.</p>
+      <form id="propagate-plant-form">
+        <label>Botanical name</label>
+        <input id="pp-botanical" value="${escapeHtml(parent.botanical_name || "")}" />
+        <label>Common name</label>
+        <input id="pp-common" value="${escapeHtml(parent.common_name || "")}" />
+        <label>Location</label>
+        <select id="pp-location">${locationSelectOptions(workArea ? workArea.id : null)}</select>
+        <label>Notes</label>
+        <textarea id="pp-notes" rows="2"></textarea>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Create propagated plant</button>
+      </form>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "editLocation") {
     const l = state.locations.find((x) => x.id === data.locationId);
     // Exclude itself from the parent picker to avoid self-referencing loops
@@ -1049,6 +1090,54 @@ function modalContent() {
 async function handleConnectDrive() {
   try { await startDriveConnect(); } catch (e) { toast(e.message, true); }
 }
+async function identifyPhoto(photoId) {
+  state.identifyingPhotoId = photoId;
+  render();
+  try {
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/identify-plant`, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ photo_id: photoId }),
+    });
+    const data = await res.json();
+    state.identifyingPhotoId = null;
+    if (data.error) {
+      toast(data.error, true);
+      render();
+      return;
+    }
+    state.identifications.unshift(data.identification);
+    render();
+  } catch (e) {
+    state.identifyingPhotoId = null;
+    toast(e.message, true);
+    render();
+  }
+}
+async function dismissIdentification(id) {
+  try {
+    await restPatch("identifications", `id=eq.${id}`, { status: "rejected" });
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+async function moveToHospital(plantId) {
+  const hospital = state.locations.find((l) => l.name === "Plant Hospital" && !l.parent_location_id);
+  if (!hospital) {
+    toast("Plant Hospital location not found — check Locations tab", true);
+    return;
+  }
+  if (!confirm("Move this plant to Plant Hospital and mark its health as Watch?")) return;
+  try {
+    await restPatch("plants", `id=eq.${plantId}`, {
+      location_id: hospital.id,
+      health_status: "watch",
+      updated_at: new Date().toISOString(),
+    });
+    toast("Moved to Plant Hospital");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function attachPhotoToPlant(photoId, plantId) {
   try {
     await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
@@ -1240,6 +1329,13 @@ function wireModalForms() {
         const [newPlant] = await restPost("plants", body);
         if (state.modal.type === "newPlantFromPhoto") {
           await restPatch("photos", `id=eq.${state.modal.data.photoId}`, { plant_id: newPlant.id });
+          const suggestion = pendingIdentification(state.modal.data.photoId);
+          if (suggestion) {
+            await restPatch("identifications", `id=eq.${suggestion.id}`, {
+              status: "confirmed",
+              confirmed_name: body.botanical_name,
+            });
+          }
         }
         toast(`Created ${newPlant.accession_number}`);
         closeModal();
@@ -1300,6 +1396,32 @@ function wireModalForms() {
         };
         await restPost("locations", body);
         toast("Location added");
+        closeModal();
+        await loadAll();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  const propagateForm = document.getElementById("propagate-plant-form");
+  if (propagateForm) {
+    propagateForm.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const parent = state.plants.find((p) => p.id === state.modal.data.parentId);
+        const body = {
+          botanical_name: document.getElementById("pp-botanical").value || null,
+          common_name: document.getElementById("pp-common").value || null,
+          family: parent.family || null,
+          genus: parent.genus || null,
+          species: parent.species || null,
+          location_id: document.getElementById("pp-location").value || null,
+          notes: document.getElementById("pp-notes").value || null,
+          parent_plant_id: state.modal.data.parentId,
+          acquisition_source_type: "propagation",
+          acquisition_source_name: `Propagated from ${parent.accession_number}`,
+        };
+        const [newPlant] = await restPost("plants", body);
+        toast(`Created ${newPlant.accession_number}`);
         closeModal();
         await loadAll();
       } catch (e) { toast(e.message, true); }

@@ -50,7 +50,9 @@
 
   .container{max-width:640px;margin:0 auto;padding:0 16px;}
 
-  .topbar{position:sticky;top:0;z-index:20;background:var(--bg);padding:22px 0 14px;border-bottom:1px solid var(--line);}
+  .sticky-header-group{position:sticky;top:0;z-index:20;background:var(--bg);}
+  .topbar{padding:22px 0 14px;border-bottom:1px solid var(--line);}
+  .inbox-subbar{padding:12px 0;border-bottom:1px solid var(--line);}
   .topbar .container{display:flex;align-items:center;justify-content:center;}
   .brand{font-family:'Fraunces',serif;font-weight:500;font-size:22px;letter-spacing:0.2px;display:flex;justify-content:center;}
   .brand img{max-width:280px;width:100%;height:auto;}
@@ -250,7 +252,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.26.0";
+const APP_VERSION = "1.27.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -926,14 +928,7 @@ function screenInbox() {
   return `
   <div class="screen">
     <div class="container">
-      <div class="row" style="margin-bottom:4px;">
-        <h2 class="display" style="font-size:22px;font-weight:500;margin:0;">Inbox</h2>
-        <div style="display:flex;align-items:center;gap:8px;">
-          ${unassigned.length ? `<span class="pill pill-terracotta">${unassigned.length} waiting</span>` : ""}
-          ${unassigned.length ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="toggleInboxSelectMode()">${selectMode ? "Cancel" : "Select"}</button>` : ""}
-        </div>
-      </div>
-      <p class="subtle" style="margin-bottom:20px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Photos land here first — confirm or attach them to a plant."}</p>
+      <p class="subtle" style="margin-bottom:16px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Photos land here first — confirm or attach them to a plant."}</p>
       ${unassigned.length === 0 ? `
         <div class="empty"><div class="display">Nothing waiting</div><div>Tap the camera button to add a photo.</div></div>` : `
         <div class="card-grid">${visible.map((p) => photoRow(p, selectMode)).join("")}</div>
@@ -977,7 +972,7 @@ function photoRow(p, selectMode) {
     </div>
     <div style="padding:12px 14px 14px;">
       <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
-      <div style="font-size:13.5px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
+      <div style="font-size:13.5px;margin-top:2px;color:var(--ink-soft);cursor:pointer;" onclick="openModal('editPhotoNote',{photoId:'${p.id}'})">${p.notes ? escapeHtml(p.notes) : "No notes — tap to add"}</div>
       ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
       ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
       ${!selectMode ? `
@@ -1188,8 +1183,9 @@ function screenPlantDetail() {
                 </div>
                 ${isPrimary ? `<span class="pill pill-orange">Profile</span>` : ""}
               </div>
-              <div style="display:flex;gap:16px;margin-top:8px;">
+              <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px;">
                 <button class="btn-ghost" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">Tag other plants</button>
+                <button class="btn-ghost" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
                 ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
                 <button class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">Delete</button>
               </div>
@@ -1335,6 +1331,7 @@ function screenLocationDetail() {
                 ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
                 ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : "Ask Claude"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${claudeSuggestion.id}')">Dismiss Claude</button>`}
                 <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachToLocalPlant',{photoId:'${p.id}', locationId:'${l.id}'})">Add to plant here</button>
+                <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to any plant</button>
                 <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('tagLocations',{photoId:'${p.id}'})">Tag other containers</button>
                 <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
                 <button class="btn btn-danger btn-sm" onclick="removePhotoFromLocation('${p.id}','${l.id}')">${p.location_id === l.id ? "Unattach from here" : "Remove tag"}</button>
@@ -1602,23 +1599,43 @@ function modalContent() {
   }
 
   if (type === "bulkAttachLocation") {
+    const q = (state.attachLocationSearch || "").toLowerCase();
+    const candidates = locationOptionList().filter((o) => !q || o.label.toLowerCase().includes(q));
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach ${state.inboxSelected.size} photos to container</h3>
       <p class="subtle" style="margin:0 0 14px;">All selected photos will move out of the Inbox onto that container's page.</p>
-      <select id="bulk-attach-loc-select">${locationSelectOptions(null)}</select>
-      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="bulkAttachToLocation(document.getElementById('bulk-attach-loc-select').value)">Attach</button>
+      <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
+      <div class="stack" style="max-height:44vh;overflow-y:auto;">
+        ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
+          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="bulkAttachToLocation('${o.id}')">${escapeHtml(o.label)}</button>`).join("")}
+      </div>
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "editPhotoNote") {
+    const photo = state.photos.find((p) => p.id === data.photoId);
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Photo note</h3>
+      <textarea id="edit-note-text" rows="3" placeholder="e.g. new growth on the west side">${escapeHtml(photo?.notes || "")}</textarea>
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="savePhotoNote('${data.photoId}')">Save</button>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "attachLocation") {
+    const q = (state.attachLocationSearch || "").toLowerCase();
+    const candidates = locationOptionList().filter((o) => !q || o.label.toLowerCase().includes(q));
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach to container</h3>
-      <p class="subtle" style="margin:0 0 14px;">Moves this photo out of the Inbox and onto that location's page, where you can identify each specimen in it.</p>
-      <select id="attach-loc-select">${locationSelectOptions(null)}</select>
-      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="attachPhotoToLocation('${data.photoId}', document.getElementById('attach-loc-select').value)">Attach</button>
-      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+      <p class="subtle" style="margin:0 0 14px;">Sets this photo's primary container. You can still identify or tag plants from it afterward.</p>
+      <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
+      <div class="stack" style="max-height:44vh;overflow-y:auto;">
+        ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
+          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="attachPhotoToLocation('${data.photoId}','${o.id}')">${escapeHtml(o.label)}</button>`).join("")}
+      </div>
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "newPlantFromPhoto" || type === "newPlant") {
@@ -2090,6 +2107,16 @@ async function saveTaggedLocations(photoId) {
   } catch (e) { toast(e.message, true); }
 }
 
+async function savePhotoNote(photoId) {
+  const text = document.getElementById("edit-note-text").value;
+  try {
+    await restPatch("photos", `id=eq.${photoId}`, { notes: text || null });
+    toast("Note saved");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function attachPhotoToLocation(photoId, locationId) {
   if (!locationId) { toast("Choose a location first", true); return; }
   try {
@@ -2204,12 +2231,21 @@ function navBar() {
 }
 
 function topBar() {
+  const unassignedCount = state.photos.filter((p) => !p.plant_id && !p.location_id).length;
+  const inboxSubBar = state.tab === "inbox" ? `
+    <div class="inbox-subbar"><div class="container" style="display:flex;align-items:center;justify-content:space-between;">
+      <h2 class="display" style="font-size:18px;font-weight:500;margin:0;">Inbox${unassignedCount ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassignedCount} waiting</span>` : ""}</h2>
+      ${unassignedCount ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="toggleInboxSelectMode()">${state.inboxSelectMode ? "Cancel" : "Select"}</button>` : ""}
+    </div></div>` : "";
   return `
-  <div class="topbar"><div class="container">
-    <div class="brand">
-      <img src="assets/logo-horizontal-dark.png" alt="Adcock Botanical Garden" />
-    </div>
-  </div></div>`;
+  <div class="sticky-header-group">
+    <div class="topbar"><div class="container">
+      <div class="brand">
+        <img src="assets/logo-horizontal-dark.png" alt="Adcock Botanical Garden" />
+      </div>
+    </div></div>
+    ${inboxSubBar}
+  </div>`;
 }
 
 function configGate() {

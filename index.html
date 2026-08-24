@@ -52,7 +52,17 @@
 
   .sticky-header-group{position:sticky;top:0;z-index:20;background:var(--bg);}
   .topbar{padding:22px 0 14px;border-bottom:1px solid var(--line);}
+  .topbar-row{display:flex;align-items:center;justify-content:space-between;}
+  .topbar-side{display:flex;align-items:center;gap:6px;width:64px;}
+  .icon-only-btn{background:none;border:none;color:#9FB0A3;padding:6px;cursor:pointer;display:flex;}
+  .icon-only-btn svg{width:19px;height:19px;}
+  .status-light-btn{background:none;border:none;padding:6px;cursor:default;display:flex;}
+  .status-light{width:10px;height:10px;border-radius:50%;display:inline-block;}
   .inbox-subbar{padding:12px 0;border-bottom:1px solid var(--line);}
+
+  .nav-row{display:flex;align-items:flex-end;justify-content:space-around;position:relative;}
+  .nav-camera-btn{width:52px;height:52px;border-radius:50%;background:var(--orange);color:#3A2408;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;transform:translateY(-16px);box-shadow:0 6px 16px -4px rgba(0,0,0,0.5);flex-shrink:0;}
+  .nav-camera-btn svg{width:22px;height:22px;}
   .topbar .container{display:flex;align-items:center;justify-content:center;}
   .brand{font-family:'Fraunces',serif;font-weight:500;font-size:22px;letter-spacing:0.2px;display:flex;justify-content:center;}
   .brand img{max-width:280px;width:100%;height:auto;}
@@ -252,7 +262,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.27.0";
+const APP_VERSION = "1.28.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -518,6 +528,11 @@ async function login(email, password) {
   return data;
 }
 
+function driveErrorMessage(status, fallback) {
+  if (status === 401) return "Google Drive needs to reconnect — go to Settings and tap Reconnect.";
+  return fallback;
+}
+
 async function uploadPhoto(file, plantId, locationId, notes) {
   const fd = new FormData();
   fd.append("photo", file);
@@ -530,7 +545,7 @@ async function uploadPhoto(file, plantId, locationId, notes) {
     body: fd,
   });
   const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.error || "Upload failed");
+  if (!res.ok || !data.success) throw new Error(driveErrorMessage(res.status, data.error || "Upload failed"));
   return data.photo;
 }
 
@@ -762,6 +777,7 @@ function icon(name) {
     trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/><path d="M10 11v6M14 11v6"/></svg>`,
     link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8"/></svg>`,
     pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s7-7.58 7-12.5A7 7 0 0 0 5 9.5C5 14.42 12 22 12 22Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`,
+    info: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 8v.01"/></svg>`,
   };
   return icons[name] || "";
 }
@@ -1613,6 +1629,29 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "appInfo") {
+    const driveOk = !!state.driveToken;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">App info</h3>
+      <div class="surface" style="padding:14px;">
+        <div class="row">
+          <span style="font-size:13.5px;">Google Drive</span>
+          <span style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:${driveOk ? "#9FCBA6" : "#E8A78F"};">
+            <span class="status-light" style="background:${driveOk ? "var(--moss)" : "var(--terracotta)"};position:static;"></span>
+            ${driveOk ? "Connected" : "Needs reconnect"}
+          </span>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <span style="font-size:13.5px;">Signed in as</span>
+          <span class="subtle">${state.session?.email || ""}</span>
+        </div>
+      </div>
+      <p class="mono subtle" style="margin-top:14px;text-align:center;">v${APP_VERSION} · ${APP_UPDATED}</p>
+      ${!driveOk ? `<button class="btn btn-primary btn-block" style="margin-top:10px;" onclick="closeModal();goTab('settings')">Go reconnect Drive</button>` : ""}
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Close</button>`;
+  }
+
   if (type === "editPhotoNote") {
     const photo = state.photos.find((p) => p.id === data.photoId);
     return `
@@ -1990,7 +2029,7 @@ async function identifyPhoto(photoId) {
     const data = await res.json();
     state.identifyingPhotoId = null;
     if (data.error) {
-      toast(data.error, true);
+      toast(driveErrorMessage(res.status, data.error), true);
       render();
       return;
     }
@@ -2014,7 +2053,7 @@ async function identifyPhotoClaude(photoId) {
     const data = await res.json();
     state.identifyingPhotoIdClaude = null;
     if (data.error) {
-      toast(data.error, true);
+      toast(driveErrorMessage(res.status, data.error), true);
       render();
       return;
     }
@@ -2213,25 +2252,32 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
+function navBtn(t) {
+  return `
+    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") || (t.id === "locations" && state.tab === "locationDetail") ? "active" : ""}" onclick="goTab('${t.id}')">
+      ${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
+    </button>`;
+}
 function navBar() {
-  const tabs = [
+  const leftTabs = [
     { id: "inbox", label: "Inbox", icon: "inbox", badge: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
     { id: "plants", label: "Plants", icon: "leaf" },
+  ];
+  const rightTabs = [
     { id: "locations", label: "Locations", icon: "map" },
     { id: "reports", label: "Reports", icon: "clipboard" },
-    { id: "settings", label: "Settings", icon: "settings" },
   ];
   return `
-  <div class="navbar"><div class="container">
-    ${tabs.map((t) => `
-      <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") || (t.id === "locations" && state.tab === "locationDetail") ? "active" : ""}" onclick="goTab('${t.id}')">
-        ${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
-      </button>`).join("")}
+  <div class="navbar"><div class="container nav-row">
+    ${leftTabs.map(navBtn).join("")}
+    <button class="nav-camera-btn" onclick="openModal('upload')" aria-label="Add photo">${icon("camera")}</button>
+    ${rightTabs.map(navBtn).join("")}
   </div></div>`;
 }
 
 function topBar() {
   const unassignedCount = state.photos.filter((p) => !p.plant_id && !p.location_id).length;
+  const driveOk = !!state.driveToken;
   const inboxSubBar = state.tab === "inbox" ? `
     <div class="inbox-subbar"><div class="container" style="display:flex;align-items:center;justify-content:space-between;">
       <h2 class="display" style="font-size:18px;font-weight:500;margin:0;">Inbox${unassignedCount ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassignedCount} waiting</span>` : ""}</h2>
@@ -2239,9 +2285,18 @@ function topBar() {
     </div></div>` : "";
   return `
   <div class="sticky-header-group">
-    <div class="topbar"><div class="container">
+    <div class="topbar"><div class="container topbar-row">
+      <div class="topbar-side">
+        <button class="status-light-btn" onclick="${driveOk ? "" : "goTab('settings')"}" title="${driveOk ? "Google Drive connected" : "Google Drive needs to reconnect — tap to fix"}">
+          <span class="status-light" style="background:${driveOk ? "var(--moss)" : "var(--terracotta)"};"></span>
+        </button>
+      </div>
       <div class="brand">
         <img src="assets/logo-horizontal-dark.png" alt="Adcock Botanical Garden" />
+      </div>
+      <div class="topbar-side" style="justify-content:flex-end;">
+        <button class="icon-only-btn" onclick="openModal('appInfo')" aria-label="App info">${icon("info")}</button>
+        <button class="icon-only-btn" onclick="goTab('settings')" aria-label="Settings">${icon("settings")}</button>
       </div>
     </div></div>
     ${inboxSubBar}
@@ -2313,7 +2368,6 @@ function render() {
   app.innerHTML = `
     ${topBar()}
     ${screen}
-    <button class="fab" onclick="openModal('upload')" aria-label="Add photo">${icon("camera")}</button>
     ${navBar()}
     ${state.modal ? `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${modalContent()}</div></div>` : ""}
     ${state.lightbox ? renderLightbox() : ""}

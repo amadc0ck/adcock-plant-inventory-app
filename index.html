@@ -157,6 +157,35 @@
   .loc-group{margin-bottom:18px;}
   .loc-group-title{font-family:'Fraunces',serif;font-style:italic;font-size:15px;color:var(--blue);margin-bottom:8px;padding-left:2px;}
   .loc-child{margin-left:16px;}
+
+  /* Plant Detail hero image (profile picture) */
+  .plant-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;cursor:pointer;}
+  .plant-hero-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
+  .plant-hero-empty svg{width:36px;height:36px;}
+  .plant-hero-empty span{font-size:12.5px;}
+  .hero-change-btn{position:absolute;margin-top:-40px;margin-left:12px;background:rgba(37,41,37,0.72);color:var(--parchment);border:none;font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;backdrop-filter:blur(4px);}
+
+  /* High-contrast pill variants for use on the cream card — the
+     translucent dark-bg pill styles were nearly illegible here. */
+  .pill-solid{display:inline-block;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:700;letter-spacing:0.2px;}
+  .pill-solid-moss{background:var(--moss);color:#12200F;}
+  .pill-solid-terracotta{background:var(--terracotta);color:#3A1608;}
+  .pill-solid-blue{background:var(--blue);color:#0F2622;}
+  .pill-solid-pink{background:var(--pink);color:#3A0F20;}
+  .pill-solid-outline{background:transparent;border:1.5px solid var(--ink);color:var(--ink);}
+  .chicory-oncream{color:#3E6B77;}
+
+  /* Full-screen photo lightbox */
+  .lightbox-backdrop{position:fixed;inset:0;background:rgba(6,10,7,0.94);z-index:80;display:flex;flex-direction:column;}
+  .lightbox-top{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;color:var(--cream);}
+  .lightbox-body{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:0 8px;}
+  .lightbox-body img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;}
+  .lightbox-nav{background:rgba(255,255,255,0.12);border:none;color:var(--cream);width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+  .lightbox-nav svg{width:22px;height:22px;}
+  .lightbox-close{background:none;border:none;color:var(--cream);cursor:pointer;padding:6px;}
+  .lightbox-close svg{width:22px;height:22px;}
+  .lightbox-bottom{padding:16px 18px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .lightbox-counter{color:#9FB0A3;font-size:12.5px;}
 </style>
 </head>
 <body>
@@ -177,7 +206,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.10.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -202,6 +231,7 @@ const state = {
   photoPlants: [],
   identifications: [],
   identifyingPhotoId: null,
+  lightbox: null,
 };
 
 /* ============================================================
@@ -474,6 +504,7 @@ function icon(name) {
     camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>`,
     photo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>`,
     back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>`,
+    close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
   };
   return icons[name] || "";
 }
@@ -485,6 +516,36 @@ function goTab(tab) { state.tab = tab; state.modal = null; render(); }
 function openModal(type, data = {}) { state.modal = { type, data }; render(); }
 function closeModal() { state.modal = null; render(); }
 function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
+
+function plantPhotosOrdered(plantId) {
+  return state.photos.filter((p) => p.plant_id === plantId).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+}
+function openLightbox(plantId, photoId) {
+  state.lightbox = { plantId, photoId };
+  render();
+}
+function closeLightbox() {
+  state.lightbox = null;
+  render();
+}
+function lightboxStep(delta) {
+  const list = plantPhotosOrdered(state.lightbox.plantId);
+  const idx = list.findIndex((p) => p.id === state.lightbox.photoId);
+  const next = list[(idx + delta + list.length) % list.length];
+  if (next) {
+    state.lightbox.photoId = next.id;
+    if (!state.photoUrlCache[next.drive_file_id]) ensurePhotoLoaded(next.drive_file_id);
+    render();
+  }
+}
+async function setPrimaryPhoto(plantId, photoId) {
+  try {
+    await restPatch("plants", `id=eq.${plantId}`, { primary_photo_id: photoId, updated_at: new Date().toISOString() });
+    toast("Profile picture updated");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
 
 /* ============================================================
    SCREENS
@@ -641,34 +702,48 @@ function screenPlantDetail() {
   const parent = pl.parent_plant_id ? state.plants.find((p) => p.id === pl.parent_plant_id) : null;
   const photos = state.photos.filter((p) => p.plant_id === pl.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
 
+  const primaryPhoto = pl.primary_photo_id ? photos.find((p) => p.id === pl.primary_photo_id) : null;
+  const heroPhoto = primaryPhoto || photos[0] || null;
+  if (heroPhoto && !state.photoUrlCache[heroPhoto.drive_file_id]) ensurePhotoLoaded(heroPhoto.drive_file_id);
+  const heroUrl = heroPhoto ? state.photoUrlCache[heroPhoto.drive_file_id] : null;
+
   return `
   <div class="screen">
     <div class="container">
       <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('plants')">${icon("back")} Plants</button>
 
-      <div class="tag-card" style="padding:18px 18px 16px 24px;">
-        <div class="tag-id">${pl.accession_number}</div>
-        <div class="display" style="font-size:24px;font-weight:500;margin-top:3px;font-style:${pl.botanical_name ? "italic" : "normal"};">${escapeHtml(plantDisplayName(pl))}</div>
-        ${pl.botanical_name && pl.common_name ? `<div style="color:var(--ink-soft);font-size:14px;margin-top:2px;">${escapeHtml(pl.common_name)}</div>` : ""}
-        ${pl.cultivar ? `<div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">'${escapeHtml(pl.cultivar)}'</div>` : ""}
-
-        ${pl.family || pl.genus ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">${[pl.family, pl.genus].filter(Boolean).join(" · ")}</div>` : ""}
-        <div class="wrap-gap" style="margin-top:12px;">
-          <span class="pill ${pl.status === "active" ? "pill-moss" : "pill-terracotta"}">${STATUS_LABELS[pl.status]}</span>
-          <span class="pill pill-outline">${CATEGORY_LABELS[pl.collection_category]}</span>
-          <span class="pill ${pl.identification_status === "confirmed" ? "pill-moss" : "pill-outline"}">${ID_STATUS_LABELS[pl.identification_status]}</span>
-          ${pl.original_collection ? `<span class="pill pill-pink">Original Collection</span>` : ""}
-          <span class="pill pill-blue">${HEALTH_LABELS[pl.health_status]}</span>
+      <div class="tag-card" style="padding:0;overflow:hidden;">
+        <div class="plant-hero" ${heroUrl ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : ""}>
+          ${heroUrl
+            ? `<img src="${heroUrl}" style="width:100%;height:100%;object-fit:cover;" />`
+            : `<div class="plant-hero-empty">${icon("photo")}<span>No profile picture yet</span></div>`}
         </div>
+        ${photos.length > 0 ? `<button class="hero-change-btn" onclick="event.stopPropagation();openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})">Change photo</button>` : ""}
 
-        <div style="font-size:13px;color:var(--ink-soft);margin-top:12px;">📍 ${loc ? escapeHtml(locationPath(loc)) : "No location set"}</div>
-        ${parent ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:4px;">Propagated from <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}</div>` : ""}
+        <div style="padding:18px 18px 16px 22px;">
+          <div class="tag-id">${pl.accession_number}</div>
+          <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;font-style:${pl.botanical_name ? "italic" : "normal"};line-height:1.2;">${escapeHtml(plantDisplayName(pl))}</div>
+          ${pl.botanical_name && pl.common_name ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(pl.common_name)}</div>` : ""}
+          ${pl.cultivar ? `<div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">'${escapeHtml(pl.cultivar)}'</div>` : ""}
+          ${pl.family || pl.genus ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;letter-spacing:0.2px;">${[pl.family, pl.genus].filter(Boolean).join(" · ")}</div>` : ""}
 
-        ${pl.notes ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);">${escapeHtml(pl.notes)}</div>` : ""}
-        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;">
-          <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit full record</button>
-          <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="moveToHospital('${pl.id}')">Move to Plant Hospital</button>
-          <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">Propagate from this plant</button>
+          <div class="wrap-gap" style="margin-top:13px;">
+            <span class="pill-solid ${pl.status === "active" ? "pill-solid-moss" : "pill-solid-terracotta"}">${STATUS_LABELS[pl.status]}</span>
+            <span class="pill-solid pill-solid-outline">${CATEGORY_LABELS[pl.collection_category]}</span>
+            <span class="pill-solid ${pl.identification_status === "confirmed" ? "pill-solid-moss" : "pill-solid-outline"}">${ID_STATUS_LABELS[pl.identification_status]}</span>
+            ${pl.original_collection ? `<span class="pill-solid pill-solid-pink">Original Collection</span>` : ""}
+            <span class="pill-solid pill-solid-blue">${HEALTH_LABELS[pl.health_status]}</span>
+          </div>
+
+          <div style="font-size:13px;color:var(--ink);font-weight:500;margin-top:14px;">📍 ${loc ? escapeHtml(locationPath(loc)) : "No location set"}</div>
+          ${parent ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:4px;">Propagated from <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}</div>` : ""}
+
+          ${pl.notes ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);">${escapeHtml(pl.notes)}</div>` : ""}
+          <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:12px;">
+            <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit full record</button>
+            <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="moveToHospital('${pl.id}')">Move to Plant Hospital</button>
+            <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">Propagate from this plant</button>
+          </div>
         </div>
       </div>
 
@@ -707,20 +782,24 @@ function screenPlantDetail() {
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
             const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
             const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
+            const isPrimary = pl.primary_photo_id === p.id;
             return `
             <div class="surface" style="padding:14px;">
               <div class="row">
                 <div class="photo-row">
-                  <div class="photo-icon">${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+                  <div class="photo-icon" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openLightbox('${pl.id}','${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
                   <div>
                     <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(p.uploaded_at)}</div>
                     <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
                     ${taggedPlants.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:4px;">Also shows: ${taggedPlants.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
                   </div>
                 </div>
-                ${p.is_primary ? `<span class="pill pill-orange">Primary</span>` : ""}
+                ${isPrimary ? `<span class="pill pill-orange">Profile</span>` : ""}
               </div>
-              <button class="btn-ghost" style="padding:8px 0 0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">Tag other plants in this photo</button>
+              <div style="display:flex;gap:16px;margin-top:8px;">
+                <button class="btn-ghost" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">Tag other plants</button>
+                ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
+              </div>
             </div>`;
           }).join("")}
         </div>`}
@@ -990,6 +1069,25 @@ function modalContent() {
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Add location</button>
       </form>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "choosePrimaryPhoto") {
+    const photos = plantPhotosOrdered(data.plantId);
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Choose profile picture</h3>
+      ${photos.length === 0 ? `<p class="subtle">No photos on this plant yet.</p>` : `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:50vh;overflow-y:auto;">
+          ${photos.map((p) => {
+            const cachedUrl = state.photoUrlCache[p.drive_file_id];
+            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
+            return `
+            <button onclick="setPrimaryPhoto('${data.plantId}','${p.id}')" style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
+              ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
+            </button>`;
+          }).join("")}
+        </div>`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "propagatePlant") {
@@ -1281,8 +1379,40 @@ function render() {
     <button class="fab" onclick="openModal('upload')" aria-label="Add photo">${icon("camera")}</button>
     ${navBar()}
     ${state.modal ? `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${modalContent()}</div></div>` : ""}
+    ${state.lightbox ? renderLightbox() : ""}
   `;
   wireModalForms();
+}
+
+function renderLightbox() {
+  const { plantId, photoId } = state.lightbox;
+  const list = plantPhotosOrdered(plantId);
+  const idx = list.findIndex((p) => p.id === photoId);
+  const p = list[idx];
+  if (!p) { state.lightbox = null; return ""; }
+  const url = state.photoUrlCache[p.drive_file_id];
+  const pl = state.plants.find((x) => x.id === plantId);
+  const isPrimary = pl?.primary_photo_id === p.id;
+
+  return `
+  <div class="lightbox-backdrop" onclick="if(event.target===this)closeLightbox()">
+    <div class="lightbox-top">
+      <div>
+        <div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : ""}</div>
+        <div class="mono" style="font-size:11px;color:#9FB0A3;">${fmtDate(p.uploaded_at)}</div>
+      </div>
+      <button class="lightbox-close" onclick="closeLightbox()">${icon("close")}</button>
+    </div>
+    <div class="lightbox-body">
+      ${list.length > 1 ? `<button class="lightbox-nav" style="position:absolute;left:8px;" onclick="event.stopPropagation();lightboxStep(1)">${icon("back")}</button>` : ""}
+      ${url ? `<img src="${url}" />` : `<span class="subtle">Loading…</span>`}
+      ${list.length > 1 ? `<button class="lightbox-nav" style="position:absolute;right:8px;transform:scaleX(-1);" onclick="event.stopPropagation();lightboxStep(-1)">${icon("back")}</button>` : ""}
+    </div>
+    <div class="lightbox-bottom">
+      ${list.length > 1 ? `<div class="lightbox-counter">${idx + 1} of ${list.length}</div>` : ""}
+      ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setPrimaryPhoto('${plantId}','${p.id}')">Set as profile picture</button>` : `<span class="pill pill-orange">Profile picture</span>`}
+    </div>
+  </div>`;
 }
 
 function wireModalForms() {

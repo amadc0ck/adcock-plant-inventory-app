@@ -124,7 +124,26 @@
 
   .row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .stack{display:flex;flex-direction:column;gap:10px;}
+  .card-grid{display:flex;flex-direction:column;gap:10px;}
   .wrap-gap{display:flex;flex-wrap:wrap;gap:6px;}
+
+  /* ============================================================
+     RESPONSIVE — mobile-first base above; from here up, use the
+     extra real estate on tablet/laptop screens instead of just
+     centering a phone-width column.
+     ============================================================ */
+  @media (min-width: 700px) {
+    .container{max-width:900px;}
+    .card-grid{display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;align-items:start;}
+    .plant-list-thumb{width:120px;height:120px;}
+    .plant-hero{aspect-ratio:16/9;}
+  }
+  @media (min-width: 1100px) {
+    .container{max-width:1280px;}
+    .card-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
+    .plant-list-thumb{width:140px;height:140px;}
+    .login-wrap .container{max-width:none;}
+  }
 
   .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
   .login-box{width:100%;max-width:360px;}
@@ -171,6 +190,12 @@
 
   .thumb-delete-btn{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(37,41,37,0.75);color:var(--parchment);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
   .thumb-delete-btn svg{width:12px;height:12px;}
+
+  .select-check{position:absolute;top:-6px;left:-6px;width:22px;height:22px;border-radius:50%;background:var(--parchment);border:2px solid var(--moss-dim);z-index:2;display:flex;align-items:center;justify-content:center;color:#0F1712;}
+  .select-check.checked{background:var(--moss);border-color:var(--moss);}
+  .select-check svg{width:12px;height:12px;}
+
+  .bulk-action-bar{position:fixed;left:0;right:0;bottom:76px;background:var(--bg-raised);border-top:1px solid var(--line);padding:12px 0;z-index:28;}
 
   /* Plant Detail hero image (profile picture) */
   .plant-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;cursor:pointer;}
@@ -221,7 +246,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.22.0";
+const APP_VERSION = "1.23.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -251,6 +276,8 @@ const state = {
   photoLocations: [],
   inboxLimit: 20,
   tagLocationSearch: "",
+  inboxSelectMode: false,
+  inboxSelected: new Set(),
 };
 
 /* ============================================================
@@ -593,6 +620,7 @@ function icon(name) {
     back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>`,
     close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
     clipboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6M9 19h3"/></svg>`,
+    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>`,
   };
   return icons[name] || "";
 }
@@ -601,6 +629,56 @@ function icon(name) {
    ROUTER / NAV
    ============================================================ */
 function goTab(tab) { state.tab = tab; state.modal = null; render(); }
+function toggleInboxSelectMode() {
+  state.inboxSelectMode = !state.inboxSelectMode;
+  state.inboxSelected = new Set();
+  render();
+}
+function toggleInboxPhotoSelected(photoId) {
+  if (state.inboxSelected.has(photoId)) state.inboxSelected.delete(photoId);
+  else state.inboxSelected.add(photoId);
+  render();
+}
+async function bulkDeletePhotos() {
+  const ids = Array.from(state.inboxSelected);
+  if (!confirm(`Delete ${ids.length} photo${ids.length === 1 ? "" : "s"}? Files stay in Google Drive.`)) return;
+  for (const id of ids) {
+    try {
+      await restPatch("plants", `primary_photo_id=eq.${id}`, { primary_photo_id: null });
+      await restDelete("photo_plants", `photo_id=eq.${id}`);
+      await restDelete("photos", `id=eq.${id}`);
+    } catch (e) { toast(`Failed to delete one photo: ${e.message}`, true); }
+  }
+  toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} deleted`);
+  state.inboxSelectMode = false;
+  state.inboxSelected = new Set();
+  await loadAll();
+}
+async function bulkAttachToPlant(plantId) {
+  const ids = Array.from(state.inboxSelected);
+  for (const id of ids) {
+    try { await restPatch("photos", `id=eq.${id}`, { plant_id: plantId }); }
+    catch (e) { toast(`Failed on one photo: ${e.message}`, true); }
+  }
+  toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} attached`);
+  closeModal();
+  state.inboxSelectMode = false;
+  state.inboxSelected = new Set();
+  await loadAll();
+}
+async function bulkAttachToLocation(locationId) {
+  if (!locationId) { toast("Choose a location first", true); return; }
+  const ids = Array.from(state.inboxSelected);
+  for (const id of ids) {
+    try { await restPatch("photos", `id=eq.${id}`, { location_id: locationId }); }
+    catch (e) { toast(`Failed on one photo: ${e.message}`, true); }
+  }
+  toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} attached to container`);
+  closeModal();
+  state.inboxSelectMode = false;
+  state.inboxSelected = new Set();
+  await loadAll();
+}
 function openModal(type, data = {}) { state.modal = { type, data }; render(); }
 function closeModal() { state.modal = null; render(); }
 function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
@@ -686,45 +764,64 @@ function screenInbox() {
   const limit = state.inboxLimit || 20;
   const visible = unassigned.slice(0, limit);
   const remaining = unassigned.length - visible.length;
+  const selectMode = state.inboxSelectMode;
+  const selectedCount = state.inboxSelected.size;
   return `
   <div class="screen">
     <div class="container">
       <div class="row" style="margin-bottom:4px;">
         <h2 class="display" style="font-size:22px;font-weight:500;margin:0;">Inbox</h2>
-        ${unassigned.length ? `<span class="pill pill-terracotta">${unassigned.length} waiting</span>` : ""}
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${unassigned.length ? `<span class="pill pill-terracotta">${unassigned.length} waiting</span>` : ""}
+          ${unassigned.length ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="toggleInboxSelectMode()">${selectMode ? "Cancel" : "Select"}</button>` : ""}
+        </div>
       </div>
-      <p class="subtle" style="margin-bottom:20px;">Photos land here first — confirm or attach them to a plant.</p>
+      <p class="subtle" style="margin-bottom:20px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Photos land here first — confirm or attach them to a plant."}</p>
       ${unassigned.length === 0 ? `
         <div class="empty"><div class="display">Nothing waiting</div><div>Tap the camera button to add a photo.</div></div>` : `
-        <div class="stack">${visible.map(photoRow).join("")}</div>
+        <div class="card-grid">${visible.map((p) => photoRow(p, selectMode)).join("")}</div>
         ${remaining > 0 ? `<button class="btn btn-secondary btn-block" style="margin-top:16px;" onclick="state.inboxLimit=(state.inboxLimit||20)+20;render()">Show ${Math.min(remaining, 20)} more (${remaining} left)</button>` : ""}`}
     </div>
-  </div>`;
+  </div>
+  ${selectMode && selectedCount > 0 ? `
+    <div class="bulk-action-bar">
+      <div class="container" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span class="mono" style="font-size:12.5px;color:var(--cream);">${selectedCount} selected</span>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Attach to container</button>
+        <button class="btn btn-danger btn-sm" onclick="bulkDeletePhotos()">Delete</button>
+      </div>
+    </div>` : ""}`;
 }
 
-function photoRow(p) {
+function photoRow(p, selectMode) {
   const cachedUrl = state.photoUrlCache[p.drive_file_id];
   if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
   const suggestion = pendingIdentification(p.id);
   const isIdentifying = state.identifyingPhotoId === p.id;
+  const isSelected = state.inboxSelected.has(p.id);
   return `
-  <div class="tag-card">
+  <div class="tag-card" style="${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
     <div class="photo-row">
-      <div class="photo-icon on-cream" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openInboxLightbox('${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+      <div style="position:relative;flex-shrink:0;">
+        ${selectMode ? `<div class="select-check ${isSelected ? "checked" : ""}">${isSelected ? icon("check") : ""}</div>` : ""}
+        <div class="photo-icon on-cream" style="cursor:${cachedUrl && !selectMode ? "pointer" : "default"};" ${cachedUrl && !selectMode ? `onclick="event.stopPropagation();openInboxLightbox('${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+      </div>
       <div style="flex:1;min-width:0;">
         <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
         <div style="font-size:14px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
         ${suggestion ? `
-          <div style="margin-top:8px;padding:8px 10px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:13px;cursor:pointer;" onclick="openModal('identificationDetail',{photoId:'${p.id}'})">
-            Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""} <span style="color:var(--blue);">— compare →</span>
+          <div style="margin-top:8px;padding:8px 10px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:13px;${selectMode ? "" : "cursor:pointer;"}" ${selectMode ? "" : `onclick="event.stopPropagation();openModal('identificationDetail',{photoId:'${p.id}'})"`}>
+            Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""}${selectMode ? "" : ` <span style="color:var(--blue);">— compare →</span>`}
           </div>` : ""}
+        ${!selectMode ? `
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
           ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span> Identifying…' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss suggestion</button>`}
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
           <button class="btn btn-danger btn-sm" onclick="deletePhoto('${p.id}')">Delete</button>
-        </div>
+        </div>` : ""}
       </div>
     </div>
   </div>`;
@@ -768,7 +865,7 @@ function screenPlants() {
       ${list.length === 0 ? `
         <div class="empty"><div class="display">${state.plants.length === 0 ? "No plants yet" : "No matches"}</div>
         <div>${state.plants.length === 0 ? "Add your first plant from the Inbox or a photo." : "Try different search or filters."}</div></div>` : `
-        <div class="stack">${list.map(plantRow).join("")}</div>`}
+        <div class="card-grid">${list.map(plantRow).join("")}</div>`}
     </div>
   </div>`;
 }
@@ -905,7 +1002,7 @@ function screenPlantDetail() {
       </div>
 
       ${timelinePhotos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
-        <div class="stack">
+        <div class="card-grid">
           ${timelinePhotos.map((p) => {
             const cachedUrl = state.photoUrlCache[p.drive_file_id];
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
@@ -972,7 +1069,7 @@ function screenLocations() {
       </div>
       ${state.locations.length === 0 ? `
         <div class="empty"><div class="display">No locations yet</div><div>Add areas, rows, or containers to organize your plants.</div></div>` : `
-        <div class="stack">${topLevel.map(locationCard).join("")}</div>`}
+        <div class="card-grid">${topLevel.map(locationCard).join("")}</div>`}
     </div>
   </div>`;
 }
@@ -1004,7 +1101,7 @@ function screenLocationDetail() {
             <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Inside this ${locationTypeLabel(l.type).toLowerCase()}</h3>
             <span class="subtle">${children.length} total</span>
           </div>
-          <div class="stack">
+          <div class="card-grid">
             ${children.map((c) => {
               const count = aggregatePlantCount(c.id);
               const grandchildren = directChildLocations(c.id).length;
@@ -1030,7 +1127,7 @@ function screenLocationDetail() {
         <span class="subtle">${plants.length} total</span>
       </div>
       ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
-        <div class="stack">${plants.map(plantRow).join("")}</div>`}
+        <div class="card-grid">${plants.map(plantRow).join("")}</div>`}
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Container photos</h3>
@@ -1039,7 +1136,7 @@ function screenLocationDetail() {
       <p class="subtle" style="margin:-6px 0 14px;">Identify or create plants straight from a photo below — no need to re-upload the same shot for each specimen.</p>
 
       ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : `
-        <div class="stack">
+        <div class="card-grid">
           ${photos.map((p) => {
             const cachedUrl = state.photoUrlCache[p.drive_file_id];
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
@@ -1099,7 +1196,7 @@ function screenReports() {
         <h3 class="display" style="font-size:16px;font-weight:500;margin:0;">${title}</h3>
         <span class="pill ${items.length ? "pill-terracotta" : "pill-moss"}">${items.length}</span>
       </div>
-      ${items.length === 0 ? `<p class="subtle" style="margin:0;">${emptyText}</p>` : `<div class="stack">${items.map(renderItem).join("")}</div>`}`;
+      ${items.length === 0 ? `<p class="subtle" style="margin:0;">${emptyText}</p>` : `<div class="card-grid">${items.map(renderItem).join("")}</div>`}`;
   }
 
   function locationItem(l) {
@@ -1269,6 +1366,33 @@ function modalContent() {
           </label>`).join("")}
       </div>
       <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="saveTaggedLocations('${data.photoId}')">Save containers</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "bulkAttachPlant") {
+    const q = (state.attachSearch || "").toLowerCase();
+    const matches = state.plants.filter((p) => !q || [p.accession_number, p.common_name, p.botanical_name].filter(Boolean).join(" ").toLowerCase().includes(q));
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach ${state.inboxSelected.size} photos to plant</h3>
+      <p class="subtle" style="margin:0 0 14px;">All selected photos will be attached to the same plant.</p>
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
+      <div class="stack" style="max-height:44vh;overflow-y:auto;">
+        ${matches.length === 0 ? `<p class="subtle">No plants match.</p>` : matches.map((p) => `
+          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="bulkAttachToPlant('${p.id}')">
+            <span class="mono" style="opacity:0.6;margin-right:6px;">${p.accession_number}</span>${escapeHtml(plantDisplayName(p))}
+          </button>`).join("")}
+      </div>
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "bulkAttachLocation") {
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach ${state.inboxSelected.size} photos to container</h3>
+      <p class="subtle" style="margin:0 0 14px;">All selected photos will move out of the Inbox onto that container's page.</p>
+      <select id="bulk-attach-loc-select">${locationSelectOptions(null)}</select>
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="bulkAttachToLocation(document.getElementById('bulk-attach-loc-select').value)">Attach</button>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 

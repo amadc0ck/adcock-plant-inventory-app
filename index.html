@@ -250,7 +250,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.24.0";
+const APP_VERSION = "1.26.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -275,6 +275,7 @@ const state = {
   photoPlants: [],
   identifications: [],
   identifyingPhotoId: null,
+  identifyingPhotoIdClaude: null,
   lightbox: null,
   plantLocations: [],
   photoLocations: [],
@@ -282,6 +283,8 @@ const state = {
   tagLocationSearch: "",
   inboxSelectMode: false,
   inboxSelected: new Set(),
+  lightboxResumePending: false,
+  lightboxResumeIndex: 0,
 };
 
 /* ============================================================
@@ -376,6 +379,130 @@ async function restDelete(table, idFilter) {
     headers: apiHeaders(),
   });
   if (!res.ok) throw new Error(await res.text());
+}
+async function restUpsert(table, rows, conflictCol = "id") {
+  if (!rows || rows.length === 0) return;
+  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictCol}`, {
+    method: "POST",
+    headers: apiHeaders({ "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }),
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) throw new Error(`${table}: ${await res.text()}`);
+}
+
+function downloadFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(val) {
+  if (val === null || val === undefined) return "";
+  const s = String(val);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+async function exportFullBackup() {
+  try {
+    toast("Preparing backup…");
+    const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters] = await Promise.all([
+      restGet("locations", "?select=*"),
+      restGet("plants", "?select=*"),
+      restGet("photos", "?select=*"),
+      restGet("identifications", "?select=*"),
+      restGet("photo_plants", "?select=*"),
+      restGet("plant_locations", "?select=*"),
+      restGet("photo_locations", "?select=*"),
+      restGet("accession_counters", "?select=*"),
+    ]);
+    const backup = {
+      exported_at: new Date().toISOString(),
+      app_version: APP_VERSION,
+      locations, plants, photos, identifications,
+      photo_plants: photoPlants,
+      plant_locations: plantLocations,
+      photo_locations: photoLocations,
+      accession_counters: counters,
+    };
+    downloadFile(
+      `adcock-botanical-garden-backup-${new Date().toISOString().slice(0, 10)}.json`,
+      JSON.stringify(backup, null, 2),
+      "application/json"
+    );
+    toast("Backup downloaded");
+  } catch (e) { toast(e.message, true); }
+}
+
+function exportPlantsCsv() {
+  const headers = ["accession_number", "botanical_name", "common_name", "cultivar", "family", "genus", "species",
+    "identification_status", "collection_category", "original_collection", "status", "health_status",
+    "location_path", "date_acquired", "acquisition_source_type", "acquisition_source_name",
+    "native_range", "hardy_to", "light_requirements", "water_needs", "notes"];
+  const rows = state.plants.map((pl) => {
+    const loc = locationById(pl.location_id);
+    return [
+      pl.accession_number, pl.botanical_name, pl.common_name, pl.cultivar, pl.family, pl.genus, pl.species,
+      pl.identification_status, pl.collection_category, pl.original_collection, pl.status, pl.health_status,
+      loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
+      pl.native_range, pl.hardy_to, pl.light_requirements, pl.water_needs, pl.notes,
+    ].map(csvEscape).join(",");
+  });
+  const csv = [headers.join(","), ...rows].join("\r\n");
+  downloadFile(`adcock-plants-${new Date().toISOString().slice(0, 10)}.csv`, csv, "text/csv");
+  toast("CSV downloaded");
+}
+
+async function handleImportBackup() {
+  const fileInput = document.getElementById("import-backup-file");
+  const file = fileInput?.files?.[0];
+  if (!file) { toast("Choose a backup file first", true); return; }
+  if (!confirm("Import this backup? Existing records with matching IDs will be updated, not duplicated.")) return;
+
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data.locations || !data.plants) throw new Error("This doesn't look like a valid backup file.");
+
+    toast("Importing — this may take a moment…");
+
+    // Locations: two passes to satisfy self-referencing parent_location_id
+    // (a child can't be inserted before its parent exists yet).
+    if (data.locations?.length) {
+      await restUpsert("locations", data.locations.map((l) => ({ ...l, parent_location_id: null })));
+      await restUpsert("locations", data.locations);
+    }
+    // Plants: strip primary_photo_id first since photos don't exist yet
+    if (data.plants?.length) {
+      await restUpsert("plants", data.plants.map((p) => ({ ...p, primary_photo_id: null })));
+    }
+    if (data.photos?.length) {
+      await restUpsert("photos", data.photos);
+    }
+    // Plants pass 2: now that photos exist, restore primary_photo_id
+    if (data.plants?.length) {
+      await restUpsert("plants", data.plants);
+    }
+    if (data.identifications?.length) await restUpsert("identifications", data.identifications);
+    if (data.photo_plants?.length) await restUpsert("photo_plants", data.photo_plants);
+    if (data.plant_locations?.length) await restUpsert("plant_locations", data.plant_locations);
+    if (data.photo_locations?.length) await restUpsert("photo_locations", data.photo_locations);
+    if (data.accession_counters?.length) await restUpsert("accession_counters", data.accession_counters, "year");
+
+    toast("Backup imported successfully");
+    fileInput.value = "";
+    await loadAll();
+  } catch (e) {
+    toast(`Import failed: ${e.message}`, true);
+  }
 }
 
 async function login(email, password) {
@@ -499,6 +626,9 @@ function locationById(id) {
 }
 function pendingIdentification(photoId) {
   return state.identifications.find((i) => i.photo_id === photoId && i.status === "pending");
+}
+function pendingIdentifications(photoId) {
+  return state.identifications.filter((i) => i.photo_id === photoId && i.status === "pending");
 }
 // Every location a plant occupies: its primary location_id, plus any
 // additional ones from plant_locations. Primary is always first.
@@ -712,6 +842,24 @@ function openInboxLightbox(photoId) {
   state.lightbox = { mode: "inbox", photoId };
   render();
 }
+function prepareLightboxResume() {
+  if (!state.lightbox || state.lightbox.mode !== "inbox") return;
+  const list = lightboxPhotoList();
+  state.lightboxResumeIndex = list.findIndex((p) => p.id === state.lightbox.photoId);
+  state.lightboxResumePending = true;
+}
+function maybeResumeLightbox() {
+  if (!state.lightboxResumePending) return;
+  state.lightboxResumePending = false;
+  const freshList = state.photos.filter((p) => !p.plant_id && !p.location_id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  if (freshList.length > 0) {
+    const idx = Math.min(state.lightboxResumeIndex, freshList.length - 1);
+    const next = freshList[idx];
+    state.lightbox = { mode: "inbox", photoId: next.id };
+    if (!state.photoUrlCache[next.drive_file_id]) ensurePhotoLoaded(next.drive_file_id);
+    render();
+  }
+}
 function closeLightbox() {
   state.lightbox = null;
   render();
@@ -806,9 +954,21 @@ function screenInbox() {
 function photoRow(p, selectMode) {
   const cachedUrl = state.photoUrlCache[p.drive_file_id];
   if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
-  const suggestion = pendingIdentification(p.id);
+  const suggestions = pendingIdentifications(p.id);
+  const plantnetSuggestion = suggestions.find((s) => s.source === "PlantNet");
+  const claudeSuggestion = suggestions.find((s) => s.source === "Claude");
   const isIdentifying = state.identifyingPhotoId === p.id;
+  const isIdentifyingClaude = state.identifyingPhotoIdClaude === p.id;
   const isSelected = state.inboxSelected.has(p.id);
+
+  function suggestionBadge(s) {
+    return `
+      <div style="margin-top:6px;padding:7px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;${selectMode ? "" : "cursor:pointer;"}" ${selectMode ? "" : `onclick="event.stopPropagation();openModal('identificationDetail',{identificationId:'${s.id}'})"`}>
+        <span class="mono" style="font-size:9.5px;color:var(--blue);text-transform:uppercase;">${s.source}</span><br/>
+        <em>${escapeHtml(s.suggested_name)}</em>${s.confidence ? ` (${Math.round(s.confidence * 100)}%)` : ""}${selectMode ? "" : ` <span style="color:var(--blue);">— compare →</span>`}
+      </div>`;
+  }
+
   return `
   <div class="tag-card" style="padding:0;overflow:hidden;${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
     <div class="inbox-photo-hero" ${cachedUrl && !selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${cachedUrl && !selectMode ? "pointer" : "default"};">
@@ -818,13 +978,12 @@ function photoRow(p, selectMode) {
     <div style="padding:12px 14px 14px;">
       <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
       <div style="font-size:13.5px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
-      ${suggestion ? `
-        <div style="margin-top:8px;padding:7px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;${selectMode ? "" : "cursor:pointer;"}" ${selectMode ? "" : `onclick="event.stopPropagation();openModal('identificationDetail',{photoId:'${p.id}'})"`}>
-          Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""}${selectMode ? "" : ` <span style="color:var(--blue);">— compare →</span>`}
-        </div>` : ""}
+      ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
+      ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
       ${!selectMode ? `
       <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px;">
-        ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")} ${isIdentifying ? "Identifying…" : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss</button>`}
+        ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")} ${isIdentifying ? "…" : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
+        ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : icon("search")} ${isIdentifyingClaude ? "…" : "Ask Claude"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${claudeSuggestion.id}')">Dismiss Claude</button>`}
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("link")} Plant</button>
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Container</button>
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")} New</button>
@@ -1147,11 +1306,15 @@ function screenLocationDetail() {
           ${photos.map((p) => {
             const cachedUrl = state.photoUrlCache[p.drive_file_id];
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
-            const suggestion = pendingIdentification(p.id);
+            const suggestions = pendingIdentifications(p.id);
+            const plantnetSuggestion = suggestions.find((s) => s.source === "PlantNet");
+            const claudeSuggestion = suggestions.find((s) => s.source === "Claude");
             const isIdentifying = state.identifyingPhotoId === p.id;
+            const isIdentifyingClaude = state.identifyingPhotoIdClaude === p.id;
             const claimedBy = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
             const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
             const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
+            const suggestionBadge = (s) => `<div style="margin-top:6px;padding:6px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;cursor:pointer;" onclick="openModal('identificationDetail',{identificationId:'${s.id}'})"><span class="mono" style="font-size:9px;color:var(--blue);text-transform:uppercase;">${s.source}</span> <em>${escapeHtml(s.suggested_name)}</em>${s.confidence ? ` (${Math.round(s.confidence * 100)}%)` : ""} <span style="color:var(--blue);">— compare →</span></div>`;
             return `
             <div class="tag-card">
               <div class="photo-row">
@@ -1164,11 +1327,13 @@ function screenLocationDetail() {
                     const otherLocs = allLocationsForPhoto(p).filter((loc) => loc.id !== l.id);
                     return otherLocs.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:2px;">Also in: ${otherLocs.map((loc) => escapeHtml(loc.name)).join(", ")}</div>` : "";
                   })()}
-                  ${suggestion ? `<div style="margin-top:6px;padding:6px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;cursor:pointer;" onclick="openModal('identificationDetail',{photoId:'${p.id}'})">Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""} <span style="color:var(--blue);">— compare →</span></div>` : ""}
+                  ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
+                  ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
                 </div>
               </div>
               <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
-                ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss</button>`}
+                ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
+                ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : "Ask Claude"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${claudeSuggestion.id}')">Dismiss Claude</button>`}
                 <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachToLocalPlant',{photoId:'${p.id}', locationId:'${l.id}'})">Add to plant here</button>
                 <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('tagLocations',{photoId:'${p.id}'})">Tag other containers</button>
                 <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
@@ -1263,6 +1428,25 @@ function screenSettings() {
         <div class="subtle" style="margin-top:4px;">${state.session?.email || ""}</div>
         <button class="btn btn-danger btn-sm" style="margin-top:14px;" onclick="logout()">Sign out</button>
       </div>
+      <div class="divider"></div>
+      <div class="surface" style="padding:16px;">
+        <div style="font-weight:600;font-size:14.5px;">Data</div>
+        <p class="subtle" style="margin-top:6px;line-height:1.5;">
+          Export a full backup any time — it's the only copy of your data you hold outside Supabase.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="exportFullBackup()">Export full backup (JSON)</button>
+          <button class="btn btn-secondary btn-sm" onclick="exportPlantsCsv()">Export plants (CSV)</button>
+        </div>
+        <div style="margin-top:14px;">
+          <label style="margin-top:0;">Import backup (JSON)</label>
+          <input type="file" id="import-backup-file" accept="application/json" style="padding:8px;" />
+          <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="handleImportBackup()">Import</button>
+          <p class="subtle" style="margin-top:8px;line-height:1.5;">
+            Safe to re-run — matches existing records by ID and updates them rather than duplicating. Best used to restore onto an empty or partially-empty database, not to merge two separately-grown datasets.
+          </p>
+        </div>
+      </div>
       <p class="subtle" style="margin-top:20px;line-height:1.5;">
         Note: sessions aren't remembered across page reloads yet — you'll need to sign in again if you refresh. Expected for now.
       </p>
@@ -1301,16 +1485,40 @@ function modalContent() {
   }
 
   if (type === "identificationDetail") {
-    const photo = state.photos.find((p) => p.id === data.photoId);
-    const suggestion = pendingIdentification(data.photoId);
+    const suggestion = state.identifications.find((i) => i.id === data.identificationId);
+    if (!suggestion) return `<p class="subtle">This suggestion is no longer available.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
+    const photo = state.photos.find((p) => p.id === suggestion.photo_id);
     const cachedUrl = photo ? state.photoUrlCache[photo.drive_file_id] : null;
+    const photoBlock = cachedUrl ? `<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;"><img src="${cachedUrl}" style="width:100%;max-height:220px;object-fit:cover;display:block;" /></div>` : "";
+
+    if (suggestion.source === "Claude") {
+      const r = suggestion.raw_response || {};
+      return `
+        <div class="modal-handle"></div>
+        <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Claude's identification</h3>
+        <p class="subtle" style="margin:0 0 14px;">A general-purpose read on your photo — reasoning-based, not a computed match score like Pl@ntNet.</p>
+        ${photoBlock}
+        <div class="surface" style="padding:14px;">
+          <div class="row">
+            <div>
+              <div style="font-size:15px;font-style:italic;">${escapeHtml(suggestion.suggested_name)}</div>
+              ${r.common_name ? `<div style="font-size:12.5px;color:#C9D6CC;margin-top:2px;">${escapeHtml(r.common_name)}</div>` : ""}
+            </div>
+            <span class="pill pill-orange" style="text-transform:capitalize;">${escapeHtml(r.confidence || "—")}</span>
+          </div>
+          ${r.reasoning ? `<p style="font-size:13px;color:#C9D6CC;margin-top:10px;line-height:1.5;">${escapeHtml(r.reasoning)}</p>` : ""}
+        </div>
+        <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Close</button>`;
+    }
+
+    // Pl@ntNet — candidate list with reference images
     const results = suggestion?.raw_response?.results || [];
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Compare candidates</h3>
       <p class="subtle" style="margin:0 0 14px;">Your photo on top, Pl@ntNet's reference photos below for each possible match.</p>
 
-      ${cachedUrl ? `<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;"><img src="${cachedUrl}" style="width:100%;max-height:220px;object-fit:cover;display:block;" /></div>` : ""}
+      ${photoBlock}
 
       ${results.length === 0 ? `<p class="subtle">No candidate details available for this suggestion.</p>` : `
         <div class="stack">
@@ -1777,6 +1985,30 @@ async function identifyPhoto(photoId) {
     render();
   }
 }
+async function identifyPhotoClaude(photoId) {
+  state.identifyingPhotoIdClaude = photoId;
+  render();
+  try {
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/identify-plant-claude`, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ photo_id: photoId }),
+    });
+    const data = await res.json();
+    state.identifyingPhotoIdClaude = null;
+    if (data.error) {
+      toast(data.error, true);
+      render();
+      return;
+    }
+    state.identifications.unshift(data.identification);
+    render();
+  } catch (e) {
+    state.identifyingPhotoIdClaude = null;
+    toast(e.message, true);
+    render();
+  }
+}
 async function dismissIdentification(id) {
   try {
     await restPatch("identifications", `id=eq.${id}`, { status: "rejected" });
@@ -1836,6 +2068,7 @@ async function attachPhotoToPlant(photoId, plantId) {
     toast("Photo attached");
     closeModal();
     await loadAll();
+    maybeResumeLightbox();
   } catch (e) { toast(e.message, true); }
 }
 async function saveTaggedLocations(photoId) {
@@ -1864,6 +2097,7 @@ async function attachPhotoToLocation(photoId, locationId) {
     toast("Photo attached to container");
     closeModal();
     await loadAll();
+    maybeResumeLightbox();
   } catch (e) { toast(e.message, true); }
 }
 async function removePhotoFromLocation(photoId, locationId) {
@@ -1914,6 +2148,7 @@ async function deletePhoto(photoId) {
     await restDelete("photos", `id=eq.${photoId}`);
     toast("Photo deleted");
     await loadAll();
+    maybeResumeLightbox();
   } catch (e) { toast(e.message, true); }
 }
 async function saveTaggedPlants(photoId) {
@@ -2060,24 +2295,31 @@ function renderLightbox() {
   const url = state.photoUrlCache[p.drive_file_id];
   const pl = !isInbox ? state.plants.find((x) => x.id === plantId) : null;
   const isPrimary = pl?.primary_photo_id === p.id;
-  const suggestion = isInbox ? pendingIdentification(p.id) : null;
+  const plantnetSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "PlantNet") : null;
+  const claudeSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "Claude") : null;
   const isIdentifying = state.identifyingPhotoId === p.id;
+  const isIdentifyingClaude = state.identifyingPhotoIdClaude === p.id;
 
   const titleLine = isInbox
     ? `<div style="font-size:13.5px;">Inbox photo</div>`
     : `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : ""}</div>`;
 
+  const lightboxSuggestionLine = (s) => `
+    <div style="text-align:center;font-size:12.5px;color:var(--cream);margin-bottom:4px;cursor:pointer;" onclick="event.stopPropagation();openModal('identificationDetail',{identificationId:'${s.id}'})">
+      <span class="mono" style="font-size:9px;color:var(--blue);text-transform:uppercase;">${s.source}</span> <em>${escapeHtml(s.suggested_name)}</em>${s.confidence ? ` (${Math.round(s.confidence * 100)}%)` : ""} <span style="color:var(--blue);">— compare</span>
+    </div>`;
+
   const bottomActions = isInbox ? `
-    ${suggestion ? `
-      <div style="text-align:center;font-size:12.5px;color:var(--cream);margin-bottom:4px;">
-        Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""}
-      </div>` : ""}
-    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
-      ${!suggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifying ? "disabled" : ""} onclick="event.stopPropagation();identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('identificationDetail',{photoId:'${p.id}'})">Compare</button>`}
-      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
-      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
-      <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
-      <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">Delete</button>
+    ${plantnetSuggestion ? lightboxSuggestionLine(plantnetSuggestion) : ""}
+    ${claudeSuggestion ? lightboxSuggestionLine(claudeSuggestion) : ""}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px;">
+      ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifying ? "disabled" : ""} onclick="event.stopPropagation();identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : ""}
+      ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifyingClaude ? "disabled" : ""} onclick="event.stopPropagation();identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : "Ask Claude"}</button>` : ""}
+      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
+      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
+      <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
+
+      <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();deletePhoto('${p.id}')">Delete</button>
     </div>
   ` : `
     ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setPrimaryPhoto('${plantId}','${p.id}')">Set as profile picture</button>` : `<span class="pill pill-orange">Profile picture</span>`}
@@ -2196,6 +2438,7 @@ function wireModalForms() {
         toast(`Created ${newPlant.accession_number}`);
         closeModal();
         await loadAll();
+        maybeResumeLightbox();
       } catch (e) { toast(e.message, true); }
     };
   }

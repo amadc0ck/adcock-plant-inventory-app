@@ -160,7 +160,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.2.0";
 const APP_UPDATED = "2026-08-23";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -181,6 +181,58 @@ const state = {
   attachSearch: "",
   plantFilters: { category: "", status: "", idStatus: "", original: "" },
 };
+
+/* ============================================================
+   SESSION PERSISTENCE — real localStorage now that the app is
+   hosted on its own domain (not inside Claude's preview sandbox,
+   which blocks browser storage). Keeps you logged in across
+   refreshes, and silently refreshes the access token before it
+   expires so you're not booted out mid-session either.
+   ============================================================ */
+function saveSession(session) {
+  try { localStorage.setItem("abg_session", JSON.stringify(session)); } catch (e) {}
+}
+function loadStoredSession() {
+  try {
+    const raw = localStorage.getItem("abg_session");
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function clearStoredSession() {
+  try { localStorage.removeItem("abg_session"); } catch (e) {}
+}
+
+async function refreshAccessToken(refresh_token) {
+  const res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: state.configKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.access_token) throw new Error(data.error_description || data.msg || "Session refresh failed");
+  return data;
+}
+
+// Refreshes the access token if it's within 5 minutes of expiring.
+// Called before data loads so a stale token never causes a failed request.
+async function ensureFreshSession() {
+  if (!state.session) return;
+  if (state.session.expires_at && Date.now() < state.session.expires_at - 5 * 60 * 1000) return;
+  try {
+    const data = await refreshAccessToken(state.session.refresh_token);
+    state.session = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      email: data.user?.email || state.session.email,
+      expires_at: Date.now() + data.expires_in * 1000,
+    };
+    saveSession(state.session);
+  } catch (e) {
+    clearStoredSession();
+    state.session = null;
+    toast("Your session expired — please sign in again.", true);
+  }
+}
 
 /* ============================================================
    API HELPERS
@@ -257,6 +309,8 @@ async function startDriveConnect() {
    DATA LOADING
    ============================================================ */
 async function loadAll() {
+  await ensureFreshSession();
+  if (!state.session) { render(); return; }
   state.loading = true;
   render();
   try {
@@ -832,6 +886,7 @@ async function attachPhotoToPlant(photoId, plantId) {
   } catch (e) { toast(e.message, true); }
 }
 function logout() {
+  clearStoredSession();
   state.session = null; state.photos = []; state.plants = []; state.locations = [];
   render();
 }
@@ -904,7 +959,13 @@ function render() {
       render();
       try {
         const data = await login(email, password);
-        state.session = { access_token: data.access_token, email: data.user.email };
+        state.session = {
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          email: data.user.email,
+          expires_at: Date.now() + data.expires_in * 1000,
+        };
+        saveSession(state.session);
         state.loading = false;
         await loadAll();
       } catch (e) {
@@ -1034,7 +1095,33 @@ function wireModalForms() {
   }
 }
 
-render();
+async function boot() {
+  const stored = loadStoredSession();
+  if (stored) {
+    if (stored.expires_at && Date.now() < stored.expires_at - 60 * 1000) {
+      state.session = stored;
+      await loadAll();
+      return;
+    }
+    // Access token expired — try a silent refresh before giving up
+    try {
+      const data = await refreshAccessToken(stored.refresh_token);
+      state.session = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        email: data.user?.email || stored.email,
+        expires_at: Date.now() + data.expires_in * 1000,
+      };
+      saveSession(state.session);
+      await loadAll();
+      return;
+    } catch (e) {
+      clearStoredSession();
+    }
+  }
+  render();
+}
+boot();
 </script>
 </body>
 </html>

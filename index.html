@@ -87,6 +87,9 @@
   .btn-block{width:100%;}
   .btn-sm{padding:7px 12px;font-size:12.5px;}
   .btn-on-cream{color:var(--ink);border-color:rgba(37,41,37,0.2);}
+  .icon-btn{display:inline-flex;align-items:center;gap:6px;}
+  .icon-btn svg{width:15px;height:15px;flex-shrink:0;}
+  .btn-danger.icon-btn{padding:9px 10px;}
 
   input,select,textarea{background:var(--bg);border:1px solid var(--line);color:var(--cream);border-radius:8px;padding:11px 12px;font-size:15px;font-family:inherit;width:100%;}
   input:focus,select:focus,textarea:focus{outline:2px solid var(--moss);outline-offset:1px;}
@@ -246,7 +249,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.23.0";
+const APP_VERSION = "1.23.1";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -621,6 +624,11 @@ function icon(name) {
     close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
     clipboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 11h6M9 15h6M9 19h3"/></svg>`,
     check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>`,
+    search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`,
+    plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>`,
+    trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/><path d="M10 11v6M14 11v6"/></svg>`,
+    link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8"/></svg>`,
+    pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s7-7.58 7-12.5A7 7 0 0 0 5 9.5C5 14.42 12 22 12 22Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`,
   };
   return icons[name] || "";
 }
@@ -816,11 +824,11 @@ function photoRow(p, selectMode) {
           </div>` : ""}
         ${!selectMode ? `
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
-          ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span> Identifying…' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss suggestion</button>`}
+          ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")} ${isIdentifying ? "Identifying…" : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss suggestion</button>`}
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
-          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
-          <button class="btn btn-danger btn-sm" onclick="deletePhoto('${p.id}')">Delete</button>
+          <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")} New plant</button>
+          <button class="btn btn-danger btn-sm icon-btn" onclick="deletePhoto('${p.id}')" aria-label="Delete">${icon("trash")}</button>
         </div>` : ""}
       </div>
     </div>

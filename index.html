@@ -220,7 +220,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.14.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -246,6 +246,7 @@ const state = {
   identifications: [],
   identifyingPhotoId: null,
   lightbox: null,
+  plantLocations: [],
 };
 
 /* ============================================================
@@ -412,13 +413,14 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations] = await Promise.all([
       restGet("photos", "?select=*&order=uploaded_at.desc"),
       restGet("plants", "?select=*&order=accession_number.asc"),
       restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
       restGet("google_auth_tokens", "?select=expires_at&limit=1"),
       restGet("photo_plants", "?select=*"),
       restGet("identifications", "?select=*&order=created_at.desc"),
+      restGet("plant_locations", "?select=*"),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -426,6 +428,7 @@ async function loadAll() {
     state.driveToken = tokens[0] || null;
     state.photoPlants = photoPlants;
     state.identifications = identifications;
+    state.plantLocations = plantLocations;
   } catch (e) {
     toast(e.message, true);
   }
@@ -447,6 +450,26 @@ function locationById(id) {
 }
 function pendingIdentification(photoId) {
   return state.identifications.find((i) => i.photo_id === photoId && i.status === "pending");
+}
+// Every location a plant occupies: its primary location_id, plus any
+// additional ones from plant_locations. Primary is always first.
+function allLocationsForPlant(pl) {
+  const ids = [];
+  if (pl.location_id) ids.push(pl.location_id);
+  state.plantLocations.filter((pll) => pll.plant_id === pl.id).forEach((pll) => {
+    if (!ids.includes(pll.location_id)) ids.push(pll.location_id);
+  });
+  return ids.map((id) => locationById(id)).filter(Boolean);
+}
+function additionalLocationRows(plantId) {
+  return state.plantLocations.filter((pll) => pll.plant_id === plantId);
+}
+// Every plant present at a location, whether as primary or additional
+function plantsAtLocation(locationId) {
+  const primaryIds = state.plants.filter((p) => p.location_id === locationId).map((p) => p.id);
+  const additionalIds = state.plantLocations.filter((pll) => pll.location_id === locationId).map((pll) => pll.plant_id);
+  const allIds = new Set([...primaryIds, ...additionalIds]);
+  return state.plants.filter((p) => allIds.has(p.id));
 }
 
 function locationPath(loc) {
@@ -653,7 +676,10 @@ function screenPlants() {
     if (f.idStatus && pl.identification_status !== f.idStatus) return false;
     if (f.original === "yes" && !pl.original_collection) return false;
     if (f.original === "no" && pl.original_collection) return false;
-    if (f.location && pl.location_id !== f.location) return false;
+    if (f.location) {
+      const plantLocIds = allLocationsForPlant(pl).map((l) => l.id);
+      if (!plantLocIds.includes(f.location)) return false;
+    }
     return true;
   });
 
@@ -702,7 +728,7 @@ function plantRow(pl) {
         ${pl.status !== "active" ? `<span class="pill-solid pill-solid-terracotta">${STATUS_LABELS[pl.status]}</span>` : ""}
       </div>
       <div class="row" style="margin-top:8px;">
-        <div style="font-size:12px;color:var(--ink-soft);">📍 ${loc ? escapeHtml(locationPath(loc)) : "No location set"}</div>
+        <div style="font-size:12px;color:var(--ink-soft);">📍 ${loc ? escapeHtml(locationPath(loc)) : "No location set"}${additionalLocationRows(pl.id).length ? ` <span style="color:var(--blue);">+${additionalLocationRows(pl.id).length} more</span>` : ""}</div>
         <div class="mono" style="font-size:11px;color:var(--moss-dim);flex-shrink:0;">${photos.length} photo${photos.length === 1 ? "" : "s"}</div>
       </div>
     </div>
@@ -752,8 +778,26 @@ function screenPlantDetail() {
             <span class="pill-solid pill-solid-blue">${HEALTH_LABELS[pl.health_status]}</span>
           </div>
 
-          <div style="font-size:13px;color:var(--ink);font-weight:500;margin-top:14px;">📍 ${loc ? escapeHtml(locationPath(loc)) : "No location set"}</div>
-          ${parent ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:4px;">Propagated from <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}</div>` : ""}
+          <div style="margin-top:14px;">
+            ${(() => {
+              const allLocs = allLocationsForPlant(pl);
+              const extraRows = additionalLocationRows(pl.id);
+              if (allLocs.length === 0) {
+                return `<div style="font-size:13px;color:var(--ink);font-weight:500;">📍 No location set</div>`;
+              }
+              return allLocs.map((l, i) => {
+                const isPrimary = i === 0 && l.id === pl.location_id;
+                const row = extraRows.find((r) => r.location_id === l.id);
+                return `
+                <div class="row" style="margin-top:${i > 0 ? "3" : "0"}px;">
+                  <div style="font-size:13px;color:var(--ink);font-weight:500;">📍 ${escapeHtml(locationPath(l))}${isPrimary ? ` <span style="font-size:11px;color:var(--ink-soft);font-weight:400;">(main)</span>` : ""}</div>
+                  ${!isPrimary && row ? `<button class="btn-ghost" style="padding:0;font-size:11.5px;color:var(--terracotta);" onclick="removePlantLocation('${row.id}')">Remove</button>` : ""}
+                </div>`;
+              }).join("");
+            })()}
+            <button class="btn-ghost" style="padding:6px 0 0;font-size:12px;color:var(--chicory-oncream);" onclick="openModal('addPlantLocation',{plantId:'${pl.id}'})">+ Add another location</button>
+          </div>
+          ${parent ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:8px;">Propagated from <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}</div>` : ""}
 
           ${pl.notes ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);">${escapeHtml(pl.notes)}</div>` : ""}
           <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:12px;">
@@ -830,7 +874,7 @@ function screenLocations() {
 
   function renderNode(l, depth) {
     const children = state.locations.filter((c) => c.parent_location_id === l.id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
-    const plantCount = state.plants.filter((p) => p.location_id === l.id).length;
+    const plantCount = plantsAtLocation(l.id).length;
     const photoCount = state.photos.filter((p) => p.location_id === l.id).length;
     return `
       <div class="tag-card ${depth > 0 ? "loc-child" : ""}" style="${depth > 0 ? "margin-top:8px;" : ""}">
@@ -1125,6 +1169,20 @@ function modalContent() {
       <button class="btn-ghost btn-block" style="margin-top:8px;text-align:center;justify-content:center;" onclick="state.plantFilters={category:'',status:'',idStatus:'',original:'',location:''};render()">Clear all filters</button>`;
   }
 
+  if (type === "addPlantLocation") {
+    const pl = state.plants.find((p) => p.id === data.plantId);
+    const existingIds = allLocationsForPlant(pl).map((l) => l.id);
+    const options = locationOptionList().filter((o) => !existingIds.includes(o.id));
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add another location</h3>
+      <p class="subtle" style="margin:0 0 14px;">For plants that occupy more than one spot — a groundcover or vine spanning several containers, for example.</p>
+      ${options.length === 0 ? `<p class="subtle">No other locations available to add.</p>` : `
+        <select id="add-loc-select">${options.map((o) => `<option value="${o.id}">${escapeHtml(o.label)}</option>`).join("")}</select>
+        <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="addPlantLocation('${data.plantId}', document.getElementById('add-loc-select').value)">Add location</button>`}
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "choosePrimaryPhoto") {
     const photos = plantPhotosOrdered(data.plantId);
     return `
@@ -1284,6 +1342,24 @@ async function dismissIdentification(id) {
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
+async function addPlantLocation(plantId, locationId) {
+  if (!locationId) return;
+  try {
+    await restPost("plant_locations", { plant_id: plantId, location_id: locationId });
+    toast("Location added");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+async function removePlantLocation(rowId) {
+  if (!confirm("Remove this location from the plant?")) return;
+  try {
+    await restDelete("plant_locations", `id=eq.${rowId}`);
+    toast("Location removed");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function moveToHospital(plantId) {
   const hospital = state.locations.find((l) => l.name === "Plant Hospital" && !l.parent_location_id);
   if (!hospital) {

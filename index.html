@@ -176,7 +176,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.5.1";
+const APP_VERSION = "1.5.2";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1129,11 +1129,18 @@ function wireModalForms() {
 }
 
 async function boot() {
+  const cameFromDriveConnect = window.location.hash === "#drive-connected";
+  if (cameFromDriveConnect) {
+    history.replaceState(null, "", window.location.pathname);
+  }
+
   const stored = loadStoredSession();
   if (stored) {
     if (stored.expires_at && Date.now() < stored.expires_at - 60 * 1000) {
       state.session = stored;
+      if (cameFromDriveConnect) state.tab = "settings";
       await loadAll();
+      if (cameFromDriveConnect) toast("Google Drive connected");
       return;
     }
     // Access token expired — try a silent refresh before giving up
@@ -1146,7 +1153,9 @@ async function boot() {
         expires_at: Date.now() + data.expires_in * 1000,
       };
       saveSession(state.session);
+      if (cameFromDriveConnect) state.tab = "settings";
       await loadAll();
+      if (cameFromDriveConnect) toast("Google Drive connected");
       return;
     } catch (e) {
       clearStoredSession();

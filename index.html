@@ -220,7 +220,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.18.1";
+const APP_VERSION = "1.19.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -594,15 +594,25 @@ function plantCoverPhoto(pl) {
   return photos[0] || null;
 }
 function openLightbox(plantId, photoId) {
-  state.lightbox = { plantId, photoId };
+  state.lightbox = { mode: "plant", plantId, photoId };
+  render();
+}
+function openInboxLightbox(photoId) {
+  state.lightbox = { mode: "inbox", photoId };
   render();
 }
 function closeLightbox() {
   state.lightbox = null;
   render();
 }
+function lightboxPhotoList() {
+  if (state.lightbox.mode === "inbox") {
+    return state.photos.filter((p) => !p.plant_id && !p.location_id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  }
+  return plantPhotosOrdered(state.lightbox.plantId);
+}
 function lightboxStep(delta) {
-  const list = plantPhotosOrdered(state.lightbox.plantId);
+  const list = lightboxPhotoList();
   const idx = list.findIndex((p) => p.id === state.lightbox.photoId);
   const next = list[(idx + delta + list.length) % list.length];
   if (next) {
@@ -676,7 +686,7 @@ function photoRow(p) {
   return `
   <div class="tag-card">
     <div class="photo-row">
-      <div class="photo-icon on-cream">${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+      <div class="photo-icon on-cream" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openInboxLightbox('${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
       <div style="flex:1;min-width:0;">
         <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
         <div style="font-size:14px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
@@ -1726,20 +1736,42 @@ function render() {
 }
 
 function renderLightbox() {
+  const isInbox = state.lightbox.mode === "inbox";
   const { plantId, photoId } = state.lightbox;
-  const list = plantPhotosOrdered(plantId);
+  const list = lightboxPhotoList();
   const idx = list.findIndex((p) => p.id === photoId);
   const p = list[idx];
   if (!p) { state.lightbox = null; return ""; }
   const url = state.photoUrlCache[p.drive_file_id];
-  const pl = state.plants.find((x) => x.id === plantId);
+  const pl = !isInbox ? state.plants.find((x) => x.id === plantId) : null;
   const isPrimary = pl?.primary_photo_id === p.id;
+  const suggestion = isInbox ? pendingIdentification(p.id) : null;
+  const isIdentifying = state.identifyingPhotoId === p.id;
+
+  const titleLine = isInbox
+    ? `<div style="font-size:13.5px;">Inbox photo</div>`
+    : `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : ""}</div>`;
+
+  const bottomActions = isInbox ? `
+    ${suggestion ? `
+      <div style="text-align:center;font-size:12.5px;color:var(--cream);margin-bottom:4px;">
+        Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""}
+      </div>` : ""}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+      ${!suggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifying ? "disabled" : ""} onclick="event.stopPropagation();identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('identificationDetail',{photoId:'${p.id}'})">Compare</button>`}
+      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
+      <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
+      <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">Delete</button>
+    </div>
+  ` : `
+    ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setPrimaryPhoto('${plantId}','${p.id}')">Set as profile picture</button>` : `<span class="pill pill-orange">Profile picture</span>`}
+  `;
 
   return `
   <div class="lightbox-backdrop" onclick="if(event.target===this)closeLightbox()">
     <div class="lightbox-top">
       <div>
-        <div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : ""}</div>
+        ${titleLine}
         <div class="mono" style="font-size:11px;color:#9FB0A3;">${fmtDate(p.uploaded_at)}</div>
       </div>
       <button class="lightbox-close" onclick="closeLightbox()">${icon("close")}</button>
@@ -1751,7 +1783,7 @@ function renderLightbox() {
     </div>
     <div class="lightbox-bottom">
       ${list.length > 1 ? `<div class="lightbox-counter">${idx + 1} of ${list.length}</div>` : ""}
-      ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setPrimaryPhoto('${plantId}','${p.id}')">Set as profile picture</button>` : `<span class="pill pill-orange">Profile picture</span>`}
+      ${bottomActions}
     </div>
   </div>`;
 }

@@ -220,7 +220,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.18.0";
+const APP_VERSION = "1.18.1";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -247,6 +247,7 @@ const state = {
   identifyingPhotoId: null,
   lightbox: null,
   plantLocations: [],
+  inboxLimit: 20,
 };
 
 /* ============================================================
@@ -383,6 +384,18 @@ async function startDriveConnect() {
 // Fetches a photo through the get-photo proxy (Drive files are private —
 // this is the only way to actually display one) and caches the result as
 // a blob URL so it's only fetched once per session, not on every re-render.
+// Batches re-renders triggered by photo loads completing — without this,
+// dozens of thumbnails finishing within milliseconds of each other each
+// trigger a full-page rebuild, causing visible flicker at any real scale.
+let renderDebounceTimer = null;
+function debouncedRender() {
+  if (renderDebounceTimer) return;
+  renderDebounceTimer = setTimeout(() => {
+    renderDebounceTimer = null;
+    render();
+  }, 150);
+}
+
 function ensurePhotoLoaded(driveFileId) {
   if (!driveFileId) return;
   if (state.photoUrlCache[driveFileId] || state.photoFetchInFlight.has(driveFileId)) return;
@@ -395,7 +408,7 @@ function ensurePhotoLoaded(driveFileId) {
     .then((blob) => {
       state.photoUrlCache[driveFileId] = URL.createObjectURL(blob);
       state.photoFetchInFlight.delete(driveFileId);
-      render();
+      debouncedRender();
     })
     .catch(() => {
       state.photoFetchInFlight.delete(driveFileId);
@@ -636,6 +649,9 @@ function screenLogin() {
 
 function screenInbox() {
   const unassigned = state.photos.filter((p) => !p.plant_id && !p.location_id);
+  const limit = state.inboxLimit || 20;
+  const visible = unassigned.slice(0, limit);
+  const remaining = unassigned.length - visible.length;
   return `
   <div class="screen">
     <div class="container">
@@ -646,7 +662,8 @@ function screenInbox() {
       <p class="subtle" style="margin-bottom:20px;">Photos land here first — confirm or attach them to a plant.</p>
       ${unassigned.length === 0 ? `
         <div class="empty"><div class="display">Nothing waiting</div><div>Tap the camera button to add a photo.</div></div>` : `
-        <div class="stack">${unassigned.map(photoRow).join("")}</div>`}
+        <div class="stack">${visible.map(photoRow).join("")}</div>
+        ${remaining > 0 ? `<button class="btn btn-secondary btn-block" style="margin-top:16px;" onclick="state.inboxLimit=(state.inboxLimit||20)+20;render()">Show ${Math.min(remaining, 20)} more (${remaining} left)</button>` : ""}`}
     </div>
   </div>`;
 }

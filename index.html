@@ -220,7 +220,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.15.0";
+const APP_VERSION = "1.16.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -656,6 +656,7 @@ function photoRow(p) {
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
           ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span> Identifying…' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss suggestion</button>`}
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
+          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
           <button class="btn btn-danger btn-sm" onclick="deletePhoto('${p.id}')">Delete</button>
         </div>
@@ -967,7 +968,7 @@ function screenLocationDetail() {
               </div>
               <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
                 ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss</button>`}
-                <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant from this photo</button>
+                <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
               </div>
             </div>`;
           }).join("")}
@@ -1038,6 +1039,16 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "attachLocation") {
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach to container</h3>
+      <p class="subtle" style="margin:0 0 14px;">Moves this photo out of the Inbox and onto that location's page, where you can identify each specimen in it.</p>
+      <select id="attach-loc-select">${locationSelectOptions(null)}</select>
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="attachPhotoToLocation('${data.photoId}', document.getElementById('attach-loc-select').value)">Attach</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "newPlantFromPhoto" || type === "newPlant") {
     const suggestion = type === "newPlantFromPhoto" ? pendingIdentification(data.photoId) : null;
     return `
@@ -1055,7 +1066,7 @@ function modalContent() {
           ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === (suggestion ? "tentative" : "unidentified") ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Location</label>
-        <select id="np-location">${locationSelectOptions(null)}</select>
+        <select id="np-location">${locationSelectOptions(data.locationId || null)}</select>
         <label>Collection</label>
         <select id="np-category">
           <option value="current" selected>Current</option>
@@ -1448,6 +1459,15 @@ async function attachPhotoToPlant(photoId, plantId) {
   try {
     await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
     toast("Photo attached");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+async function attachPhotoToLocation(photoId, locationId) {
+  if (!locationId) { toast("Choose a location first", true); return; }
+  try {
+    await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId });
+    toast("Photo attached to container");
     closeModal();
     await loadAll();
   } catch (e) { toast(e.message, true); }

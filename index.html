@@ -177,7 +177,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -625,6 +625,7 @@ function screenPlantDetail() {
         ${pl.botanical_name && pl.common_name ? `<div style="color:var(--ink-soft);font-size:14px;margin-top:2px;">${escapeHtml(pl.common_name)}</div>` : ""}
         ${pl.cultivar ? `<div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">'${escapeHtml(pl.cultivar)}'</div>` : ""}
 
+        ${pl.family || pl.genus ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">${[pl.family, pl.genus].filter(Boolean).join(" · ")}</div>` : ""}
         <div class="wrap-gap" style="margin-top:12px;">
           <span class="pill ${pl.status === "active" ? "pill-moss" : "pill-terracotta"}">${STATUS_LABELS[pl.status]}</span>
           <span class="pill pill-outline">${CATEGORY_LABELS[pl.collection_category]}</span>
@@ -650,6 +651,17 @@ function screenPlantDetail() {
             ${pl.acquisition_source_type ? `Source: ${ACQ_SOURCE_LABELS[pl.acquisition_source_type]}${pl.acquisition_source_name ? " — " + escapeHtml(pl.acquisition_source_name) : ""}<br/>` : ""}
             ${pl.acquisition_notes ? escapeHtml(pl.acquisition_notes) : ""}
           </div>` : ""}
+      </div>` : ""}
+
+      ${(pl.native_range || pl.hardy_to || pl.light_requirements || pl.water_needs) ? `
+      <div class="surface" style="padding:16px;margin-top:14px;">
+        <div class="section-label">Care</div>
+        <div style="font-size:13.5px;color:#C9D6CC;line-height:1.7;">
+          ${pl.native_range ? `Native to: ${escapeHtml(pl.native_range)}<br/>` : ""}
+          ${pl.hardy_to ? `Hardy to: ${escapeHtml(pl.hardy_to)}<br/>` : ""}
+          ${pl.light_requirements ? `Light: ${pl.light_requirements.replace("_", " ")}<br/>` : ""}
+          ${pl.water_needs ? `Water: ${pl.water_needs}` : ""}
+        </div>
       </div>` : ""}
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
@@ -825,12 +837,38 @@ function modalContent() {
         <input id="ep-common" value="${escapeHtml(pl.common_name || "")}" />
         <label>Cultivar</label>
         <input id="ep-cultivar" value="${escapeHtml(pl.cultivar || "")}" />
+        <label>Family</label>
+        <input id="ep-family" placeholder="e.g. Cactaceae" value="${escapeHtml(pl.family || "")}" />
+        <label>Genus</label>
+        <input id="ep-genus" placeholder="e.g. Cephalocereus" value="${escapeHtml(pl.genus || "")}" />
+        <label>Species</label>
+        <input id="ep-species" placeholder="e.g. senilis" value="${escapeHtml(pl.species || "")}" />
         <label>Identification status</label>
         <select id="ep-idstatus">
           ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${pl.identification_status === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Identification notes</label>
         <textarea id="ep-idnotes" rows="2" placeholder="e.g. Possible Echinopsis, species uncertain">${escapeHtml(pl.identification_notes || "")}</textarea>
+
+        <div class="section-label">Care</div>
+        <label>Native range</label>
+        <input id="ep-native" placeholder="e.g. Central Mexico" value="${escapeHtml(pl.native_range || "")}" />
+        <label>Hardy to</label>
+        <input id="ep-hardy" placeholder="e.g. Zone 9 or 20&deg;F" value="${escapeHtml(pl.hardy_to || "")}" />
+        <label>Light requirements</label>
+        <select id="ep-light">
+          <option value="">— Unspecified —</option>
+          <option value="full_sun" ${pl.light_requirements === "full_sun" ? "selected" : ""}>Full sun</option>
+          <option value="partial_shade" ${pl.light_requirements === "partial_shade" ? "selected" : ""}>Partial shade</option>
+          <option value="shade" ${pl.light_requirements === "shade" ? "selected" : ""}>Shade</option>
+        </select>
+        <label>Water needs</label>
+        <select id="ep-water">
+          <option value="">— Unspecified —</option>
+          <option value="low" ${pl.water_needs === "low" ? "selected" : ""}>Low</option>
+          <option value="moderate" ${pl.water_needs === "moderate" ? "selected" : ""}>Moderate</option>
+          <option value="high" ${pl.water_needs === "high" ? "selected" : ""}>High</option>
+        </select>
 
         <div class="section-label">Collection</div>
         <label>Category</label>
@@ -913,10 +951,11 @@ function modalContent() {
   if (type === "upload") {
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Add a photo</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add photos</h3>
+      <p class="subtle" style="margin:0 0 14px;">Select multiple to upload them all at once — each lands in the Inbox separately.</p>
       <form id="upload-form">
-        <input type="file" id="upload-file" accept="image/*" required style="padding:10px;" />
-        <label>Notes (optional)</label>
+        <input type="file" id="upload-file" accept="image/*" multiple required style="padding:10px;" />
+        <label>Notes (optional, applied to all selected)</label>
         <textarea id="upload-notes" rows="2" placeholder="e.g. new growth on the west side"></textarea>
         <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn">Upload to Inbox</button>
       </form>
@@ -1066,22 +1105,24 @@ function wireModalForms() {
   if (uploadForm) {
     uploadForm.onsubmit = async (e) => {
       e.preventDefault();
-      const file = document.getElementById("upload-file").files[0];
+      const files = Array.from(document.getElementById("upload-file").files);
       const notes = document.getElementById("upload-notes").value;
-      if (!file) return;
+      if (!files.length) return;
       const btn = document.getElementById("upload-submit-btn");
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>';
-      try {
-        await uploadPhoto(file, null, notes);
-        toast("Photo added to Inbox");
-        closeModal();
-        await loadAll();
-      } catch (e) {
-        toast(e.message, true);
-        btn.disabled = false;
-        btn.textContent = "Upload to Inbox";
+      let succeeded = 0;
+      for (let i = 0; i < files.length; i++) {
+        btn.innerHTML = `<span class="spinner"></span> ${i + 1} / ${files.length}`;
+        try {
+          await uploadPhoto(files[i], null, notes);
+          succeeded++;
+        } catch (e) {
+          toast(`Failed on ${files[i].name}: ${e.message}`, true);
+        }
       }
+      if (succeeded) toast(`${succeeded} photo${succeeded === 1 ? "" : "s"} added to Inbox`);
+      closeModal();
+      await loadAll();
     };
   }
 
@@ -1119,8 +1160,15 @@ function wireModalForms() {
           botanical_name: document.getElementById("ep-botanical").value || null,
           common_name: document.getElementById("ep-common").value || null,
           cultivar: document.getElementById("ep-cultivar").value || null,
+          family: document.getElementById("ep-family").value || null,
+          genus: document.getElementById("ep-genus").value || null,
+          species: document.getElementById("ep-species").value || null,
           identification_status: document.getElementById("ep-idstatus").value,
           identification_notes: document.getElementById("ep-idnotes").value || null,
+          native_range: document.getElementById("ep-native").value || null,
+          hardy_to: document.getElementById("ep-hardy").value || null,
+          light_requirements: document.getElementById("ep-light").value || null,
+          water_needs: document.getElementById("ep-water").value || null,
           collection_category: document.getElementById("ep-category").value,
           original_collection: document.getElementById("ep-original").checked,
           status: document.getElementById("ep-status").value,

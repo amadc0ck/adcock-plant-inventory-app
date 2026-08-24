@@ -177,7 +177,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -196,9 +196,10 @@ const state = {
   modal: null,
   plantSearch: "",
   attachSearch: "",
-  plantFilters: { category: "", status: "", idStatus: "", original: "" },
+  plantFilters: { category: "", status: "", idStatus: "", original: "", location: "" },
   photoUrlCache: {},
   photoFetchInFlight: new Set(),
+  photoPlants: [],
 };
 
 /* ============================================================
@@ -306,10 +307,11 @@ async function login(email, password) {
   return data;
 }
 
-async function uploadPhoto(file, plantId, notes) {
+async function uploadPhoto(file, plantId, locationId, notes) {
   const fd = new FormData();
   fd.append("photo", file);
   if (plantId) fd.append("plant_id", plantId);
+  if (locationId) fd.append("location_id", locationId);
   if (notes) fd.append("notes", notes);
   const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/upload-photo`, {
     method: "POST",
@@ -364,16 +366,18 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants] = await Promise.all([
       restGet("photos", "?select=*&order=uploaded_at.desc"),
       restGet("plants", "?select=*&order=accession_number.asc"),
       restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
       restGet("google_auth_tokens", "?select=expires_at&limit=1"),
+      restGet("photo_plants", "?select=*"),
     ]);
     state.photos = photos;
     state.plants = plants;
     state.locations = locations;
     state.driveToken = tokens[0] || null;
+    state.photoPlants = photoPlants;
   } catch (e) {
     toast(e.message, true);
   }
@@ -549,6 +553,7 @@ function screenPlants() {
     if (f.idStatus && pl.identification_status !== f.idStatus) return false;
     if (f.original === "yes" && !pl.original_collection) return false;
     if (f.original === "no" && pl.original_collection) return false;
+    if (f.location && pl.location_id !== f.location) return false;
     return true;
   });
 
@@ -576,7 +581,12 @@ function screenPlants() {
           <option value="yes" ${f.original === "yes" ? "selected" : ""}>Original only</option>
           <option value="no" ${f.original === "no" ? "selected" : ""}>Non-original</option>
         </select>
+        <select onchange="state.plantFilters.location=this.value;render()">
+          <option value="">All locations</option>
+          ${locationOptionList().map((o) => `<option value="${o.id}" ${f.location === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
+        </select>
       </div>
+      ${(q || f.category || f.status || f.idStatus || f.original || f.location) ? `<div class="subtle" style="margin:-8px 0 16px;">${list.length} of ${state.plants.length} plants</div>` : ""}
       ${list.length === 0 ? `
         <div class="empty"><div class="display">${state.plants.length === 0 ? "No plants yet" : "No matches"}</div>
         <div>${state.plants.length === 0 ? "Add your first plant from the Inbox or a photo." : "Try different search or filters."}</div></div>` : `
@@ -674,6 +684,8 @@ function screenPlantDetail() {
           ${photos.map((p) => {
             const cachedUrl = state.photoUrlCache[p.drive_file_id];
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
+            const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
+            const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
             return `
             <div class="surface" style="padding:14px;">
               <div class="row">
@@ -682,10 +694,12 @@ function screenPlantDetail() {
                   <div>
                     <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(p.uploaded_at)}</div>
                     <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
+                    ${taggedPlants.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:4px;">Also shows: ${taggedPlants.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
                   </div>
                 </div>
                 ${p.is_primary ? `<span class="pill pill-orange">Primary</span>` : ""}
               </div>
+              <button class="btn-ghost" style="padding:8px 0 0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">Tag other plants in this photo</button>
             </div>`;
           }).join("")}
         </div>`}
@@ -698,7 +712,8 @@ function screenLocations() {
 
   function renderNode(l, depth) {
     const children = state.locations.filter((c) => c.parent_location_id === l.id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
-    const count = state.plants.filter((p) => p.location_id === l.id).length;
+    const plantCount = state.plants.filter((p) => p.location_id === l.id).length;
+    const photoCount = state.photos.filter((p) => p.location_id === l.id).length;
     return `
       <div class="tag-card ${depth > 0 ? "loc-child" : ""}" style="${depth > 0 ? "margin-top:8px;" : ""}">
         <div class="row">
@@ -706,7 +721,13 @@ function screenLocations() {
             <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
             <div style="font-family:'Fraunces',serif;font-size:15px;font-weight:500;margin-top:2px;">${escapeHtml(l.name)}</div>
           </div>
-          <div class="mono" style="font-size:11px;color:var(--moss-dim);">${count} plant${count === 1 ? "" : "s"}</div>
+          <div style="text-align:right;">
+            <div class="mono" style="font-size:11px;color:var(--moss-dim);">${plantCount} plant${plantCount === 1 ? "" : "s"}${photoCount ? ` · ${photoCount} photo${photoCount === 1 ? "" : "s"}` : ""}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit</button>
+          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('upload',{locationId:'${l.id}'})">Add photo</button>
         </div>
       </div>
       ${children.map((c) => renderNode(c, depth + 1)).join("")}
@@ -948,16 +969,70 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
-  if (type === "upload") {
+  if (type === "editLocation") {
+    const l = state.locations.find((x) => x.id === data.locationId);
+    // Exclude itself from the parent picker to avoid self-referencing loops
+    const parentOptions = locationOptionList().filter((o) => o.id !== l.id);
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add photos</h3>
-      <p class="subtle" style="margin:0 0 14px;">Select multiple to upload them all at once — each lands in the Inbox separately.</p>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Edit location</h3>
+      <form id="edit-location-form">
+        <label>Name *</label>
+        <input id="el-name" required value="${escapeHtml(l.name)}" />
+        <label>Type</label>
+        <select id="el-type">
+          <option value="">— Unspecified —</option>
+          ${["area","row","slot","container","indoor","hospital","work_area","other"].map((t) =>
+            `<option value="${t}" ${l.type === t ? "selected" : ""}>${locationTypeLabel(t)}</option>`).join("")}
+        </select>
+        <label>Parent location</label>
+        <select id="el-parent">
+          <option value="">— None (top-level) —</option>
+          ${parentOptions.map((o) => `<option value="${o.id}" ${l.parent_location_id === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
+        </select>
+        <label>Sort order</label>
+        <input id="el-sort" type="number" value="${l.sort_order ?? ""}" placeholder="Lower numbers appear first" />
+        <label>Code</label>
+        <input id="el-code" value="${escapeHtml(l.code || "")}" placeholder="e.g. W-T-12" />
+        <label>Notes</label>
+        <textarea id="el-notes" rows="2">${escapeHtml(l.notes || "")}</textarea>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Save changes</button>
+      </form>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "tagPlants") {
+    const photo = state.photos.find((p) => p.id === data.photoId);
+    const taggedIds = new Set(state.photoPlants.filter((pp) => pp.photo_id === data.photoId).map((pp) => pp.plant_id));
+    const q = (state.tagSearch || "").toLowerCase();
+    const candidates = state.plants.filter((p) => p.id !== photo.plant_id && (!q || [p.accession_number, p.common_name, p.botanical_name].filter(Boolean).join(" ").toLowerCase().includes(q)));
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Tag plants in this photo</h3>
+      <p class="subtle" style="margin:0 0 14px;">Check every plant visible in this photo, besides the one it's already attached to.</p>
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.tagSearch || "")}" oninput="state.tagSearch=this.value;render()" style="margin-bottom:14px;" />
+      <div class="stack" style="max-height:44vh;overflow-y:auto;">
+        ${candidates.length === 0 ? `<p class="subtle">No other plants match.</p>` : candidates.map((p) => `
+          <label class="checkbox-row" style="margin-top:0;background:var(--bg);padding:10px 12px;border-radius:8px;">
+            <input type="checkbox" class="tag-plant-checkbox" value="${p.id}" ${taggedIds.has(p.id) ? "checked" : ""} />
+            <span class="mono" style="opacity:0.6;margin-right:6px;">${p.accession_number}</span>${escapeHtml(plantDisplayName(p))}
+          </label>`).join("")}
+      </div>
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="saveTaggedPlants('${data.photoId}')">Save tags</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "upload") {
+    const loc = data.locationId ? locationById(data.locationId) : null;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">${loc ? `Add photo — ${escapeHtml(loc.name)}` : "Add photos"}</h3>
+      <p class="subtle" style="margin:0 0 14px;">${loc ? "Photo of this location/container — won't need attaching to a plant." : "Select multiple to upload them all at once — each lands in the Inbox separately."}</p>
       <form id="upload-form">
-        <input type="file" id="upload-file" accept="image/*" multiple required style="padding:10px;" />
-        <label>Notes (optional, applied to all selected)</label>
+        <input type="file" id="upload-file" accept="image/*" ${loc ? "" : "multiple"} required style="padding:10px;" />
+        <label>Notes (optional${loc ? "" : ", applied to all selected"})</label>
         <textarea id="upload-notes" rows="2" placeholder="e.g. new growth on the west side"></textarea>
-        <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn">Upload to Inbox</button>
+        <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn">${loc ? "Upload" : "Upload to Inbox"}</button>
       </form>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
@@ -984,6 +1059,24 @@ async function deletePhoto(photoId) {
   try {
     await restDelete("photos", `id=eq.${photoId}`);
     toast("Photo deleted");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+async function saveTaggedPlants(photoId) {
+  const checked = Array.from(document.querySelectorAll(".tag-plant-checkbox:checked")).map((el) => el.value);
+  const current = state.photoPlants.filter((pp) => pp.photo_id === photoId).map((pp) => pp.plant_id);
+  const toAdd = checked.filter((id) => !current.includes(id));
+  const toRemove = current.filter((id) => !checked.includes(id));
+  try {
+    for (const plantId of toAdd) {
+      await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
+    }
+    for (const plantId of toRemove) {
+      const row = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id === plantId);
+      if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
+    }
+    toast("Tags updated");
+    closeModal();
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
@@ -1107,6 +1200,7 @@ function wireModalForms() {
       e.preventDefault();
       const files = Array.from(document.getElementById("upload-file").files);
       const notes = document.getElementById("upload-notes").value;
+      const locationId = state.modal?.data?.locationId || null;
       if (!files.length) return;
       const btn = document.getElementById("upload-submit-btn");
       btn.disabled = true;
@@ -1114,13 +1208,13 @@ function wireModalForms() {
       for (let i = 0; i < files.length; i++) {
         btn.innerHTML = `<span class="spinner"></span> ${i + 1} / ${files.length}`;
         try {
-          await uploadPhoto(files[i], null, notes);
+          await uploadPhoto(files[i], null, locationId, notes);
           succeeded++;
         } catch (e) {
           toast(`Failed on ${files[i].name}: ${e.message}`, true);
         }
       }
-      if (succeeded) toast(`${succeeded} photo${succeeded === 1 ? "" : "s"} added to Inbox`);
+      if (succeeded) toast(`${succeeded} photo${succeeded === 1 ? "" : "s"} added`);
       closeModal();
       await loadAll();
     };
@@ -1203,6 +1297,28 @@ function wireModalForms() {
         };
         await restPost("locations", body);
         toast("Location added");
+        closeModal();
+        await loadAll();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  const editLocationForm = document.getElementById("edit-location-form");
+  if (editLocationForm) {
+    editLocationForm.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const sortVal = document.getElementById("el-sort").value;
+        const body = {
+          name: document.getElementById("el-name").value,
+          type: document.getElementById("el-type").value || null,
+          parent_location_id: document.getElementById("el-parent").value || null,
+          sort_order: sortVal === "" ? null : Number(sortVal),
+          code: document.getElementById("el-code").value || null,
+          notes: document.getElementById("el-notes").value || null,
+        };
+        await restPatch("locations", `id=eq.${state.modal.data.locationId}`, body);
+        toast("Location updated");
         closeModal();
         await loadAll();
       } catch (e) { toast(e.message, true); }

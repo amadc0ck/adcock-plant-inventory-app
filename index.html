@@ -164,6 +164,11 @@
   .loc-group-title{font-family:'Fraunces',serif;font-style:italic;font-size:15px;color:var(--blue);margin-bottom:8px;padding-left:2px;}
   .loc-child{margin-left:16px;}
 
+  .plant-list-card{display:flex;gap:14px;cursor:pointer;padding:14px;}
+  .plant-list-thumb{width:92px;height:92px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--parchment-dim);}
+  .plant-list-thumb-empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--moss-dim);}
+  .plant-list-thumb-empty svg{width:26px;height:26px;}
+
   /* Plant Detail hero image (profile picture) */
   .plant-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;cursor:pointer;}
   .plant-hero-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
@@ -212,7 +217,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.10.5";
+const APP_VERSION = "1.11.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -526,6 +531,14 @@ function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; r
 function plantPhotosOrdered(plantId) {
   return state.photos.filter((p) => p.plant_id === plantId).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
 }
+function plantCoverPhoto(pl) {
+  const photos = plantPhotosOrdered(pl.id);
+  if (pl.primary_photo_id) {
+    const primary = photos.find((p) => p.id === pl.primary_photo_id);
+    if (primary) return primary;
+  }
+  return photos[0] || null;
+}
 function openLightbox(plantId, photoId) {
   state.lightbox = { plantId, photoId };
   render();
@@ -665,22 +678,30 @@ function screenPlants() {
 
 function plantRow(pl) {
   const loc = locationById(pl.location_id);
-  const photoCount = state.photos.filter((p) => p.plant_id === pl.id).length;
+  const photos = plantPhotosOrdered(pl.id);
+  const cover = plantCoverPhoto(pl);
+  if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
+  const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
+
   return `
-  <div class="tag-card" onclick="openPlant('${pl.id}')" style="cursor:pointer;">
-    <div class="row">
-      <div style="min-width:0;">
-        <div class="tag-id">${pl.accession_number}</div>
-        <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:500;margin-top:2px;font-style:${pl.botanical_name ? "italic" : "normal"};">${escapeHtml(plantDisplayName(pl))}</div>
-        <div class="wrap-gap" style="margin-top:6px;">
-          ${pl.collection_category === "historical" ? `<span class="pill pill-outline">Historical</span>` : ""}
-          ${pl.original_collection ? `<span class="pill pill-pink">Original</span>` : ""}
-          ${pl.identification_status !== "confirmed" ? `<span class="pill pill-outline">${ID_STATUS_LABELS[pl.identification_status]}</span>` : ""}
-          ${pl.status !== "active" ? `<span class="pill pill-terracotta">${STATUS_LABELS[pl.status]}</span>` : ""}
-        </div>
-        <div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">${loc ? escapeHtml(locationPath(loc)) : "No location set"}</div>
+  <div class="tag-card plant-list-card" onclick="openPlant('${pl.id}')">
+    <div class="plant-list-thumb">
+      ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+    </div>
+    <div style="flex:1;min-width:0;">
+      <div class="tag-id">${pl.accession_number}</div>
+      <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin-top:2px;font-style:${pl.botanical_name ? "italic" : "normal"};line-height:1.25;">${escapeHtml(plantDisplayName(pl))}</div>
+      ${pl.botanical_name && pl.common_name ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(pl.common_name)}</div>` : ""}
+      <div class="wrap-gap" style="margin-top:7px;">
+        ${pl.collection_category === "historical" ? `<span class="pill-solid pill-solid-outline">Historical</span>` : ""}
+        ${pl.original_collection ? `<span class="pill-solid pill-solid-pink">Original</span>` : ""}
+        ${pl.identification_status !== "confirmed" ? `<span class="pill-solid pill-solid-outline">${ID_STATUS_LABELS[pl.identification_status]}</span>` : ""}
+        ${pl.status !== "active" ? `<span class="pill-solid pill-solid-terracotta">${STATUS_LABELS[pl.status]}</span>` : ""}
       </div>
-      <div class="mono" style="font-size:11px;color:var(--moss-dim);flex-shrink:0;">${photoCount} photo${photoCount === 1 ? "" : "s"}</div>
+      <div class="row" style="margin-top:8px;">
+        <div style="font-size:12px;color:var(--ink-soft);">📍 ${loc ? escapeHtml(locationPath(loc)) : "No location set"}</div>
+        <div class="mono" style="font-size:11px;color:var(--moss-dim);flex-shrink:0;">${photos.length} photo${photos.length === 1 ? "" : "s"}</div>
+      </div>
     </div>
   </div>`;
 }

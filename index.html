@@ -177,7 +177,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.5.3";
+const APP_VERSION = "1.6.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -197,6 +197,8 @@ const state = {
   plantSearch: "",
   attachSearch: "",
   plantFilters: { category: "", status: "", idStatus: "", original: "" },
+  photoUrlCache: {},
+  photoFetchInFlight: new Set(),
 };
 
 /* ============================================================
@@ -327,6 +329,30 @@ async function startDriveConnect() {
   const data = await res.json();
   if (!data.url) throw new Error("Could not start Google Drive connection");
   window.location.href = data.url;
+}
+
+// Fetches a photo through the get-photo proxy (Drive files are private —
+// this is the only way to actually display one) and caches the result as
+// a blob URL so it's only fetched once per session, not on every re-render.
+function ensurePhotoLoaded(driveFileId) {
+  if (!driveFileId) return;
+  if (state.photoUrlCache[driveFileId] || state.photoFetchInFlight.has(driveFileId)) return;
+  state.photoFetchInFlight.add(driveFileId);
+
+  fetch(`${CONFIG.SUPABASE_URL}/functions/v1/get-photo?id=${encodeURIComponent(driveFileId)}`, {
+    headers: apiHeaders(),
+  })
+    .then((res) => (res.ok ? res.blob() : Promise.reject(new Error("Failed to load photo"))))
+    .then((blob) => {
+      state.photoUrlCache[driveFileId] = URL.createObjectURL(blob);
+      state.photoFetchInFlight.delete(driveFileId);
+      render();
+    })
+    .catch(() => {
+      state.photoFetchInFlight.delete(driveFileId);
+      // Fails silently in the UI (placeholder icon just stays) — a toast
+      // per-thumbnail would be noisy if Drive is briefly unreachable.
+    });
 }
 
 /* ============================================================
@@ -491,10 +517,12 @@ function screenInbox() {
 }
 
 function photoRow(p) {
+  const cachedUrl = state.photoUrlCache[p.drive_file_id];
+  if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
   return `
   <div class="tag-card">
     <div class="photo-row">
-      <div class="photo-icon on-cream">${icon("photo")}</div>
+      <div class="photo-icon on-cream">${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
       <div style="flex:1;min-width:0;">
         <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
         <div style="font-size:14px;margin-top:2px;color:var(--ink-soft);">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
@@ -631,11 +659,14 @@ function screenPlantDetail() {
 
       ${photos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
         <div class="stack">
-          ${photos.map((p) => `
+          ${photos.map((p) => {
+            const cachedUrl = state.photoUrlCache[p.drive_file_id];
+            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
+            return `
             <div class="surface" style="padding:14px;">
               <div class="row">
                 <div class="photo-row">
-                  <div class="photo-icon">${icon("photo")}</div>
+                  <div class="photo-icon">${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
                   <div>
                     <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(p.uploaded_at)}</div>
                     <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
@@ -643,7 +674,8 @@ function screenPlantDetail() {
                 </div>
                 ${p.is_primary ? `<span class="pill pill-orange">Primary</span>` : ""}
               </div>
-            </div>`).join("")}
+            </div>`;
+          }).join("")}
         </div>`}
     </div>
   </div>`;
@@ -918,6 +950,8 @@ async function deletePhoto(photoId) {
 }
 function logout() {
   clearStoredSession();
+  Object.values(state.photoUrlCache).forEach((url) => URL.revokeObjectURL(url));
+  state.photoUrlCache = {};
   state.session = null; state.photos = []; state.plants = []; state.locations = [];
   render();
 }

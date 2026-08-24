@@ -52,7 +52,8 @@
 
   .topbar{position:sticky;top:0;z-index:20;background:linear-gradient(180deg, var(--bg) 70%, transparent);backdrop-filter:blur(6px);padding:22px 0 14px;}
   .topbar .container{display:flex;align-items:baseline;justify-content:space-between;}
-  .brand{font-family:'Fraunces',serif;font-weight:500;font-size:22px;letter-spacing:0.2px;}
+  .brand{font-family:'Fraunces',serif;font-weight:500;font-size:22px;letter-spacing:0.2px;display:flex;justify-content:center;}
+  .brand img{max-width:220px;width:100%;height:auto;}
   .brand .dot{color:var(--blue);}
   .subtle{color:#9FB0A3;font-size:12.5px;}
 
@@ -206,7 +207,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.10.1";
+const APP_VERSION = "1.10.2";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -635,36 +636,20 @@ function screenPlants() {
     return true;
   });
 
+  const activeFilterCount = [f.category, f.status, f.idStatus, f.original, f.location].filter(Boolean).length;
+
   return `
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
       <input class="search-input" placeholder="Search name, accession #, cultivar…" value="${escapeHtml(state.plantSearch || "")}" oninput="state.plantSearch=this.value;render()" />
-      <div class="filter-bar">
-        <select onchange="state.plantFilters.category=this.value;render()">
-          <option value="">All collection</option>
-          <option value="current" ${f.category === "current" ? "selected" : ""}>Current</option>
-          <option value="historical" ${f.category === "historical" ? "selected" : ""}>Historical</option>
-        </select>
-        <select onchange="state.plantFilters.status=this.value;render()">
-          <option value="">All status</option>
-          ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${f.status === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
-        <select onchange="state.plantFilters.idStatus=this.value;render()">
-          <option value="">All ID status</option>
-          ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${f.idStatus === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
-        <select onchange="state.plantFilters.original=this.value;render()">
-          <option value="">Original: any</option>
-          <option value="yes" ${f.original === "yes" ? "selected" : ""}>Original only</option>
-          <option value="no" ${f.original === "no" ? "selected" : ""}>Non-original</option>
-        </select>
-        <select onchange="state.plantFilters.location=this.value;render()">
-          <option value="">All locations</option>
-          ${locationOptionList().map((o) => `<option value="${o.id}" ${f.location === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
-        </select>
+      <div class="row" style="margin-bottom:16px;">
+        <button class="btn btn-secondary btn-sm" onclick="openModal('plantFilters')">
+          Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
+        </button>
+        ${activeFilterCount ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="state.plantFilters={category:'',status:'',idStatus:'',original:'',location:''};render()">Clear</button>` : ""}
       </div>
-      ${(q || f.category || f.status || f.idStatus || f.original || f.location) ? `<div class="subtle" style="margin:-8px 0 16px;">${list.length} of ${state.plants.length} plants</div>` : ""}
+      ${(q || activeFilterCount) ? `<div class="subtle" style="margin:-8px 0 16px;">${list.length} of ${state.plants.length} plants</div>` : ""}
       ${list.length === 0 ? `
         <div class="empty"><div class="display">${state.plants.length === 0 ? "No plants yet" : "No matches"}</div>
         <div>${state.plants.length === 0 ? "Add your first plant from the Inbox or a photo." : "Try different search or filters."}</div></div>` : `
@@ -1071,6 +1056,42 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "plantFilters") {
+    const f = state.plantFilters;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Filters</h3>
+      <label>Collection</label>
+      <select onchange="state.plantFilters.category=this.value;render()">
+        <option value="">All collection</option>
+        <option value="current" ${f.category === "current" ? "selected" : ""}>Current</option>
+        <option value="historical" ${f.category === "historical" ? "selected" : ""}>Historical</option>
+      </select>
+      <label>Status</label>
+      <select onchange="state.plantFilters.status=this.value;render()">
+        <option value="">All status</option>
+        ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${f.status === k ? "selected" : ""}>${v}</option>`).join("")}
+      </select>
+      <label>Identification status</label>
+      <select onchange="state.plantFilters.idStatus=this.value;render()">
+        <option value="">All ID status</option>
+        ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${f.idStatus === k ? "selected" : ""}>${v}</option>`).join("")}
+      </select>
+      <label>Original collection</label>
+      <select onchange="state.plantFilters.original=this.value;render()">
+        <option value="">Any</option>
+        <option value="yes" ${f.original === "yes" ? "selected" : ""}>Original only</option>
+        <option value="no" ${f.original === "no" ? "selected" : ""}>Non-original</option>
+      </select>
+      <label>Location</label>
+      <select onchange="state.plantFilters.location=this.value;render()">
+        <option value="">All locations</option>
+        ${locationOptionList().map((o) => `<option value="${o.id}" ${f.location === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
+      </select>
+      <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="closeModal()">Done</button>
+      <button class="btn-ghost btn-block" style="margin-top:8px;text-align:center;justify-content:center;" onclick="state.plantFilters={category:'',status:'',idStatus:'',original:'',location:''};render()">Clear all filters</button>`;
+  }
+
   if (type === "choosePrimaryPhoto") {
     const photos = plantPhotosOrdered(data.plantId);
     return `
@@ -1307,7 +1328,7 @@ function topBar() {
   return `
   <div class="topbar"><div class="container">
     <div class="brand">
-      <img src="assets/logo-horizontal.png" alt="Adcock Botanical Garden" style="width:100%;height:auto;display:block;" />
+      <img src="assets/logo-horizontal.png" alt="Adcock Botanical Garden" />
     </div>
   </div></div>`;
 }

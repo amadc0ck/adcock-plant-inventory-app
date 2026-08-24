@@ -221,7 +221,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.20.2";
+const APP_VERSION = "1.21.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -248,7 +248,9 @@ const state = {
   identifyingPhotoId: null,
   lightbox: null,
   plantLocations: [],
+  photoLocations: [],
   inboxLimit: 20,
+  tagLocationSearch: "",
 };
 
 /* ============================================================
@@ -427,7 +429,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations] = await Promise.all([
       restGet("photos", "?select=*&order=uploaded_at.desc"),
       restGet("plants", "?select=*&order=accession_number.asc"),
       restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -435,6 +437,7 @@ async function loadAll() {
       restGet("photo_plants", "?select=*"),
       restGet("identifications", "?select=*&order=created_at.desc"),
       restGet("plant_locations", "?select=*"),
+      restGet("photo_locations", "?select=*"),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -443,6 +446,7 @@ async function loadAll() {
     state.photoPlants = photoPlants;
     state.identifications = identifications;
     state.plantLocations = plantLocations;
+    state.photoLocations = photoLocations;
   } catch (e) {
     toast(e.message, true);
   }
@@ -478,6 +482,17 @@ function allLocationsForPlant(pl) {
 function additionalLocationRows(plantId) {
   return state.plantLocations.filter((pll) => pll.plant_id === plantId);
 }
+function additionalLocationRowsForPhoto(photoId) {
+  return state.photoLocations.filter((pl) => pl.photo_id === photoId);
+}
+function allLocationsForPhoto(photo) {
+  const ids = [];
+  if (photo.location_id) ids.push(photo.location_id);
+  additionalLocationRowsForPhoto(photo.id).forEach((pl) => {
+    if (!ids.includes(pl.location_id)) ids.push(pl.location_id);
+  });
+  return ids.map((id) => locationById(id)).filter(Boolean);
+}
 // Every plant present at a location, whether as primary or additional
 function plantsAtLocation(locationId) {
   const primaryIds = state.plants.filter((p) => p.location_id === locationId).map((p) => p.id);
@@ -487,6 +502,13 @@ function plantsAtLocation(locationId) {
 }
 function directChildLocations(locationId) {
   return state.locations.filter((l) => l.parent_location_id === locationId).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
+}
+// Photos primarily attached to this location, plus any tagged onto it via photo_locations
+function photosAtLocation(locationId) {
+  const primary = state.photos.filter((p) => p.location_id === locationId);
+  const taggedIds = state.photoLocations.filter((pl) => pl.location_id === locationId).map((pl) => pl.photo_id);
+  const tagged = state.photos.filter((p) => taggedIds.includes(p.id) && p.location_id !== locationId);
+  return [...primary, ...tagged];
 }
 function descendantLocationIds(locationId) {
   const direct = directChildLocations(locationId).map((l) => l.id);
@@ -919,7 +941,7 @@ function screenLocations() {
 
   function locationCard(l) {
     const plantCount = aggregatePlantCount(l.id);
-    const photoCount = state.photos.filter((p) => p.location_id === l.id).length;
+    const photoCount = photosAtLocation(l.id).length;
     const childCount = directChildLocations(l.id).length;
     return `
       <div class="tag-card" style="cursor:pointer;" onclick="openLocation('${l.id}')">
@@ -958,7 +980,7 @@ function screenLocationDetail() {
   const l = locationById(state.currentLocationId);
   if (!l) return `<div class="screen container"><p>Location not found.</p></div>`;
   const plants = plantsAtLocation(l.id);
-  const photos = state.photos.filter((p) => p.location_id === l.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  const photos = photosAtLocation(l.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
 
   return `
   <div class="screen">
@@ -1033,12 +1055,17 @@ function screenLocationDetail() {
                   <div class="tag-id">${fmtDate(p.uploaded_at)}</div>
                   <div style="font-size:13.5px;color:var(--ink-soft);margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
                   ${claimedBy || taggedPlants.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:4px;">Identified: ${[claimedBy, ...taggedPlants].filter(Boolean).map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
+                  ${(() => {
+                    const otherLocs = allLocationsForPhoto(p).filter((loc) => loc.id !== l.id);
+                    return otherLocs.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:2px;">Also in: ${otherLocs.map((loc) => escapeHtml(loc.name)).join(", ")}</div>` : "";
+                  })()}
                   ${suggestion ? `<div style="margin-top:6px;padding:6px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;cursor:pointer;" onclick="openModal('identificationDetail',{photoId:'${p.id}'})">Suggested: <em>${escapeHtml(suggestion.suggested_name)}</em>${suggestion.confidence ? ` (${Math.round(suggestion.confidence * 100)}%)` : ""} <span style="color:var(--blue);">— compare →</span></div>` : ""}
                 </div>
               </div>
               <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
                 ${!suggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${suggestion.id}')">Dismiss</button>`}
                 <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachToLocalPlant',{photoId:'${p.id}', locationId:'${l.id}'})">Add to plant here</button>
+                <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('tagLocations',{photoId:'${p.id}'})">Tag other containers</button>
                 <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
               </div>
             </div>`;
@@ -1163,6 +1190,27 @@ function modalContent() {
             </button>`).join("")}
         </div>`}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "tagLocations") {
+    const photo = state.photos.find((p) => p.id === data.photoId);
+    const taggedIds = new Set(additionalLocationRowsForPhoto(data.photoId).map((r) => r.location_id));
+    const q = (state.tagLocationSearch || "").toLowerCase();
+    const candidates = locationOptionList().filter((o) => o.id !== photo.location_id && (!q || o.label.toLowerCase().includes(q)));
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Tag other containers</h3>
+      <p class="subtle" style="margin:0 0 14px;">Check every container visible in this photo, besides its primary attachment.</p>
+      <input placeholder="Search locations…" value="${escapeHtml(state.tagLocationSearch || "")}" oninput="state.tagLocationSearch=this.value;render()" style="margin-bottom:14px;" />
+      <div class="stack" style="max-height:44vh;overflow-y:auto;">
+        ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
+          <label class="checkbox-row" style="margin-top:0;background:var(--bg);padding:10px 12px;border-radius:8px;">
+            <input type="checkbox" class="tag-location-checkbox" value="${o.id}" ${taggedIds.has(o.id) ? "checked" : ""} />
+            <span style="white-space:pre">${escapeHtml(o.label)}</span>
+          </label>`).join("")}
+      </div>
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="saveTaggedLocations('${data.photoId}')">Save containers</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "attachLocation") {
@@ -1600,6 +1648,25 @@ async function attachPhotoToPlant(photoId, plantId) {
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
+async function saveTaggedLocations(photoId) {
+  const checked = Array.from(document.querySelectorAll(".tag-location-checkbox:checked")).map((el) => el.value);
+  const current = additionalLocationRowsForPhoto(photoId).map((r) => r.location_id);
+  const toAdd = checked.filter((id) => !current.includes(id));
+  const toRemove = current.filter((id) => !checked.includes(id));
+  try {
+    for (const locationId of toAdd) {
+      await restPost("photo_locations", { photo_id: photoId, location_id: locationId });
+    }
+    for (const locationId of toRemove) {
+      const row = state.photoLocations.find((r) => r.photo_id === photoId && r.location_id === locationId);
+      if (row) await restDelete("photo_locations", `id=eq.${row.id}`);
+    }
+    toast("Containers updated");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function attachPhotoToLocation(photoId, locationId) {
   if (!locationId) { toast("Choose a location first", true); return; }
   try {

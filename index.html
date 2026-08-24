@@ -262,7 +262,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.28.1";
+const APP_VERSION = "1.29.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -699,6 +699,12 @@ function aggregatePlantCount(locationId) {
   const additionalIds = state.plantLocations.filter((pll) => idSet.has(pll.location_id)).map((pll) => pll.plant_id);
   return new Set([...primaryIds, ...additionalIds]).size;
 }
+function aggregatePhotoCount(locationId) {
+  const idSet = new Set([locationId, ...descendantLocationIds(locationId)]);
+  let total = 0;
+  idSet.forEach((id) => { total += photosAtLocation(id).length; });
+  return total;
+}
 
 function locationPath(loc) {
   if (!loc) return "";
@@ -778,6 +784,7 @@ function icon(name) {
     link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8"/></svg>`,
     pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s7-7.58 7-12.5A7 7 0 0 0 5 9.5C5 14.42 12 22 12 22Z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`,
     info: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 8v.01"/></svg>`,
+    tag: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.5 3.17H4a1 1 0 0 0-1 1v5.5a2 2 0 0 0 .66 1.5l9.58 9.58a2 2 0 0 0 2.83 0l4.52-4.52a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>`,
   };
   return icons[name] || "";
 }
@@ -852,8 +859,8 @@ function plantCoverPhoto(pl) {
   }
   return photos[0] || null;
 }
-function openLightbox(plantId, photoId) {
-  state.lightbox = { mode: "plant", plantId, photoId };
+function openLightbox(contextId, photoId, mode = "plant") {
+  state.lightbox = { mode, plantId: contextId, locationId: contextId, photoId };
   render();
 }
 function openInboxLightbox(photoId) {
@@ -886,6 +893,9 @@ function lightboxPhotoList() {
   if (state.lightbox.mode === "inbox") {
     return state.photos.filter((p) => !p.plant_id && !p.location_id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
   }
+  if (state.lightbox.mode === "location") {
+    return photosAtLocation(state.lightbox.locationId).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  }
   return plantPhotosOrdered(state.lightbox.plantId);
 }
 function lightboxStep(delta) {
@@ -897,6 +907,14 @@ function lightboxStep(delta) {
     if (!state.photoUrlCache[next.drive_file_id]) ensurePhotoLoaded(next.drive_file_id);
     render();
   }
+}
+async function setLocationPhoto(locationId, photoId) {
+  try {
+    await restPatch("locations", `id=eq.${locationId}`, { primary_photo_id: photoId });
+    toast("Main photo updated");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
 }
 async function setPrimaryPhoto(plantId, photoId) {
   try {
@@ -1185,6 +1203,7 @@ function screenPlantDetail() {
             if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
             const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
             const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
+            const photoLocs = allLocationsForPhoto(p);
             const isPrimary = pl.primary_photo_id === p.id;
             return `
             <div class="surface" style="padding:14px;">
@@ -1195,13 +1214,14 @@ function screenPlantDetail() {
                     <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(p.uploaded_at)}</div>
                     <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
                     ${taggedPlants.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:4px;">Also shows: ${taggedPlants.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
+                    ${photoLocs.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:2px;">📍 ${photoLocs.map((l2) => escapeHtml(l2.name)).join(", ")}</div>` : ""}
                   </div>
                 </div>
                 ${isPrimary ? `<span class="pill pill-orange">Profile</span>` : ""}
               </div>
-              <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px;">
-                <button class="btn-ghost" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">Tag other plants</button>
-                <button class="btn-ghost" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("link")} Container</button>
                 ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
                 <button class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">Delete</button>
               </div>
@@ -1258,17 +1278,30 @@ function screenLocationDetail() {
   const plants = plantsAtLocation(l.id);
   const photos = photosAtLocation(l.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
 
+  const heroPhoto = l.primary_photo_id ? photos.find((p) => p.id === l.primary_photo_id) : photos[0];
+  if (heroPhoto && !state.photoUrlCache[heroPhoto.drive_file_id]) ensurePhotoLoaded(heroPhoto.drive_file_id);
+  const heroUrl = heroPhoto ? state.photoUrlCache[heroPhoto.drive_file_id] : null;
+
   return `
   <div class="screen">
     <div class="container">
       <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${l.parent_location_id ? `openLocation('${l.parent_location_id}')` : "goTab('locations')"}">${icon("back")} ${l.parent_location_id ? escapeHtml(locationById(l.parent_location_id).name) : "Locations"}</button>
 
-      <div class="tag-card">
+      <div class="tag-card" style="padding:0;overflow:hidden;">
+        <div class="plant-hero" ${heroUrl ? `onclick="openLightbox('${l.id}','${heroPhoto.id}','location')"` : `onclick="openModal('chooseLocationPhoto',{locationId:'${l.id}'})"`}>
+          ${heroUrl
+            ? `<img src="${heroUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />`
+            : `<div class="plant-hero-empty">${icon("photo")}<span>Tap to add a main photo</span></div>`}
+        </div>
+        <button class="hero-change-btn" onclick="event.stopPropagation();openModal('chooseLocationPhoto',{locationId:'${l.id}'})">${heroUrl ? "Change photo" : "Add photo"}</button>
+
+        <div style="padding:16px 16px 14px 20px;">
         <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
         <div class="display" style="font-size:22px;font-weight:600;margin-top:3px;">${escapeHtml(l.name)}</div>
         <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px;">${escapeHtml(locationPath(l))}</div>
         ${l.notes ? `<div style="font-size:13.5px;color:var(--ink-soft);margin-top:10px;">${escapeHtml(l.notes)}</div>` : ""}
         <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
+        </div>
       </div>
 
       ${(() => {
@@ -1282,6 +1315,7 @@ function screenLocationDetail() {
           <div class="card-grid">
             ${children.map((c) => {
               const count = aggregatePlantCount(c.id);
+              const photoCount = aggregatePhotoCount(c.id);
               const grandchildren = directChildLocations(c.id).length;
               return `
               <div class="tag-card" style="cursor:pointer;padding:12px 14px;" onclick="openLocation('${c.id}')">
@@ -1291,7 +1325,7 @@ function screenLocationDetail() {
                     <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;margin-top:1px;">${escapeHtml(c.name)}</div>
                   </div>
                   <div style="text-align:right;">
-                    <div class="mono" style="font-size:11px;color:var(--moss-dim);">${count} plant${count === 1 ? "" : "s"}</div>
+                    <div class="mono" style="font-size:11px;color:var(--moss-dim);">${count} plant${count === 1 ? "" : "s"}${photoCount ? ` · ${photoCount} photo${photoCount === 1 ? "" : "s"}` : ""}</div>
                     ${grandchildren ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${grandchildren} inside →</div>` : ""}
                   </div>
                 </div>
@@ -1330,7 +1364,7 @@ function screenLocationDetail() {
             return `
             <div class="tag-card">
               <div class="photo-row">
-                <div class="photo-icon on-cream" style="cursor:${cachedUrl ? "pointer" : "default"};">${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+                <div class="photo-icon on-cream" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openLightbox('${l.id}','${p.id}','location')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
                 <div style="flex:1;min-width:0;">
                   <div class="tag-id">${fmtDate(p.uploaded_at)}</div>
                   <div style="font-size:13.5px;color:var(--ink-soft);margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
@@ -1888,6 +1922,25 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "chooseLocationPhoto") {
+    const photos = photosAtLocation(data.locationId).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Choose main photo</h3>
+      ${photos.length === 0 ? `<p class="subtle">No photos of this location yet — add one from here first.</p>` : `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:50vh;overflow-y:auto;">
+          ${photos.map((p) => {
+            const cachedUrl = state.photoUrlCache[p.drive_file_id];
+            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
+            return `
+            <button onclick="setLocationPhoto('${data.locationId}','${p.id}')" style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
+              ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
+            </button>`;
+          }).join("")}
+        </div>`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "choosePrimaryPhoto") {
     const photos = plantPhotosOrdered(data.plantId);
     return `
@@ -2375,14 +2428,16 @@ function render() {
 
 function renderLightbox() {
   const isInbox = state.lightbox.mode === "inbox";
-  const { plantId, photoId } = state.lightbox;
+  const isLocation = state.lightbox.mode === "location";
+  const { plantId, locationId, photoId } = state.lightbox;
   const list = lightboxPhotoList();
   const idx = list.findIndex((p) => p.id === photoId);
   const p = list[idx];
   if (!p) { state.lightbox = null; return ""; }
   const url = state.photoUrlCache[p.drive_file_id];
-  const pl = !isInbox ? state.plants.find((x) => x.id === plantId) : null;
-  const isPrimary = pl?.primary_photo_id === p.id;
+  const pl = (!isInbox && !isLocation) ? state.plants.find((x) => x.id === plantId) : null;
+  const loc = isLocation ? locationById(locationId) : null;
+  const isPrimary = isLocation ? loc?.primary_photo_id === p.id : pl?.primary_photo_id === p.id;
   const plantnetSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "PlantNet") : null;
   const claudeSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "Claude") : null;
   const isIdentifying = state.identifyingPhotoId === p.id;
@@ -2390,14 +2445,18 @@ function renderLightbox() {
 
   const titleLine = isInbox
     ? `<div style="font-size:13.5px;">Inbox photo</div>`
-    : `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : ""}</div>`;
+    : isLocation
+    ? `<div style="font-size:13.5px;">${loc ? escapeHtml(loc.name) : ""}</div><div style="font-size:11px;color:#9FB0A3;">${loc ? escapeHtml(locationPath(loc)) : ""}</div>`
+    : `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : ""}</div><div style="font-size:11px;color:#9FB0A3;">📍 ${pl && locationById(pl.location_id) ? escapeHtml(locationPath(locationById(pl.location_id))) : "No location set"}</div>`;
 
   const lightboxSuggestionLine = (s) => `
     <div style="text-align:center;font-size:12.5px;color:var(--cream);margin-bottom:4px;cursor:pointer;" onclick="event.stopPropagation();openModal('identificationDetail',{identificationId:'${s.id}'})">
       <span class="mono" style="font-size:9px;color:var(--blue);text-transform:uppercase;">${s.source}</span> <em>${escapeHtml(s.suggested_name)}</em>${s.confidence ? ` (${Math.round(s.confidence * 100)}%)` : ""} <span style="color:var(--blue);">— compare</span>
     </div>`;
 
-  const bottomActions = isInbox ? `
+  let bottomActions;
+  if (isInbox) {
+    bottomActions = `
     ${plantnetSuggestion ? lightboxSuggestionLine(plantnetSuggestion) : ""}
     ${claudeSuggestion ? lightboxSuggestionLine(claudeSuggestion) : ""}
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px;">
@@ -2406,12 +2465,22 @@ function renderLightbox() {
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
       <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
-
       <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();deletePhoto('${p.id}')">Delete</button>
+    </div>`;
+  } else if (isLocation) {
+    bottomActions = `
+      <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+        ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setLocationPhoto('${locationId}','${p.id}')">Set as main photo</button>` : `<span class="pill pill-orange">Main photo</span>`}
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('editLocation',{locationId:'${locationId}'})">Edit location</button>
+      </div>`;
+  } else {
+    bottomActions = `
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+      ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setPrimaryPhoto('${plantId}','${p.id}')">Set as profile picture</button>` : `<span class="pill pill-orange">Profile picture</span>`}
+      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('editPlant',{plantId:'${plantId}'})">Edit location</button>
     </div>
-  ` : `
-    ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setPrimaryPhoto('${plantId}','${p.id}')">Set as profile picture</button>` : `<span class="pill pill-orange">Profile picture</span>`}
   `;
+  }
 
   return `
   <div class="lightbox-backdrop" onclick="if(event.target===this)closeLightbox()">

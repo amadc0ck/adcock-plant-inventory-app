@@ -155,6 +155,15 @@ const CONFIG = {
 };
 
 /* ============================================================
+   VERSION — bump this (number + date) any time the file changes,
+   so you can confirm a push actually took effect after refreshing.
+   Check it in Settings, or open the browser console.
+   ============================================================ */
+const APP_VERSION = "1.1.0";
+const APP_UPDATED = "2026-08-23";
+console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
+
+/* ============================================================
    STATE — in-memory only (see note in Settings tab)
    ============================================================ */
 const state = {
@@ -624,6 +633,7 @@ function screenSettings() {
       <p class="subtle" style="margin-top:20px;line-height:1.5;">
         Note: sessions aren't remembered across page reloads yet — you'll need to sign in again if you refresh. Expected for now.
       </p>
+      <p class="mono subtle" style="margin-top:24px;opacity:0.5;">v${APP_VERSION} · ${APP_UPDATED}</p>
     </div>
   </div>`;
 }

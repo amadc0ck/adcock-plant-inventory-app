@@ -83,10 +83,6 @@
   .navbtn .badge{position:absolute;transform:translate(10px,-8px);background:var(--terracotta);color:var(--cream);font-size:9px;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
 
   .tag-card{background:var(--parchment);color:var(--ink);border-radius:3px;position:relative;padding:16px 16px 14px 22px;box-shadow:0 1px 0 rgba(0,0,0,0.15), 0 6px 14px -8px rgba(0,0,0,0.4);}
-  .tag-card::before{content:"";position:absolute;left:8px;top:14px;width:7px;height:7px;border-radius:50%;display:none;}
-  .tag-card.status-dot::before{display:block;}
-  .tag-card.status-active::before{background:var(--moss);}
-  .tag-card.status-attention::before{background:var(--terracotta);}
   .tag-id{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;color:var(--moss-dim);text-transform:uppercase;}
 
   .surface{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;}
@@ -210,6 +206,11 @@
   .thumb-delete-btn{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(37,41,37,0.75);color:var(--parchment);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
   .thumb-delete-btn svg{width:12px;height:12px;}
 
+  .status-badge{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.4);}
+  .status-badge svg{width:14px;height:14px;}
+  .status-badge.status-active{background:var(--moss);color:#12200F;}
+  .status-badge.status-attention{background:var(--terracotta);color:#3A1608;}
+
   .select-check{position:absolute;top:-6px;left:-6px;width:22px;height:22px;border-radius:50%;background:var(--parchment);border:2px solid var(--moss-dim);z-index:2;display:flex;align-items:center;justify-content:center;color:#0F1712;}
   .select-check.checked{background:var(--moss);border-color:var(--moss);}
   .select-check svg{width:12px;height:12px;}
@@ -266,7 +267,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.33.0";
+const APP_VERSION = "1.34.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -749,6 +750,39 @@ function allLocationsForPhoto(photo) {
   });
   return ids.map((id) => locationById(id)).filter(Boolean);
 }
+// Locations that already appear in this plant's photo timeline but aren't
+// yet in plant_locations — surfaced as one-tap suggestions so locations
+// don't have to be found and re-added manually from the full picker.
+function suggestedLocationsForPlant(pl) {
+  const existingIds = allLocationsForPlant(pl).map((l) => l.id);
+  const photos = state.photos.filter((p) => p.plant_id === pl.id);
+  const seen = new Map();
+  photos.forEach((p) => {
+    allLocationsForPhoto(p).forEach((l) => {
+      if (!existingIds.includes(l.id)) seen.set(l.id, l);
+    });
+  });
+  return Array.from(seen.values());
+}
+// Groups a list of photos by the location(s) they're tagged to, for
+// rendering separate per-location sub-timelines on the plant detail view.
+function groupPhotosByLocation(photosList) {
+  const groups = new Map();
+  photosList.forEach((p) => {
+    const locs = allLocationsForPhoto(p);
+    const keys = locs.length ? locs : [null];
+    keys.forEach((l) => {
+      const key = l ? l.id : "none";
+      if (!groups.has(key)) groups.set(key, { location: l, photos: [] });
+      groups.get(key).photos.push(p);
+    });
+  });
+  return Array.from(groups.values()).sort((a, b) => {
+    if (!a.location) return 1;
+    if (!b.location) return -1;
+    return a.location.name.localeCompare(b.location.name);
+  });
+}
 // Every plant present at a location, whether as primary or additional
 function plantsAtLocation(locationId) {
   const primaryIds = state.plants.filter((p) => p.location_id === locationId).map((p) => p.id);
@@ -863,6 +897,7 @@ function icon(name) {
     photoQuestion: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M15 21h-9a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l3 3" /><path d="M19 22v.01" /><path d="M19 19a2.003 2.003 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483" /></svg>`,
     plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>`,
     trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/><path d="M10 11v6M14 11v6"/></svg>`,
+    alertTriangle: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4" /><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.871l-8.106 -13.534a1.914 1.914 0 0 0 -3.274 0z" /><path d="M12 16h.01" /></svg>`,
     link: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 1 1 0 10h-2M8 12h8"/></svg>`,
     pin: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /><path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0" /></svg>`,
     info: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M12 9h.01" /><path d="M11 12h1v4h1" /></svg>`,
@@ -1066,7 +1101,7 @@ function screenInbox() {
         <span class="mono" style="font-size:12.5px;color:var(--cream);">${selectedCount} selected</span>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add Location</button>
-        <button class="btn btn-danger btn-sm" onclick="bulkDeletePhotos()">Delete</button>
+        <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos()">${icon("trash")} Delete</button>
       </div>
     </div>` : ""}`;
 }
@@ -1166,9 +1201,10 @@ function plantRow(pl) {
   const needsAttention = pl.status !== "active" || pl.health_status === "watch" || pl.health_status === "recovery";
 
   return `
-  <div class="tag-card plant-list-card status-dot ${needsAttention ? "status-attention" : "status-active"}" onclick="openPlant('${pl.id}')" title="${needsAttention ? "Needs attention" : "Active & healthy"}">
-    <div class="plant-list-thumb">
+  <div class="tag-card plant-list-card" onclick="openPlant('${pl.id}')">
+    <div class="plant-list-thumb" style="position:relative;">
       ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+      <div class="status-badge ${needsAttention ? "status-attention" : "status-active"}" title="${needsAttention ? "Needs attention" : "Active & healthy"}">${needsAttention ? icon("alertTriangle") : icon("check")}</div>
     </div>
     <div style="flex:1;min-width:0;">
       <div class="tag-id">${pl.accession_number}</div>
@@ -1257,7 +1293,7 @@ function screenPlantDetail() {
             <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit full record</button>
             <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="moveToHospital('${pl.id}')">Move to Plant Hospital</button>
             <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">Propagate from this plant</button>
-            <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--terracotta);" onclick="deletePlant('${pl.id}')">Delete plant</button>
+            <button class="btn-ghost icon-btn" style="padding:0;font-size:12.5px;color:var(--terracotta);" onclick="deletePlant('${pl.id}')">${icon("trash")} Delete plant</button>
           </div>
         </div>
       </div>
@@ -1285,43 +1321,46 @@ function screenPlantDetail() {
         </div>
       </div>` : ""}
 
-      <div class="row" style="margin-top:26px;margin-bottom:12px;">
+      <div class="row" style="margin-top:26px;margin-bottom:4px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
         <span class="subtle">${timelinePhotos.length} total</span>
       </div>
 
       ${timelinePhotos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
-        <div class="card-grid">
-          ${timelinePhotos.map((p) => {
-            const cachedUrl = state.photoUrlCache[p.drive_file_id];
-            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
-            const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
-            const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
-            const photoLocs = allLocationsForPhoto(p);
-            const isPrimary = pl.primary_photo_id === p.id;
-            return `
-            <div class="surface" style="padding:14px;">
-              <div class="row">
-                <div class="photo-row">
-                  <div class="photo-icon" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openLightbox('${pl.id}','${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
-                  <div>
-                    <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(photoDate(p))}</div>
-                    <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
-                    ${taggedPlants.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:4px;">Also shows: ${taggedPlants.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
-                    ${photoLocs.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:2px;">📍 ${photoLocs.map((l2) => escapeHtml(l2.name)).join(", ")}</div>` : ""}
+        ${groupPhotosByLocation(timelinePhotos).map((group) => `
+          <div class="loc-group-title" style="margin-top:18px;">${group.location ? "📍 " + escapeHtml(locationPath(group.location)) : "No location tagged"}</div>
+          <div class="card-grid">
+            ${group.photos.map((p) => {
+              const cachedUrl = state.photoUrlCache[p.drive_file_id];
+              if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
+              const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
+              const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
+              const photoLocs = allLocationsForPhoto(p);
+              const isPrimary = pl.primary_photo_id === p.id;
+              return `
+              <div class="surface" style="padding:14px;">
+                <div class="row">
+                  <div class="photo-row">
+                    <div class="photo-icon" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openLightbox('${pl.id}','${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+                    <div>
+                      <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(photoDate(p))}</div>
+                      <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
+                      ${taggedPlants.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:4px;">Also shows: ${taggedPlants.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
+                      ${photoLocs.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:2px;">📍 ${photoLocs.map((l2) => escapeHtml(l2.name)).join(", ")}</div>` : ""}
+                    </div>
                   </div>
+                  ${isPrimary ? `<span class="pill pill-orange">Profile</span>` : ""}
                 </div>
-                ${isPrimary ? `<span class="pill pill-orange">Profile</span>` : ""}
-              </div>
-              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
-                ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
-                <button class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">Delete</button>
-              </div>
-            </div>`;
-          }).join("")}
-        </div>`}
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
+                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
+                  ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
+                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>
+                </div>
+              </div>`;
+            }).join("")}
+          </div>
+        `).join("")}`}
     </div>
   </div>`;
 }
@@ -2195,10 +2234,20 @@ function modalContent() {
     const pl = state.plants.find((p) => p.id === data.plantId);
     const existingIds = allLocationsForPlant(pl).map((l) => l.id);
     const options = locationOptionList().filter((o) => !existingIds.includes(o.id));
+    const suggested = suggestedLocationsForPlant(pl);
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add another location</h3>
       <p class="subtle" style="margin:0 0 14px;">For plants that occupy more than one spot — a groundcover or vine spanning several containers, for example.</p>
+      ${suggested.length > 0 ? `
+        <div class="section-label">Already seen in this plant's photo timeline</div>
+        <div class="stack" style="margin-bottom:16px;">
+          ${suggested.map((l) => `
+            <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="addPlantLocation('${data.plantId}','${l.id}')">
+              📍 ${escapeHtml(locationPath(l))}
+            </button>`).join("")}
+        </div>
+        <div class="section-label">Or choose manually</div>` : ""}
       ${options.length === 0 ? `<p class="subtle">No other locations available to add.</p>` : `
         <select id="add-loc-select">${options.map((o) => `<option value="${o.id}">${escapeHtml(o.label)}</option>`).join("")}</select>
         <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="addPlantLocation('${data.plantId}', document.getElementById('add-loc-select').value)">Add location</button>`}
@@ -2248,7 +2297,7 @@ function modalContent() {
               <button onclick="setPrimaryPhoto('${data.plantId}','${p.id}')" style="width:100%;height:100%;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
                 ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
               </button>
-              <button onclick="event.stopPropagation();deletePhoto('${p.id}')" class="thumb-delete-btn" aria-label="Delete photo">${icon("close")}</button>
+              <button onclick="event.stopPropagation();deletePhoto('${p.id}')" class="thumb-delete-btn" aria-label="Delete photo">${icon("trash")}</button>
             </div>`;
           }).join("")}
         </div>` : ""}
@@ -2827,7 +2876,7 @@ function renderLightbox() {
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Add Location</button>
       <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
-      <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();deletePhoto('${p.id}')">Delete</button>
+      <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>
     </div>`;
   } else if (isLocation) {
     bottomActions = `
@@ -2841,7 +2890,7 @@ function renderLightbox() {
       <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
         ${pl ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openPlant('${pl.id}')">View plant</button>` : ""}
         ${galleryLocs[0] ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openLocation('${galleryLocs[0].id}')">View location</button>` : ""}
-        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">Delete</button>
+        <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>
       </div>`;
   } else {
     bottomActions = `

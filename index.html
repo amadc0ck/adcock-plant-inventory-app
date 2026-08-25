@@ -216,7 +216,7 @@
   .bulk-action-bar{position:fixed;left:0;right:0;bottom:76px;background:var(--bg-raised);border-top:1px solid var(--line);padding:12px 0;z-index:28;}
 
   /* Plant Detail hero image (profile picture) */
-  .plant-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;cursor:pointer;}
+  .plant-hero{width:100%;aspect-ratio:16/9;max-height:280px;background:var(--parchment-dim);position:relative;cursor:pointer;}
   .plant-hero-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
   .inbox-photo-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;}
   .plant-hero-empty svg{width:36px;height:36px;}
@@ -265,7 +265,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.30.0";
+const APP_VERSION = "1.31.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -977,7 +977,7 @@ function screenInbox() {
       <div class="container" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span class="mono" style="font-size:12.5px;color:var(--cream);">${selectedCount} selected</span>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
-        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Attach to container</button>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add Location</button>
         <button class="btn btn-danger btn-sm" onclick="bulkDeletePhotos()">Delete</button>
       </div>
     </div>` : ""}`;
@@ -1017,7 +1017,7 @@ function photoRow(p, selectMode) {
         ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")} ${isIdentifying ? "…" : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
         ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : icon("search")} ${isIdentifyingClaude ? "…" : "Ask Claude"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${claudeSuggestion.id}')">Dismiss Claude</button>`}
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("link")} Plant</button>
-        <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Container</button>
+        <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")} New</button>
         <button class="btn btn-danger btn-sm icon-btn" onclick="deletePhoto('${p.id}')" aria-label="Delete">${icon("trash")}</button>
       </div>` : ""}
@@ -1226,7 +1226,7 @@ function screenPlantDetail() {
               </div>
               <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("link")} Container</button>
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
                 ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
                 <button class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">Delete</button>
               </div>
@@ -1237,15 +1237,31 @@ function screenPlantDetail() {
   </div>`;
 }
 
+function locationCoverPhoto(l) {
+  const photos = photosAtLocation(l.id);
+  if (l.primary_photo_id) {
+    const primary = photos.find((p) => p.id === l.primary_photo_id);
+    if (primary) return primary;
+  }
+  return photos.sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at))[0] || null;
+}
+
 function screenLocations() {
   const topLevel = state.locations.filter((l) => !l.parent_location_id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
 
-  function locationCard(l) {
+function locationCard(l) {
     const plantCount = aggregatePlantCount(l.id);
     const photoCount = photosAtLocation(l.id).length;
     const childCount = directChildLocations(l.id).length;
+    const cover = locationCoverPhoto(l);
+    if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
+    const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
     return `
-      <div class="tag-card" style="cursor:pointer;" onclick="openLocation('${l.id}')">
+      <div class="tag-card plant-list-card" onclick="openLocation('${l.id}')">
+        <div class="plant-list-thumb">
+          ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+        </div>
+        <div style="flex:1;min-width:0;">
         <div class="row">
           <div>
             <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
@@ -1259,6 +1275,7 @@ function screenLocations() {
         <div style="display:flex;gap:8px;margin-top:10px;">
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('editLocation',{locationId:'${l.id}'})">Edit</button>
           <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('upload',{locationId:'${l.id}'})">Add photo</button>
+        </div>
         </div>
       </div>`;
   }
@@ -1343,6 +1360,7 @@ function screenLocationDetail() {
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Plants here</h3>
         <span class="subtle">${plants.length} total</span>
       </div>
+      <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" onclick="openModal('linkPlantToLocation',{locationId:'${l.id}'})">+ Link existing plant</button>
       ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
         <div class="card-grid">${plants.map(plantRow).join("")}</div>`}
 
@@ -1441,11 +1459,19 @@ function screenReports() {
   }
 
   function locationItem(l) {
+    const cover = locationCoverPhoto(l);
+    if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
+    const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
     return `
-      <div class="tag-card" style="padding:10px 14px;cursor:pointer;" onclick="openLocation('${l.id}')">
+      <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openLocation('${l.id}')">
+        <div class="plant-list-thumb" style="width:60px;height:60px;">
+          ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+        </div>
+        <div>
         <div class="tag-id">${locationTypeLabel(l.type)}</div>
         <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;">${escapeHtml(l.name)}</div>
         <div style="font-size:11.5px;color:var(--ink-soft);">${escapeHtml(locationPath(l))}</div>
+        </div>
       </div>`;
   }
 
@@ -1711,7 +1737,7 @@ function modalContent() {
     const candidates = locationOptionList().filter((o) => !q || o.label.toLowerCase().includes(q));
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach ${state.inboxSelected.size} photos to container</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location to ${state.inboxSelected.size} photos</h3>
       <p class="subtle" style="margin:0 0 14px;">All selected photos will move out of the Inbox onto that container's page.</p>
       <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
@@ -1759,7 +1785,7 @@ function modalContent() {
     const candidates = locationOptionList().filter((o) => !q || o.label.toLowerCase().includes(q));
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach to container</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location</h3>
       <p class="subtle" style="margin:0 0 14px;">Sets this photo's primary container. You can still identify or tag plants from it afterward.</p>
       <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
@@ -1964,6 +1990,24 @@ function modalContent() {
       </select>
       <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="closeModal()">Done</button>
       <button class="btn-ghost btn-block" style="margin-top:8px;text-align:center;justify-content:center;" onclick="state.plantFilters={category:'',status:'',idStatus:'',original:'',location:''};render()">Clear all filters</button>`;
+  }
+
+  if (type === "linkPlantToLocation") {
+    const existingIds = plantsAtLocation(data.locationId).map((p) => p.id);
+    const q = (state.attachSearch || "").toLowerCase();
+    const candidates = state.plants.filter((p) => !existingIds.includes(p.id) && (!q || [p.accession_number, p.common_name, p.botanical_name].filter(Boolean).join(" ").toLowerCase().includes(q)));
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Link existing plant</h3>
+      <p class="subtle" style="margin:0 0 14px;">Adds this location to the plant — either as its main location (if it doesn't have one) or as an additional one.</p>
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
+      <div class="stack" style="max-height:44vh;overflow-y:auto;">
+        ${candidates.length === 0 ? `<p class="subtle">No plants match.</p>` : candidates.map((p) => `
+          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="linkPlantToLocation('${p.id}','${data.locationId}')">
+            <span class="mono" style="opacity:0.6;margin-right:6px;">${p.accession_number}</span>${escapeHtml(plantDisplayName(p))}
+          </button>`).join("")}
+      </div>
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "addPlantLocation") {
@@ -2193,6 +2237,20 @@ async function useIdentificationCandidate(identificationId, name, score) {
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
+async function linkPlantToLocation(plantId, locationId) {
+  const pl = state.plants.find((p) => p.id === plantId);
+  try {
+    if (!pl.location_id) {
+      await restPatch("plants", `id=eq.${plantId}`, { location_id: locationId, updated_at: new Date().toISOString() });
+    } else {
+      await restPost("plant_locations", { plant_id: plantId, location_id: locationId });
+    }
+    toast("Plant linked");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function addPlantLocation(plantId, locationId) {
   if (!locationId) return;
   try {
@@ -2238,6 +2296,9 @@ async function mergePlants(keepId, removeId) {
     // Reparent anything propagated from the plant being removed
     await restPatch("plants", `parent_plant_id=eq.${removeId}`, { parent_plant_id: keepId });
 
+    // Reassign location history rows (FK would otherwise block deletion)
+    await restPatch("plant_location_history", `plant_id=eq.${removeId}`, { plant_id: keepId });
+
     await restDelete("plants", `id=eq.${removeId}`);
     toast(`Merged into ${keep.accession_number}`);
     await loadAll();
@@ -2252,6 +2313,7 @@ async function deletePlant(plantId) {
     await restDelete("photo_plants", `plant_id=eq.${plantId}`);
     await restDelete("plant_locations", `plant_id=eq.${plantId}`);
     await restPatch("plants", `parent_plant_id=eq.${plantId}`, { parent_plant_id: null });
+    await restDelete("plant_location_history", `plant_id=eq.${plantId}`);
     await restDelete("plants", `id=eq.${plantId}`);
     toast("Plant deleted");
     goTab("plants");
@@ -2569,7 +2631,7 @@ function renderLightbox() {
       ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifying ? "disabled" : ""} onclick="event.stopPropagation();identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : ""}
       ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifyingClaude ? "disabled" : ""} onclick="event.stopPropagation();identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : "Ask Claude"}</button>` : ""}
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
-      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Attach to container</button>
+      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Add Location</button>
       <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
       <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();deletePhoto('${p.id}')">Delete</button>
     </div>`;

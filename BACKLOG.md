@@ -41,8 +41,11 @@ Consequences:
 - **Propagation inherits `taxa_id` from the parent automatically.** An offset is by definition the same taxon. This is the largest single saving from the split — propagate five times and enter zero taxon facts, against twelve fields × five today. See PROP-1.
 - `acquisition_source_type = 'propagation'` and a non-null `parent_plant_id` should agree. Worth a soft check rather than letting them contradict.
 
+**Taxon photo gallery = favorited photos across all its specimens** (decided 2026-08-25). Not every photo — that would just repeat each specimen's timeline. Favorites become the curation mechanism, so **GAL-1 gains a second consumer**: `photos.is_favorite` stops being only a Gallery filter and becomes what promotes a specimen photo to represent the taxon.
+
+Sequencing: SPECIES-1 does **not** block on this. Ship taxon detail with the profile photo alone; add the gallery when GAL-1 lands in the Gallery rebuild.
+
 Open before building:
-- Does taxon detail show a merged photo gallery across its specimens, or only the profile photo?
 - Interaction with GAL-2: `plant_type` moves to taxa, so Collection Highlights becomes a taxon-level filter.
 - Interaction with `mergePlants`: merging two specimens of different taxa needs a rule.
 
@@ -240,6 +243,8 @@ Plant check-ins support **both** staleness (days since last photo, via `photoDat
 ### GAL-1 — Favorites
 **Status:** ready · **Effort:** low · **Schema:** `photos.is_favorite` boolean
 Heart icon, manual per-photo toggle, filter row in Gallery.
+
+**Second consumer: SPECIES-1.** A taxon's photo gallery is the favorited photos across all of its specimens, so `is_favorite` is not just a Gallery filter — it is how a specimen photo gets promoted to represent the taxon. Icon supplied: `heartStar`, already defined in `icon()` since v1.38.0.
 
 ### GAL-2 — Collection Highlights
 **Status:** ready · **Effort:** medium · **Schema:** category-tagging junction table

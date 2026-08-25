@@ -79,12 +79,12 @@ Add a count field: "How many offsets?" → create N specimens in one go, each ge
 
 This **reverses the plant↔location many-to-many in §6.** `plant_locations` existed to let one plant be in several places at once — a workaround for having no taxon/specimen distinction. With specimens real, a specimen has exactly one `location_id` and the junction is retired. Photo↔plant and photo↔location many-to-many **stay**: a single photo genuinely can show several plants and several containers.
 
-**The split is not mechanical.** Locations recorded for one plant frequently sit in an **ancestor/descendant chain** — e.g. ABG-2026-0002 lists both "Top Row" and "Top Row > Bucket 02". That is almost always **one specimen recorded at two precisions**, not two plants. A naive row-per-location split would invent a phantom specimen for every record ever logged loosely and later refined.
+**The split is not mechanical, and the obvious heuristic is wrong.** Locations recorded for one plant often sit in an **ancestor/descendant chain** — e.g. 0007 lists both "Wall Collection" and "Wall Collection > Bottom Row > Bucket 64". The tempting reading is one specimen recorded at two precisions. **In Amanda's data that reading was wrong twice out of three.** The coarse entry is usually a **real, separate plant whose location does not exist as a row yet** — 0007's is a pot below the container wall, 0027's is the door planter holding the jade.
 
 Migration rules:
-- Locations in an **ancestor/descendant chain collapse to one specimen**, placed at the most specific location.
-- Locations in **disjoint branches become separate specimens**.
-- Anything ambiguous is reviewed by hand, not guessed.
+- **Every ancestor/descendant pair is reviewed by hand.** Do not auto-collapse. The coarse entry is more often a placeholder for a missing location than a duplicate.
+- Locations in **disjoint branches become separate specimens** — this part is safe to automate.
+- **Prerequisite:** create the missing locations first (the pots and planters below the container wall), so every specimen can land somewhere specific instead of on a bare ancestor.
 - **Photos route by their own `location_id`** — a photo at location L belongs to the specimen at L. This is clean and needs no judgement. Photos with no location stay with the originating specimen and are reassigned manually.
 - **Care notes** have no location and stay with the originating specimen.
 - The original row **keeps its accession number** (immutable, §5); each newly split-out specimen draws a fresh one from the existing trigger.
@@ -100,6 +100,17 @@ join plant_locations pl on pl.plant_id = p.id
 group by p.id, p.accession_number, p.botanical_name
 order by location_count desc;
 ```
+
+### PHOTO-3 — Detach a photo from a specimen without deleting it
+**Status:** ready · **Effort:** low · **Schema:** none · **Touches:** `screenPlantDetail` timeline, new `detachPhotoFromPlant()`
+
+The Plant Detail timeline offers **Delete** (destroys the photo record) or **Remove tag** (tagged photos only). There is no way to say "this photo belongs to a different specimen" — the only route is deleting and re-uploading, which loses the EXIF date and the Drive file.
+
+Add **Detach** — sets `photos.plant_id = null`, returning the photo to the Inbox. `deletePlant()` already does exactly this internally, so the behaviour exists and is simply not exposed per-photo.
+
+Pairs with PHOTO-2: detach from the wrong specimen, then attach from the right one. Together those two make the SPECIES-2 photo reassignment a **UI job rather than a SQL job**, which matters because the ambiguous photos have to be looked at to be assigned.
+
+Consider also a direct **Move to another specimen** as detach+attach in one step, once taxa exist and the candidate list is "other specimens of this taxon" — a short, obviously-correct list.
 
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`

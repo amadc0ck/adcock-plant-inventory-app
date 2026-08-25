@@ -76,7 +76,14 @@
   .subtle{color:#9FB0A3;font-size:12.5px;}
   /* A zero count is still shown — an empty container is the record that needs
      work — but recedes so a long list of unpopulated buckets stays scannable. */
-  .count-zero{opacity:0.45;}
+  .count-zero,.value-blank{opacity:0.45;}
+
+  /* PD-2 structured fields. These render even when blank, so the blank state
+     needs to read as "not recorded" rather than as a rendering bug. */
+  .detail-row{display:flex;gap:14px;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);}
+  .detail-row:last-child{border-bottom:none;}
+  .detail-row-label{font-size:12.5px;color:#8AA090;flex-shrink:0;}
+  .detail-row-value{font-size:13.5px;color:#C9D6CC;text-align:right;min-width:0;}
 
   .navbar{position:fixed;bottom:0;left:0;right:0;background:var(--bg-raised);border-top:1px solid var(--line);z-index:30;padding-bottom:env(safe-area-inset-bottom);}
   .navbar .container{display:flex;justify-content:space-around;padding:8px 12px 6px;max-width:640px;}
@@ -287,7 +294,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.35.0";
+const APP_VERSION = "1.36.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -482,6 +489,7 @@ async function exportFullBackup() {
 
 function exportPlantsCsv() {
   const headers = ["accession_number", "botanical_name", "common_name", "cultivar", "family", "genus", "species",
+    "plant_type", "growth_habit", "mature_size", "bloom_season", "origin",
     "identification_status", "collection_category", "original_collection", "status", "health_status",
     "location_path", "date_acquired", "acquisition_source_type", "acquisition_source_name",
     "native_range", "hardy_to", "light_requirements", "water_needs", "notes"];
@@ -489,6 +497,7 @@ function exportPlantsCsv() {
     const loc = locationById(pl.location_id);
     return [
       pl.accession_number, pl.botanical_name, pl.common_name, pl.cultivar, pl.family, pl.genus, pl.species,
+      pl.plant_type, pl.growth_habit, pl.mature_size, pl.bloom_season, pl.origin,
       pl.identification_status, pl.collection_category, pl.original_collection, pl.status, pl.health_status,
       loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
       pl.native_range, pl.hardy_to, (pl.light_conditions || []).join("; "), pl.water_needs, pl.notes,
@@ -885,6 +894,16 @@ function locationTypeLabel(t) {
 // Mixed child types, or types with no natural plural (Indoor, Hanging, Other),
 // fall back to the generic word.
 const CHILD_TYPE_PLURALS = { area: ["area", "areas"], row: ["row", "rows"], slot: ["slot", "slots"], container: ["container", "containers"], pot: ["pot", "pots"], bed: ["bed", "beds"], greenhouse: ["greenhouse", "greenhouses"], work_area: ["work area", "work areas"], hospital: ["hospital", "hospitals"] };
+// PD-2 structured fields render even when blank — an unrecorded field marks the
+// record as incomplete, which is information worth showing. The Care and
+// Provenance sections below still hide when empty; that convention was left
+// alone deliberately, so Plant Detail follows two rules on purpose.
+// Returns HTML, not text — do not escape at the call site.
+function detailRow(label, value) {
+  const has = value !== null && value !== undefined && value !== "";
+  return `<div class="detail-row"><span class="detail-row-label">${label}</span><span class="detail-row-value${has ? "" : " value-blank"}">${has ? escapeHtml(value) : "—"}</span></div>`;
+}
+
 // Returns HTML, not text — do not escape at the call site.
 function countLabel(n, singular, plural) {
   const text = `${n} ${n === 1 ? singular : plural}`;
@@ -901,6 +920,18 @@ const ID_STATUS_LABELS = { confirmed: "Confirmed", tentative: "Tentative", unide
 const HEALTH_LABELS = { healthy: "Healthy", watch: "Watch", recovery: "Recovery", unknown: "Unknown" };
 const CATEGORY_LABELS = { current: "Current", historical: "Historical" };
 const ACQ_SOURCE_LABELS = { nursery: "Nursery", gift: "Gift", propagation: "Propagation", rescue: "Rescue", original_collection: "Original Collection", unknown: "Unknown", other: "Other" };
+
+// PD-2 structured detail fields. Stored as plain text and standardized here
+// rather than by a DB enum (§3), so extending any list is a one-line edit with
+// no migration. `plant_type` doubles as the plant-level grouping GAL-2 needs.
+const PLANT_TYPE_LABELS = { cactus: "Cactus", agave: "Agave", aloe: "Aloe", euphorbia: "Euphorbia", sedum: "Sedum", crassula: "Crassula", echeveria: "Echeveria", sempervivum: "Sempervivum", aeonium: "Aeonium" };
+const GROWTH_HABIT_LABELS = { columnar: "Columnar", globular: "Globular / barrel", rosette: "Rosette", clumping: "Clumping / offsetting", caudiciform: "Caudiciform", trailing: "Trailing / sprawling", mounding: "Mounding", upright: "Upright", climbing: "Climbing", groundcover: "Groundcover", solitary: "Solitary" };
+// `bloom_season` is the plant's expected trait. Observed blooming is BLOOM-1's
+// bloom_events table — RPT-4 reads that, not this.
+const BLOOM_SEASON_LABELS = { spring: "Spring", early_summer: "Early summer", summer: "Summer", late_summer: "Late summer", fall: "Fall", winter: "Winter", intermittent: "Intermittent / year-round", monocarpic: "Monocarpic — blooms once, then dies", not_observed: "Not yet observed" };
+// Native or introduced relative to the garden's own region. Distinct from
+// `native_range`, which holds where the plant is from ("Central Mexico").
+const ORIGIN_LABELS = { native: "Native", introduced: "Introduced", unknown: "Unknown" };
 
 /* ============================================================
    UI HELPERS
@@ -1338,6 +1369,15 @@ function screenPlantDetail() {
           </div>
         </div>
         </div>
+      </div>
+
+      <div class="surface" style="padding:16px;margin-top:14px;">
+        <div class="section-label" style="margin-top:0;">Details</div>
+        ${detailRow("Type", PLANT_TYPE_LABELS[pl.plant_type] || pl.plant_type)}
+        ${detailRow("Growth habit", GROWTH_HABIT_LABELS[pl.growth_habit] || pl.growth_habit)}
+        ${detailRow("Mature size", pl.mature_size)}
+        ${detailRow("Bloom season", BLOOM_SEASON_LABELS[pl.bloom_season] || pl.bloom_season)}
+        ${detailRow("Origin", ORIGIN_LABELS[pl.origin] || pl.origin)}
       </div>
 
       ${(pl.identification_notes || pl.acquisition_source_type || pl.acquisition_source_name || pl.acquisition_notes || pl.date_acquired) ? `
@@ -2123,6 +2163,30 @@ function modalContent() {
         </select>
         <label>Identification notes</label>
         <textarea id="ep-idnotes" rows="2" placeholder="e.g. Possible Echinopsis, species uncertain">${escapeHtml(pl.identification_notes || "")}</textarea>
+
+        <div class="section-label">Details</div>
+        <label>Type</label>
+        <select id="ep-planttype">
+          <option value="">— Not recorded —</option>
+          ${Object.entries(PLANT_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${pl.plant_type === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Growth habit</label>
+        <select id="ep-growthhabit">
+          <option value="">— Not recorded —</option>
+          ${Object.entries(GROWTH_HABIT_LABELS).map(([k, v]) => `<option value="${k}" ${pl.growth_habit === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Mature size</label>
+        <input id="ep-maturesize" placeholder="e.g. 3&ndash;4 ft tall &times; 5 ft wide" value="${escapeHtml(pl.mature_size || "")}" />
+        <label>Bloom season</label>
+        <select id="ep-bloomseason">
+          <option value="">— Not recorded —</option>
+          ${Object.entries(BLOOM_SEASON_LABELS).map(([k, v]) => `<option value="${k}" ${pl.bloom_season === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Origin</label>
+        <select id="ep-origin">
+          ${Object.entries(ORIGIN_LABELS).map(([k, v]) => `<option value="${k}" ${(pl.origin || "unknown") === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <div class="field-help">Native or introduced relative to this garden's region — not where the plant is from, which is Native range below.</div>
 
         <div class="section-label">Care</div>
         <label>Native range</label>
@@ -3123,6 +3187,11 @@ function wireModalForms() {
           species: document.getElementById("ep-species").value || null,
           identification_status: document.getElementById("ep-idstatus").value,
           identification_notes: document.getElementById("ep-idnotes").value || null,
+          plant_type: document.getElementById("ep-planttype").value || null,
+          growth_habit: document.getElementById("ep-growthhabit").value || null,
+          mature_size: document.getElementById("ep-maturesize").value || null,
+          bloom_season: document.getElementById("ep-bloomseason").value || null,
+          origin: document.getElementById("ep-origin").value || "unknown",
           native_range: document.getElementById("ep-native").value || null,
           hardy_to: document.getElementById("ep-hardy").value || null,
           light_conditions: Array.from(document.querySelectorAll(".ep-light-checkbox:checked")).map((el) => el.value),

@@ -20,15 +20,6 @@ Item IDs are permanent. Never renumber.
 
 ---
 
-### PD-2 — Structured Details fields
-**Status:** ready · **Effort:** medium · **Schema:** yes · **Depends on:** PD-1 (layout must exist to place them)
-
-Add columns to `plants`: `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `introduced`.
-
-- All structured plant fields stay **visible even when blank**. Blank is information, it marks a record as incomplete.
-- Add the fields to the plant edit modal and to the CSV export.
-- Produce the `ALTER TABLE` as a copy/paste SQL block and record it in `REFERENCE.md` §3.
-
 ### PD-3 — Care notes as a dated list
 **Status:** ready · **Effort:** medium · **Schema:** yes (new table) · **Depends on:** PD-1
 
@@ -149,6 +140,38 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.36.0
+
+**PD-2 — Structured Details fields.** Status: done · Schema: yes, `ALTER TABLE plants` (below) · Touched `screenPlantDetail`, `editPlant` modal, `wireModalForms`, `exportPlantsCsv`, new `detailRow()` + four label maps.
+
+Five fields added: `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `origin`.
+
+- `introduced` was renamed **`origin`** and is a Native / Introduced / Unknown classification, not a date. The original backlog name read wrong holding the value `native`. Decided in conversation and previously unrecorded — now in `REFERENCE.md` §3.
+- All five render on Plant Detail even when blank, dimmed em-dash via `detailRow()` / `.value-blank`. Care and Provenance keep hiding when empty — **deliberate**, decided explicitly; the screen follows two conventions on purpose.
+- Dropdown values live in JS label maps, not DB enums, per §3 convention. Extending a list is a one-line edit with no migration. See ADM-1 for making them user-editable.
+- `plant_type` doubles as the plant-level grouping GAL-2 needs — see the note on that item.
+- Added to the plant edit modal and appended to the CSV export after `species`.
+
+```sql
+-- PD-2: structured plant detail fields
+alter table plants
+  add column if not exists plant_type   text,
+  add column if not exists growth_habit text,
+  add column if not exists mature_size  text,
+  add column if not exists bloom_season text,
+  add column if not exists origin       text default 'unknown';
+```
+
+### v1.35.0
+
+**PD-1 — Plant Detail layout rebuild.** Status: done · Schema: none · Touched `<style>`, `screenPlantDetail`, `screenLocationDetail`, `photoRow`.
+
+- New `.card-media` treatment with `ratio-4x3` / `ratio-1x1` modifiers, replacing `.plant-hero` (16:9), `.inbox-photo-hero` (4:3) and `.plant-hero-empty` — three parallel boxes doing one job. **This is the reusable pattern LOC-1 consumes.**
+- New `.detail-split`: image stacked on phones, beside the details block from 700px (image column 42%, max 400px).
+- `.hero-change-btn` deleted — it floated over a full-width hero via `margin-top:-40px`, which breaks in a column. Replaced by `.media-btn` positioned inside the media box.
+- Applied to Plant Detail, Location Detail, and the Inbox card. Photo timeline and its per-location grouping untouched.
+- Side effect: Inbox thumbnails now crop from the top rather than centre, inherited from the shared treatment.
 
 ### v1.34.5
 

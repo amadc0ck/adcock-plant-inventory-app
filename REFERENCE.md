@@ -62,6 +62,13 @@ One row per individual accessioned specimen.
 - `accession_number` text, **unique, not null** — format `ABG-YYYY-NNNN`, auto-generated, immutable once set (§5)
 - `botanical_name` / `common_name` / `cultivar` text, nullable — display name logic: botanical → common → "Unidentified Plant"
 - `family` / `genus` / `species` text, nullable — structured taxonomy, separate from free-text `botanical_name`
+- `plant_type` text, nullable — cactus / agave / aloe / euphorbia / sedum / crassula / echeveria / sempervivum / aeonium. Collection grouping, **not** taxonomy. Partly redundant with `genus`: only `cactus` rolls up multiple genera; the rest duplicate a genus value that is free text and may be blank or unnormalized. Doubles as the plant-level category GAL-2 needs.
+- `growth_habit` text, nullable — columnar / globular / rosette / clumping / caudiciform / trailing / mounding / upright / climbing / groundcover / solitary
+- `mature_size` text, nullable — free text, e.g. "3–4 ft tall × 5 ft wide"
+- `bloom_season` text, nullable — spring / early_summer / summer / late_summer / fall / winter / intermittent / monocarpic / not_observed. The plant's **expected** trait. Observed blooming belongs to BLOOM-1's `bloom_events`; RPT-4 reads that table, not this column.
+- `origin` text, default `unknown` — native / introduced / unknown. Whether the plant is native **to this garden's region**. Distinct from `native_range`, which holds where the plant is from ("Central Mexico"). Named `origin` by decision; the backlog originally called it `introduced`, which read wrong when holding the value `native`.
+
+The five fields above render on Plant Detail **even when blank**, because an unrecorded field marks the record as incomplete. The Care and Provenance sections deliberately keep their older behavior of hiding entirely when empty, so Plant Detail follows two conventions on purpose.
 - `identification_status` text — `confirmed` / `tentative` / `unidentified` (default)
 - `identification_notes` text, nullable
 - `collection_category` text — `current` / `historical`

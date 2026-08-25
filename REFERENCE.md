@@ -102,6 +102,17 @@ The five fields above render on Plant Detail **even when blank**, because an unr
 
 A photo with **both** `plant_id` and `location_id` null is in the Inbox. It leaves the Inbox once either is set, or once `photo_type = 'historical'`.
 
+### `care_notes`
+A running dated log of care events, separate from the free-text `plants.notes`.
+
+- `id` uuid PK
+- `plant_id` uuid FK → plants.id, **not null**, `on delete cascade`
+- `noted_on` date, not null, default `current_date` — the observation date, set by Amanda, not the insert time
+- `body` text, not null
+- `created_at` timestamptz, not null — tiebreak only, for two notes on the same `noted_on`
+
+Displayed newest-first on Plant Detail. Included in the full JSON backup and restored **after** plants, since `plant_id` is a hard FK. See §6 for merge/delete handling.
+
 ### `identifications`
 Audit trail for AI suggestions. Never silently overwrites confirmed data.
 
@@ -178,6 +189,7 @@ Plants, locations, and photos all support many-to-many **on top of** a fast-path
 3. `plant_locations`
 4. `plants.parent_plant_id` — reparent children
 5. **`plant_location_history`** — reassign history rows to the surviving plant
+6. **`care_notes`** — on merge, **reassign** to the surviving plant; the observations happened and the merged record inherits them. On delete, remove. The FK is `on delete cascade`, but both functions handle it explicitly so this list stays readable from the code.
 
 Step 5 was missed on first implementation and caused an FK violation (`plant_location_history_plant_id_fkey`) during a merge.
 

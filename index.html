@@ -294,7 +294,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.36.0";
+const APP_VERSION = "1.37.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -323,6 +323,7 @@ const state = {
   lightbox: null,
   plantLocations: [],
   photoLocations: [],
+  careNotes: [],
   inboxLimit: 20,
   tagLocationSearch: "",
   galleryFilters: { locationId: "", photoType: "", search: "" },
@@ -459,7 +460,7 @@ function csvEscape(val) {
 async function exportFullBackup() {
   try {
     toast("Preparing backup…");
-    const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters] = await Promise.all([
+    const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters, careNotes] = await Promise.all([
       restGet("locations", "?select=*"),
       restGet("plants", "?select=*"),
       restGet("photos", "?select=*"),
@@ -468,6 +469,7 @@ async function exportFullBackup() {
       restGet("plant_locations", "?select=*"),
       restGet("photo_locations", "?select=*"),
       restGet("accession_counters", "?select=*"),
+      restGet("care_notes", "?select=*"),
     ]);
     const backup = {
       exported_at: new Date().toISOString(),
@@ -477,6 +479,7 @@ async function exportFullBackup() {
       plant_locations: plantLocations,
       photo_locations: photoLocations,
       accession_counters: counters,
+      care_notes: careNotes,
     };
     downloadFile(
       `adcock-botanical-garden-backup-${new Date().toISOString().slice(0, 10)}.json`,
@@ -543,6 +546,8 @@ async function handleImportBackup() {
     if (data.plant_locations?.length) await restUpsert("plant_locations", data.plant_locations);
     if (data.photo_locations?.length) await restUpsert("photo_locations", data.photo_locations);
     if (data.accession_counters?.length) await restUpsert("accession_counters", data.accession_counters, "year");
+    // After plants — care_notes.plant_id is a hard FK.
+    if (data.care_notes?.length) await restUpsert("care_notes", data.care_notes);
 
     toast("Backup imported successfully");
     fileInput.value = "";
@@ -712,7 +717,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes] = await Promise.all([
       restGet("photos", "?select=*&order=uploaded_at.desc"),
       restGet("plants", "?select=*&order=accession_number.asc"),
       restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -721,6 +726,7 @@ async function loadAll() {
       restGet("identifications", "?select=*&order=created_at.desc"),
       restGet("plant_locations", "?select=*"),
       restGet("photo_locations", "?select=*"),
+      restGet("care_notes", "?select=*&order=noted_on.desc,created_at.desc"),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -730,6 +736,7 @@ async function loadAll() {
     state.identifications = identifications;
     state.plantLocations = plantLocations;
     state.photoLocations = photoLocations;
+    state.careNotes = careNotes;
   } catch (e) {
     toast(e.message, true);
   }
@@ -894,6 +901,21 @@ function locationTypeLabel(t) {
 // Mixed child types, or types with no natural plural (Indoor, Hanging, Other),
 // fall back to the generic word.
 const CHILD_TYPE_PLURALS = { area: ["area", "areas"], row: ["row", "rows"], slot: ["slot", "slots"], container: ["container", "containers"], pot: ["pot", "pots"], bed: ["bed", "beds"], greenhouse: ["greenhouse", "greenhouses"], work_area: ["work area", "work areas"], hospital: ["hospital", "hospitals"] };
+// Dated care events for a plant, newest first. `noted_on` is the observation
+// date Amanda sets; created_at only breaks ties between notes on the same day.
+function careNotesForPlant(plantId) {
+  return state.careNotes
+    .filter((n) => n.plant_id === plantId)
+    .sort((a, b) => (a.noted_on < b.noted_on ? 1 : a.noted_on > b.noted_on ? -1 : new Date(b.created_at) - new Date(a.created_at)));
+}
+
+// Local calendar date, not UTC. `new Date().toISOString()` rolls over to
+// tomorrow during a Pacific evening, which would misdate an evening note.
+function todayLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // PD-2 structured fields render even when blank — an unrecorded field marks the
 // record as incomplete, which is information worth showing. The Care and
 // Provenance sections below still hide when empty; that convention was left
@@ -1402,6 +1424,25 @@ function screenPlantDetail() {
           ${pl.water_needs ? `Water: ${pl.water_needs}` : ""}
         </div>
       </div>` : ""}
+
+      ${(() => {
+        const notes = careNotesForPlant(pl.id);
+        return `
+        <div class="row" style="margin-top:26px;margin-bottom:4px;">
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Care notes</h3>
+          <button class="btn btn-secondary btn-sm" onclick="openModal('addCareNote',{plantId:'${pl.id}'})">+ Add</button>
+        </div>
+        ${notes.length === 0
+          ? `<div class="empty" style="padding:24px 20px;"><div>No care notes yet.</div></div>`
+          : notes.map((n) => `
+            <div class="surface" style="padding:12px 14px;margin-top:8px;">
+              <div class="row">
+                <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(n.noted_on)}</div>
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deleteCareNote('${n.id}')">${icon("trash")}</button>
+              </div>
+              <div style="font-size:13.5px;color:#C9D6CC;margin-top:4px;white-space:pre-wrap;">${escapeHtml(n.body)}</div>
+            </div>`).join("")}`;
+      })()}
 
       <div class="row" style="margin-top:26px;margin-bottom:4px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
@@ -2076,6 +2117,20 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Close</button>`;
   }
 
+  if (type === "addCareNote") {
+    const pl = state.plants.find((p) => p.id === data.plantId);
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Add care note</h3>
+      <p class="mono subtle" style="margin:0 0 14px;">${pl ? pl.accession_number : ""}</p>
+      <label>Date</label>
+      <input type="date" id="cn-date" value="${todayLocalISO()}" />
+      <label>Note</label>
+      <textarea id="cn-body" rows="3" placeholder="e.g. repotted into a 6in terracotta; treated scale on lower pads"></textarea>
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="saveCareNote('${data.plantId}')">Save</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "editPhotoNote") {
     const photo = state.photos.find((p) => p.id === data.photoId);
     return `
@@ -2634,6 +2689,27 @@ async function removePlantLocation(rowId) {
   } catch (e) { toast(e.message, true); }
 }
 
+async function saveCareNote(plantId) {
+  const noted_on = document.getElementById("cn-date").value || todayLocalISO();
+  const body = document.getElementById("cn-body").value.trim();
+  if (!body) { toast("Write the note first", true); return; }
+  try {
+    await restPost("care_notes", { plant_id: plantId, noted_on, body });
+    toast("Care note added");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deleteCareNote(noteId) {
+  if (!confirm("Delete this care note? This can't be undone.")) return;
+  try {
+    await restDelete("care_notes", `id=eq.${noteId}`);
+    toast("Care note deleted");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function mergePlants(keepId, removeId) {
   const keep = state.plants.find((p) => p.id === keepId);
   const remove = state.plants.find((p) => p.id === removeId);
@@ -2664,6 +2740,10 @@ async function mergePlants(keepId, removeId) {
     // Reassign location history rows (FK would otherwise block deletion)
     await restPatch("plant_location_history", `plant_id=eq.${removeId}`, { plant_id: keepId });
 
+    // Care notes move to the surviving plant. They must be REASSIGNED, not
+    // deleted — the observations happened, and the merged record inherits them.
+    await restPatch("care_notes", `plant_id=eq.${removeId}`, { plant_id: keepId });
+
     await restDelete("plants", `id=eq.${removeId}`);
     toast(`Merged into ${keep.accession_number}`);
     await loadAll();
@@ -2679,6 +2759,9 @@ async function deletePlant(plantId) {
     await restDelete("plant_locations", `plant_id=eq.${plantId}`);
     await restPatch("plants", `parent_plant_id=eq.${plantId}`, { parent_plant_id: null });
     await restDelete("plant_location_history", `plant_id=eq.${plantId}`);
+    // ON DELETE CASCADE would also handle this; done explicitly so the
+    // cleanup order in REFERENCE §6 stays readable from the code.
+    await restDelete("care_notes", `plant_id=eq.${plantId}`);
     await restDelete("plants", `id=eq.${plantId}`);
     toast("Plant deleted");
     goTab("plants");

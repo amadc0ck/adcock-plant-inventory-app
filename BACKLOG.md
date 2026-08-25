@@ -20,16 +20,6 @@ Item IDs are permanent. Never renumber.
 
 ---
 
-### PD-3 — Care notes as a dated list
-**Status:** ready · **Effort:** medium · **Schema:** yes (new table) · **Depends on:** PD-1
-
-A running dated list of care events, separate from the existing free-text `plants.notes`.
-
-- New `care_notes` table: `id`, `plant_id` FK, `noted_on` date, `body` text, `created_at`.
-- Displayed newest-first on Plant Detail with an inline add.
-- Include in the full JSON backup/restore path (`exportFullBackup` / `handleImportBackup`).
-- Note the deletion implication in `REFERENCE.md` §6: deleting or merging a plant must handle `care_notes` rows.
-
 ### LOC-1 — Locations list card layout
 **Status:** ready · **Effort:** low · **Schema:** none · **Depends on:** PD-1 (image treatment must exist to apply) · **Touches:** `locationCard`, `.plant-list-card` / `.plant-list-thumb` CSS
 
@@ -48,6 +38,29 @@ Counts, inline actions, and the nested indicator already ship — see LOC-2. Thi
 LOC-2 established the rule that a zero count renders dimmed rather than hidden (`countLabel()` / `.count-zero`, `REFERENCE.md` §12), and applied it to the Locations card and the Location Detail child cards. `plantRow` still renders its photo count by hand, so a plant with no photos shows an undimmed `0 photos` while location cards dim theirs.
 
 One-line change: route it through `countLabel()`. Deliberately deferred out of LOC-2 to keep that commit scoped to the Locations screens.
+
+---
+
+### ADM-1 — Editable dropdown lists in Settings
+**Status:** ready · **Effort:** medium · **Schema:** yes (new table) · **Touches:** `screenSettings`, `loadAll`, every screen reading a `*_LABELS` map
+
+Amanda manages dropdown option lists herself, from an admin area in Settings, instead of asking for a code change.
+
+Today the vocabularies live in JS constants inside `index.html` (`PLANT_TYPE_LABELS`, `GROWTH_HABIT_LABELS`, `BLOOM_SEASON_LABELS`, `ORIGIN_LABELS`, and older ones like `STATUS_LABELS`). Editing one means editing the file and shipping a version.
+
+Proposed: a `list_options` table — `list_name`, `value`, `label`, `sort_order`, `active` — loaded in `loadAll` and cached in `state`, with the existing constants kept as seed data and fallback. One table serves every list.
+
+Decide before building:
+- **What happens to records already using a value that is renamed or deleted.** Retiring via `active = false` (still displays on existing records, no longer offered in the dropdown) is safer than a hard delete, which silently orphans data.
+- **Which lists are eligible.** `plant_type`, `growth_habit`, `bloom_season` are pure vocabulary and safe. `origin`, `status`, `health_status` and `identification_status` have **code branching on their exact values** (`status !== "active"`, `health_status === "watch"`, the Plants filter bar) — making those editable breaks logic. Either exclude them or separate "label is editable" from "value set is editable".
+- Whether `value` stays immutable once created, with only `label` editable. That would remove most of the orphaning risk in one stroke.
+
+### ADM-2 — `plant_location_history` is missing from the backup
+**Status:** ready · **Effort:** trivial · **Touches:** `exportFullBackup`, `handleImportBackup`
+
+`exportFullBackup` fetches eight tables and does not include `plant_location_history`, even though §6 treats it as FK-critical. A restore from backup silently loses every recorded plant move. Add it to the export and to the import chain after plants.
+
+Spotted during PD-3; not folded in to keep that commit scoped.
 
 ---
 
@@ -109,6 +122,8 @@ Heart icon, manual per-photo toggle, filter row in Gallery.
 **Status:** ready · **Effort:** medium · **Schema:** category-tagging junction table
 Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, Succulents. Decide photo-level vs. plant-level tagging before building — the two produce different Gallery behavior.
 
+**Re-scope against PD-2.** `plants.plant_type` now holds cactus / agave / aloe / euphorbia / sedum / crassula / echeveria / sempervivum / aeonium, which **is** plant-level category tagging. The open question shrinks to whether GAL-2 additionally needs *photo-level* tags. If not, GAL-2 needs no junction table at all — it becomes a Gallery filter reading `plant_type`. Do not build a second source of truth for the same fact.
+
 ### GAL-3 — Garden Albums
 **Status:** ready · **Effort:** medium
 Manually curated groupings: The Wall, Potted Collection, Front Yard.
@@ -140,6 +155,36 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.37.0
+
+**PD-3 — Care notes as a dated list.** Status: done · Schema: yes, new `care_notes` table (below) · Touched `state`, `loadAll`, `screenPlantDetail`, new `addCareNote` modal, `saveCareNote` / `deleteCareNote`, `exportFullBackup`, `handleImportBackup`, `deletePlant`, `mergePlants`.
+
+- Newest-first list on Plant Detail between Care and the Photo timeline, with an Add button and per-note delete.
+- `noted_on` is the observation date, defaulting to the **local** calendar date via `todayLocalISO()`. `new Date().toISOString()` rolls to tomorrow during a Pacific evening and would misdate evening notes.
+- Same-day notes tiebreak on `created_at`.
+- In the JSON backup; restored after plants, since `plant_id` is a hard FK.
+- §6 cleanup order gained step 6: merge **reassigns** care notes to the surviving plant, delete removes them. FK is `on delete cascade`; both paths still handle it explicitly.
+
+```sql
+-- PD-3: dated care events, separate from free-text plants.notes
+create table if not exists care_notes (
+  id          uuid primary key default gen_random_uuid(),
+  plant_id    uuid not null references plants(id) on delete cascade,
+  noted_on    date not null default current_date,
+  body        text not null,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists care_notes_plant_id_idx on care_notes (plant_id);
+create index if not exists care_notes_noted_on_idx on care_notes (noted_on desc);
+
+alter table care_notes enable row level security;
+
+create policy "care_notes_all_authenticated"
+  on care_notes for all to authenticated
+  using (true) with check (true);
+```
 
 ### v1.36.0
 

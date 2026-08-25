@@ -7,6 +7,83 @@ Item IDs are permanent. Never renumber.
 
 ---
 
+## Observed 2026-08-25 — triaged from Amanda's session notes
+
+### BUG-1 — "Move to Plant Hospital" does nothing
+**Status:** ready · **Effort:** trivial · **Schema:** none · **Touches:** `moveToHospital` (~`index.html:2780`)
+
+```js
+const hospital = state.locations.find((l) => l.name === "Plant Hospital" && !l.parent_location_id);
+```
+
+Two ways this silently fails, and it toasts "Plant Hospital location not found" rather than explaining which:
+1. **Name is matched as an exact, case-sensitive string.** "Hospital", "Plant hospital", or a trailing space all miss.
+2. **It must be top-level.** A Plant Hospital nested under Front Yard is invisible to this lookup, which is an arbitrary restriction.
+
+The app already has a location **type** of `hospital` (in the new/edit location dropdowns). Matching a hardcoded English name instead of the standardized type field is the actual defect. Fix: prefer `l.type === "hospital"`, fall back to the name match, drop the top-level requirement, and if several match, ask rather than silently picking the first.
+
+**Check first:** Locations tab — does a location named exactly `Plant Hospital` exist, and is it top-level? That determines whether this is only the lookup or also missing data.
+
+### PERF-1 — Photo loading flicker
+**Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`
+
+Images visibly flash and blink while loading. Every resolved Drive URL triggers `debouncedRender()`, which rebuilds `#app.innerHTML` from scratch (§11) — so every `<img>` on screen is destroyed and recreated, losing already-painted images and re-requesting them.
+
+`debouncedRender()` reduced how *often* this happens but not what it does. Options: skip the full rebuild and patch resolved `<img>` elements in place; keep a stable placeholder box so layout doesn't shift; or a first-load state. The in-place patch is the real fix — full-rebuild-on-every-photo is the root cause.
+
+### PD-4 — Health status needs an urgent tier
+**Status:** ready · **Effort:** low · **Schema:** none (text column) · **Touches:** `HEALTH_LABELS`, `plantRow`, `screenReports`
+
+`healthy` / `watch` / `recovery` / `unknown` has no level above `watch`. Add an urgent tier.
+
+`health_status` is free text standardized by the dropdown, so no migration — but **three places branch on the exact values** and must be updated together, or an urgent plant silently reads as healthy:
+- `index.html:1301` — `needsAttention` on the plant card badge
+- `index.html:1729` — `plantsNeedingAttention` in Reports
+- `moveToHospital` sets `watch` — should it set the new tier instead?
+
+Name to confirm: `urgent` / "Urgent care".
+
+### PD-5 — Show all Plant Detail fields even when empty
+**Status:** ready · **Effort:** low · **Touches:** `screenPlantDetail`
+
+**Supersedes the "new five only" decision made during PD-2.** Care (`native_range`, `hardy_to`, `light_conditions`, `water_needs`) and Provenance (`date_acquired`, acquisition fields, parent plant) currently hide entirely when empty. Make them render like the PD-2 Details block — every field listed, blanks as a dimmed em-dash via `detailRow()`.
+
+Result: one rule across the whole screen, and an incomplete record visibly reads as incomplete.
+
+### PD-6 — New Plant form is missing most fields
+**Status:** ready · **Effort:** low–medium · **Touches:** `newPlant` / `newPlantFromPhoto` modal (~`index.html:2166`), `wireModalForms`
+
+The create form collects only botanical name, common name, ID status, location, category, original-collection, notes. The edit form collects roughly twenty fields. Everything else can only be filled by creating the plant and immediately reopening it in Edit.
+
+Gap widened with PD-2 — none of `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `origin` appear at creation. Affects both entry points, which share one modal.
+
+Decide: full parity with the edit form, or a short form plus a "More details" expander so quick capture from the Inbox stays fast.
+
+### PL-1 — Status badge placement on plant list cards
+**Status:** ready · **Effort:** low · **Touches:** `plantRow` (`index.html:1305`), `.status-badge` CSS
+
+The badge sits at the card's top-right corner (moved there in v1.34.1 from an invisible corner dot). Amanda dislikes the placement. Needs a specific direction before building — inline with the title, on the thumbnail, as a left edge stripe, or a text pill in the metadata row.
+
+### PL-2 — Plant pickers should lead with a photo and common name
+**Status:** ready · **Effort:** low–medium · **Touches:** every `${p.accession_number} — ${plantDisplayName(p)}` picker (~`index.html:1843`, `1924`, `1962`, `2265`, `2412`)
+
+Attach/tag pickers list plants as `ABG-2026-0007 — Aeonium arboreum 'Zwartkop'`. Accession numbers aren't memorized and botanical names aren't yet recognizable at a glance, so the list is hard to scan.
+
+- Lead with **common name**, falling back to botanical name when there's no common name — the inverse of `plantDisplayName()`'s current precedence.
+- Show a **thumbnail**. This is the actual recognition cue.
+- Accession number demoted to small mono text, not the primary label.
+
+Note these are `<select><option>` elements in places, which cannot hold images — those become custom list pickers, which is where the effort sits.
+
+### PHOTO-1 — Per-photo focal point
+**Status:** ready · **Effort:** medium · **Schema:** yes · **Touches:** `photos`, `.card-media img`, lightbox
+
+Every cropped image is hardcoded `object-position:top` (`.card-media img`). Good default for upright specimens, wrong for wide plantings and off-centre subjects — the original reason for dropping 16:9.
+
+Add `photos.focal_x` / `focal_y` (0–100 percent, default 50/50 or 50/0) and emit `object-position:{x}% {y}%`. UI: click a point on the photo in the lightbox to set it. Once this exists, the crop complaint behind PD-1 and LOC-1 is properly solved rather than defaulted around.
+
+---
+
 ## Ready now — no upstream dependencies
 
 ### PD-1 — Plant Detail layout rebuild
@@ -81,7 +158,28 @@ Design constraints:
 - Watch the base64 chunking gotcha documented in `REFERENCE.md` §8. Do not use spread-operator conversion.
 - Decide and document where the non-identification fields (health, bloom, location) are stored. `identifications.raw_response` is the cheap path; a dedicated column or table is the durable one. Propose both with tradeoffs before building.
 
-Unblocks: BLOOM-1, RPT-3, RPT-4.
+Unblocks: BLOOM-1, RPT-3, RPT-4, AI-2, AI-3.
+
+**Interaction model changed 2026-08-25.** Amanda wants Claude to stop being a button she presses and become a background process whose suggestions surface for confirmation on Plant Detail. That means: drop the per-photo "Ask Claude" action from the Inbox card, run the call automatically on upload, and design where pending suggestions appear. The audit-trail rule is unchanged and matters more under this model, not less — suggestions stay **pending** and are never silently applied.
+
+### AI-2 — Claude fills the horticultural fields
+**Status:** blocked by AI-1 · **Effort:** medium · **Schema:** depends on AI-1's storage decision
+
+Extend the single vision call beyond identification to propose the fields Amanda would otherwise research by hand: `botanical_name`, `family`, `genus`, `species`, `native_range`, `hardy_to`, `light_conditions`, `water_needs`, and the PD-2 fields `plant_type`, `growth_habit`, `mature_size`, `bloom_season`.
+
+- Every field is a **suggestion pending confirmation**, shown on Plant Detail with accept / reject per field. Never written directly.
+- Most of these are **species-level facts, not observations of this specimen** — Claude can answer them from the identified name without the photo. Worth deciding whether they come from the vision call or a cheaper follow-up text call once identification is confirmed.
+- Confirming an identification could offer "also fill in what Claude knows about this species" as one action.
+
+### AI-3 — Duplicate plant detection when adding
+**Status:** partly blocked by AI-1 · **Effort:** medium
+
+Adding a plant that already exists creates a silent duplicate. Two layers, separable:
+
+1. **Name match — needs no AI, build first.** On the new-plant form, match the typed botanical/common name against existing plants and warn before creating, offering **tag the existing plant instead** as the primary action.
+2. **Photo match — needs AI-1.** When creating from an Inbox photo, Claude suggests the existing plant it most resembles.
+
+Layer 1 catches the common case and is independent of AI-1. Do not wait for the vision call to ship it.
 
 ---
 

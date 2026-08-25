@@ -220,6 +220,13 @@
   .card-media.ratio-4x3{aspect-ratio:4/3;}
   .card-media.ratio-1x1{aspect-ratio:1;}
   .card-media img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
+
+  /* PERF-1. These sit in the DOM before their blob arrives so the loader can
+     set src without a re-render. Hidden until then purely in CSS — no class
+     toggle to go wrong, and a failed fetch can never flash a broken-image
+     icon. Inline styles at call sites still override the box rules. */
+  .photo-img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;transition:opacity .18s ease;}
+  .photo-img:not([src]){opacity:0;}
   .card-media-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
   .card-media-empty svg{width:36px;height:36px;}
   .card-media-empty span{font-size:12.5px;}
@@ -341,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.38.2";
+const APP_VERSION = "1.39.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -734,6 +741,20 @@ function debouncedRender() {
   }, 150);
 }
 
+// Emits an <img> that is in the DOM whether or not its blob has arrived, so
+// ensurePhotoLoaded() can fill in src on arrival without a re-render (PERF-1).
+// Call it only where a photo record actually exists — where there is no photo
+// at all, keep rendering the placeholder icon, so "loading" and "none" stay
+// visually distinct. `style` preserves each call site's existing look.
+// Returns HTML, not text — do not escape at the call site.
+function photoImg(driveFileId, style, extra) {
+  if (!driveFileId) return "";
+  const url = state.photoUrlCache[driveFileId];
+  if (!url) ensurePhotoLoaded(driveFileId);
+  return `<img class="photo-img" data-drive-id="${escapeHtml(driveFileId)}"`
+    + `${url ? ` src="${url}"` : ""} style="${style || ""}"${extra ? " " + extra : ""} />`;
+}
+
 function ensurePhotoLoaded(driveFileId) {
   if (!driveFileId) return;
   if (state.photoUrlCache[driveFileId] || state.photoFetchInFlight.has(driveFileId)) return;
@@ -744,9 +765,25 @@ function ensurePhotoLoaded(driveFileId) {
   })
     .then((res) => (res.ok ? res.blob() : Promise.reject(new Error("Failed to load photo"))))
     .then((blob) => {
-      state.photoUrlCache[driveFileId] = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      state.photoUrlCache[driveFileId] = url;
       state.photoFetchInFlight.delete(driveFileId);
-      debouncedRender();
+      // Fill the waiting <img> elements directly instead of re-rendering.
+      // render() replaces app.innerHTML wholesale, so a re-render here
+      // destroyed and recreated every image on screen — already-painted ones
+      // included, which then re-decoded. That was the flashing (PERF-1).
+      // Compared by dataset rather than an attribute selector so Drive ids
+      // never need CSS-selector escaping.
+      let patched = 0;
+      document.querySelectorAll("img[data-drive-id]").forEach((el) => {
+        if (el.dataset.driveId === driveFileId && !el.getAttribute("src")) {
+          el.setAttribute("src", url);
+          patched++;
+        }
+      });
+      // Nothing was waiting — either the blob beat its first render, or the
+      // call site still emits its own <img> (the lightbox). Fall back.
+      if (!patched) debouncedRender();
     })
     .catch(() => {
       state.photoFetchInFlight.delete(driveFileId);
@@ -1278,8 +1315,6 @@ function screenInbox() {
 }
 
 function photoRow(p, selectMode) {
-  const cachedUrl = state.photoUrlCache[p.drive_file_id];
-  if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
   const suggestions = pendingIdentifications(p.id);
   const plantnetSuggestion = suggestions.find((s) => s.source === "PlantNet");
   const claudeSuggestion = suggestions.find((s) => s.source === "Claude");
@@ -1297,9 +1332,9 @@ function photoRow(p, selectMode) {
 
   return `
   <div class="tag-card" style="padding:0;overflow:hidden;${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
-    <div class="card-media ratio-4x3" ${cachedUrl && !selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${cachedUrl && !selectMode ? "pointer" : "default"};">
+    <div class="card-media ratio-4x3" ${!selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${!selectMode ? "pointer" : "default"};">
       ${selectMode ? `<div class="select-check ${isSelected ? "checked" : ""}" style="top:8px;left:8px;z-index:1;">${isSelected ? icon("check") : ""}</div>` : ""}
-      ${cachedUrl ? `<img src="${cachedUrl}" />` : `<div class="card-media-empty">${icon("photo")}</div>`}
+      ${photoImg(p.drive_file_id)}
     </div>
     <div style="padding:12px 14px 14px;">
       <div class="tag-id">Photo · ${fmtDate(photoDate(p))}</div>
@@ -1366,15 +1401,13 @@ function screenPlants() {
 function plantRow(pl) {
   const photos = plantPhotosOrdered(pl.id);
   const cover = plantCoverPhoto(pl);
-  if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
-  const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
   const needsAttention = pl.status !== "active" || pl.health_status === "watch" || pl.health_status === "recovery";
 
   return `
   <div class="tag-card plant-list-card" onclick="openPlant('${pl.id}')">
     <div class="status-badge ${needsAttention ? "status-attention" : "status-active"}" title="${needsAttention ? "Needs attention" : "Active & healthy"}">${needsAttention ? icon("alertTriangle") : icon("check")}</div>
     <div class="plant-list-thumb">
-      ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+      ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
     </div>
     <div style="flex:1;min-width:0;">
       <div class="tag-id">${pl.accession_number}</div>
@@ -1404,8 +1437,6 @@ function screenPlantDetail() {
 
   const primaryPhoto = pl.primary_photo_id ? photos.find((p) => p.id === pl.primary_photo_id) : null;
   const heroPhoto = primaryPhoto || photos[0] || null;
-  if (heroPhoto && !state.photoUrlCache[heroPhoto.drive_file_id]) ensurePhotoLoaded(heroPhoto.drive_file_id);
-  const heroUrl = heroPhoto ? state.photoUrlCache[heroPhoto.drive_file_id] : null;
 
   return `
   <div class="screen">
@@ -1415,11 +1446,11 @@ function screenPlantDetail() {
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
         <div class="detail-media">
-          <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroUrl ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : `onclick="openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})"`}>
-            ${heroUrl
-              ? `<img src="${heroUrl}" />`
+          <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroPhoto ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : `onclick="openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})"`}>
+            ${heroPhoto
+              ? photoImg(heroPhoto.drive_file_id)
               : `<div class="card-media-empty">${icon("photo")}<span>Tap to add a profile picture</span></div>`}
-            <button class="media-btn" onclick="event.stopPropagation();openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})">${heroUrl ? "Change photo" : "Add photo"}</button>
+            <button class="media-btn" onclick="event.stopPropagation();openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})">${heroPhoto ? "Change photo" : "Add photo"}</button>
           </div>
         </div>
 
@@ -1551,8 +1582,6 @@ function screenPlantDetail() {
           <div class="timeline-col-head">${icon("pin")}<span>${group.location ? escapeHtml(locationPath(group.location)) : "No location tagged"}</span></div>
           <div class="stack">
             ${group.photos.map((p) => {
-              const cachedUrl = state.photoUrlCache[p.drive_file_id];
-              if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
               const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
               const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
               const photoLocs = allLocationsForPhoto(p);
@@ -1567,7 +1596,7 @@ function screenPlantDetail() {
               <div class="surface" style="padding:14px;">
                 <div class="row">
                   <div class="photo-row">
-                    <div class="photo-icon" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openLightbox('${pl.id}','${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+                    <div class="photo-icon" style="cursor:pointer;" onclick="openLightbox('${pl.id}','${p.id}')">${photoImg(p.drive_file_id, "border-radius:6px;")}</div>
                     <div>
                       <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(photoDate(p))}</div>
                       <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
@@ -1624,12 +1653,10 @@ function locationCard(l) {
   const photoCount = aggregatePhotoCount(l.id);
   const children = directChildLocations(l.id);
   const cover = locationCoverPhoto(l);
-  if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
-  const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
   return `
     <div class="tag-card plant-list-card" onclick="openLocation('${l.id}')">
       <div class="plant-list-thumb">
-        ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+        ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
       </div>
       <div style="flex:1;min-width:0;">
       <div class="row">
@@ -1674,8 +1701,6 @@ function screenLocationDetail() {
   const photos = photosAtLocation(l.id).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
 
   const heroPhoto = l.primary_photo_id ? photos.find((p) => p.id === l.primary_photo_id) : photos[0];
-  if (heroPhoto && !state.photoUrlCache[heroPhoto.drive_file_id]) ensurePhotoLoaded(heroPhoto.drive_file_id);
-  const heroUrl = heroPhoto ? state.photoUrlCache[heroPhoto.drive_file_id] : null;
 
   return `
   <div class="screen">
@@ -1685,11 +1710,11 @@ function screenLocationDetail() {
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
         <div class="detail-media">
-          <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroUrl ? `onclick="openLightbox('${l.id}','${heroPhoto.id}','location')"` : `onclick="openModal('chooseLocationPhoto',{locationId:'${l.id}'})"`}>
-            ${heroUrl
-              ? `<img src="${heroUrl}" />`
+          <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroPhoto ? `onclick="openLightbox('${l.id}','${heroPhoto.id}','location')"` : `onclick="openModal('chooseLocationPhoto',{locationId:'${l.id}'})"`}>
+            ${heroPhoto
+              ? photoImg(heroPhoto.drive_file_id)
               : `<div class="card-media-empty">${icon("photo")}<span>Tap to add a main photo</span></div>`}
-            <button class="media-btn" onclick="event.stopPropagation();openModal('chooseLocationPhoto',{locationId:'${l.id}'})">${heroUrl ? "Change photo" : "Add photo"}</button>
+            <button class="media-btn" onclick="event.stopPropagation();openModal('chooseLocationPhoto',{locationId:'${l.id}'})">${heroPhoto ? "Change photo" : "Add photo"}</button>
           </div>
         </div>
 
@@ -1750,8 +1775,6 @@ function screenLocationDetail() {
       ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : `
         <div class="card-grid">
           ${photos.map((p) => {
-            const cachedUrl = state.photoUrlCache[p.drive_file_id];
-            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
             const suggestions = pendingIdentifications(p.id);
             const plantnetSuggestion = suggestions.find((s) => s.source === "PlantNet");
             const claudeSuggestion = suggestions.find((s) => s.source === "Claude");
@@ -1764,7 +1787,7 @@ function screenLocationDetail() {
             return `
             <div class="tag-card">
               <div class="photo-row">
-                <div class="photo-icon on-cream" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openLightbox('${l.id}','${p.id}','location')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
+                <div class="photo-icon on-cream" style="cursor:pointer;" onclick="openLightbox('${l.id}','${p.id}','location')">${photoImg(p.drive_file_id, "border-radius:6px;")}</div>
                 <div style="flex:1;min-width:0;">
                   <div class="tag-id">${fmtDate(photoDate(p))}</div>
                   <div style="font-size:13.5px;color:var(--ink-soft);margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
@@ -1837,12 +1860,10 @@ function screenReports() {
 
   function locationItem(l) {
     const cover = locationCoverPhoto(l);
-    if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
-    const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
     return `
       <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openLocation('${l.id}')">
         <div class="plant-list-thumb" style="width:60px;height:60px;">
-          ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+          ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
         </div>
         <div>
         <div class="tag-id">${locationTypeLabel(l.type)}</div>
@@ -1957,14 +1978,12 @@ function screenGallery() {
       ${matches.length === 0 ? `<div class="empty"><div class="display">No photos match</div><div>Try different filters or search.</div></div>` : `
         <div class="card-grid">
           ${matches.map((p) => {
-            const cachedUrl = state.photoUrlCache[p.drive_file_id];
-            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
             const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
             const locs = allLocationsForPhoto(p);
             return `
             <div class="tag-card" style="padding:0;overflow:hidden;cursor:pointer;" onclick="openGalleryLightbox('${p.id}')">
               <div style="width:100%;aspect-ratio:1;background:var(--parchment-dim);">
-                ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
+                ${photoImg(p.drive_file_id)}
               </div>
               <div style="padding:10px 12px;">
                 <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type === "historical" ? " · Archive" : ""}</div>
@@ -2063,8 +2082,7 @@ function modalContent() {
     const suggestion = state.identifications.find((i) => i.id === data.identificationId);
     if (!suggestion) return `<p class="subtle">This suggestion is no longer available.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
     const photo = state.photos.find((p) => p.id === suggestion.photo_id);
-    const cachedUrl = photo ? state.photoUrlCache[photo.drive_file_id] : null;
-    const photoBlock = cachedUrl ? `<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;"><img src="${cachedUrl}" style="width:100%;max-height:220px;object-fit:cover;display:block;" /></div>` : "";
+    const photoBlock = photo ? `<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;">${photoImg(photo.drive_file_id, "max-height:220px;")}</div>` : "";
 
     if (suggestion.source === "Claude") {
       const r = suggestion.raw_response || {};
@@ -2553,11 +2571,9 @@ function modalContent() {
       ${photos.length === 0 ? `<p class="subtle">No photos of this location yet — add one from here first.</p>` : `
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:50vh;overflow-y:auto;">
           ${photos.map((p) => {
-            const cachedUrl = state.photoUrlCache[p.drive_file_id];
-            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
             return `
             <button onclick="setLocationPhoto('${data.locationId}','${p.id}')" style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
-              ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
+              ${photoImg(p.drive_file_id)}
             </button>`;
           }).join("")}
         </div>`}
@@ -2581,12 +2597,10 @@ function modalContent() {
         <p class="subtle" style="margin:0 0 10px;">Or choose an existing photo</p>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:38vh;overflow-y:auto;">
           ${photos.map((p) => {
-            const cachedUrl = state.photoUrlCache[p.drive_file_id];
-            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
             return `
             <div style="position:relative;aspect-ratio:1;">
               <button onclick="setPrimaryPhoto('${data.plantId}','${p.id}')" style="width:100%;height:100%;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
-                ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
+                ${photoImg(p.drive_file_id)}
               </button>
               <button onclick="event.stopPropagation();deletePhoto('${p.id}')" class="thumb-delete-btn" aria-label="Delete photo">${icon("trash")}</button>
             </div>`;

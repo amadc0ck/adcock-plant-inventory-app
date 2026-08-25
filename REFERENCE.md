@@ -215,6 +215,8 @@ Both aggregate helpers **dedupe by id**. A photo tagged onto a parent and a chil
 
 `photoDate(p)` (`p.taken_at || p.uploaded_at`) is used everywhere a photo date is displayed or sorted, instead of raw `uploaded_at`.
 
+**Photo loading (v1.39.0).** `photoImg()` emits every photo `<img>` up front with a `data-drive-id` and no `src`; `ensurePhotoLoaded()` sets `src` on arrival **in place**, without re-rendering. Before this, each arriving blob called `debouncedRender()`, which rebuilt `app.innerHTML` and destroyed every image on screen — the cause of the flashing. Consequences for anyone touching this: never gate a click handler on the cached URL (the DOM is not rebuilt when it arrives, so the handler would never attach — gate on the photo record instead), and any new image site must use `photoImg()` or it will only update via the `debouncedRender()` fallback.
+
 ---
 
 ## 8. Google Drive — What Didn't Work

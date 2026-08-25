@@ -68,7 +68,7 @@ One row per individual accessioned specimen.
 - `bloom_season` text, nullable — spring / early_summer / summer / late_summer / fall / winter / intermittent / monocarpic / not_observed. The plant's **expected** trait. Observed blooming belongs to BLOOM-1's `bloom_events`; RPT-4 reads that table, not this column.
 - `origin` text, default `unknown` — native / introduced / unknown. Whether the plant is native **to this garden's region**. Distinct from `native_range`, which holds where the plant is from ("Central Mexico"). Named `origin` by decision; the backlog originally called it `introduced`, which read wrong when holding the value `native`.
 
-The five fields above render on Plant Detail **even when blank**, because an unrecorded field marks the record as incomplete. The Care and Provenance sections deliberately keep their older behavior of hiding entirely when empty, so Plant Detail follows two conventions on purpose.
+**Every field on Plant Detail renders even when blank** (v1.38.0), as a dimmed em-dash via `fieldRow()` / `.value-blank`. An unrecorded field marks the record as incomplete, which is information. This supersedes the narrower v1.36.0 rule that applied only to the five fields above while Care and Provenance still hid when empty — PD-7 extended it to Care, Provenance, Identification and Collection so the screen holds one shape on every plant.
 - `identification_status` text — `confirmed` / `tentative` / `unidentified` (default)
 - `identification_notes` text, nullable
 - `collection_category` text — `current` / `historical`

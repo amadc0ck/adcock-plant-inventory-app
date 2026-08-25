@@ -74,6 +74,9 @@
   .brand-sub{font-family:'Fraunces',serif;font-style:italic;font-size:11px;letter-spacing:0.8px;color:var(--moss);text-transform:uppercase;margin-top:1px;}
   .brand .dot{color:var(--blue);}
   .subtle{color:#9FB0A3;font-size:12.5px;}
+  /* A zero count is still shown — an empty container is the record that needs
+     work — but recedes so a long list of unpopulated buckets stays scannable. */
+  .count-zero{opacity:0.45;}
 
   .navbar{position:fixed;bottom:0;left:0;right:0;background:var(--bg-raised);border-top:1px solid var(--line);z-index:30;padding-bottom:env(safe-area-inset-bottom);}
   .navbar .container{display:flex;justify-content:space-around;padding:8px 12px 6px;max-width:640px;}
@@ -267,8 +270,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.34.4";
-const APP_UPDATED = "2026-08-24";
+const APP_VERSION = "1.34.5";
+const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -811,11 +814,13 @@ function aggregatePlantCount(locationId) {
   const additionalIds = state.plantLocations.filter((pll) => idSet.has(pll.location_id)).map((pll) => pll.plant_id);
   return new Set([...primaryIds, ...additionalIds]).size;
 }
+// Deduped by photo id: one photo tagged onto both a parent and a child, or
+// onto two sibling containers, is still one photo in the rolled-up count.
 function aggregatePhotoCount(locationId) {
   const idSet = new Set([locationId, ...descendantLocationIds(locationId)]);
-  let total = 0;
-  idSet.forEach((id) => { total += photosAtLocation(id).length; });
-  return total;
+  const seen = new Set();
+  idSet.forEach((id) => { photosAtLocation(id).forEach((p) => seen.add(p.id)); });
+  return seen.size;
 }
 
 function locationPath(loc) {
@@ -856,6 +861,22 @@ function locationOptionList() {
 function locationTypeLabel(t) {
   const map = { area: "Area", row: "Row", slot: "Slot", container: "Container", indoor: "Indoor", hospital: "Hospital", work_area: "Work Area", other: "Other", pot: "Pot", bed: "Bed", greenhouse: "Greenhouse", hanging: "Hanging" };
   return map[t] || t || "Location";
+}
+
+// Phrasing for the "N inside" indicator. It describes the children's type, not
+// the parent's — "6 rows inside" under Wall Collection, never "6 areas inside".
+// Mixed child types, or types with no natural plural (Indoor, Hanging, Other),
+// fall back to the generic word.
+const CHILD_TYPE_PLURALS = { area: ["area", "areas"], row: ["row", "rows"], slot: ["slot", "slots"], container: ["container", "containers"], pot: ["pot", "pots"], bed: ["bed", "beds"], greenhouse: ["greenhouse", "greenhouses"], work_area: ["work area", "work areas"], hospital: ["hospital", "hospitals"] };
+// Returns HTML, not text — do not escape at the call site.
+function countLabel(n, singular, plural) {
+  const text = `${n} ${n === 1 ? singular : plural}`;
+  return n === 0 ? `<span class="count-zero">${text}</span>` : text;
+}
+function nestedCountLabel(children) {
+  const types = new Set(children.map((c) => c.type));
+  const pair = (types.size === 1 && CHILD_TYPE_PLURALS[children[0].type]) || ["location", "locations"];
+  return `${children.length} ${children.length === 1 ? pair[0] : pair[1]} inside`;
 }
 
 const STATUS_LABELS = { active: "Active", dormant: "Dormant", given_away: "Given Away", dead: "Dead", deaccessioned: "Deaccessioned" };
@@ -1373,48 +1394,63 @@ function screenPlantDetail() {
   </div>`;
 }
 
+// Resolution order: the location's own primary photo, then its newest direct
+// photo, then the newest photo anywhere beneath it. The descendant fallback
+// matters on the Locations list, which renders only top-level areas — their
+// photos almost always live on nested rows and buckets, not on the area itself.
 function locationCoverPhoto(l) {
+  const newest = (list) => list.sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)))[0] || null;
   const photos = photosAtLocation(l.id);
   if (l.primary_photo_id) {
     const primary = photos.find((p) => p.id === l.primary_photo_id);
     if (primary) return primary;
   }
-  return photos.sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)))[0] || null;
+  const own = newest(photos);
+  if (own) return own;
+  const seen = new Set();
+  const beneath = [];
+  descendantLocationIds(l.id).forEach((id) => {
+    photosAtLocation(id).forEach((p) => { if (!seen.has(p.id)) { seen.add(p.id); beneath.push(p); } });
+  });
+  return newest(beneath);
+}
+
+// Counts roll up through nested areas — a top-level area's plants and photos
+// almost all live on the rows and buckets underneath it, so the direct-only
+// counts read as zero on exactly the cards the Locations list renders.
+function locationCard(l) {
+  const plantCount = aggregatePlantCount(l.id);
+  const photoCount = aggregatePhotoCount(l.id);
+  const children = directChildLocations(l.id);
+  const cover = locationCoverPhoto(l);
+  if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
+  const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
+  return `
+    <div class="tag-card plant-list-card" onclick="openLocation('${l.id}')">
+      <div class="plant-list-thumb">
+        ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+      </div>
+      <div style="flex:1;min-width:0;">
+      <div class="row">
+        <div>
+          <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
+          <div style="font-family:'Fraunces',serif;font-size:15px;font-weight:500;margin-top:2px;">${escapeHtml(l.name)}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(plantCount, "plant", "plants")} · ${countLabel(photoCount, "photo", "photos")}</div>
+          ${children.length ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${nestedCountLabel(children)} →</div>` : ""}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('editLocation',{locationId:'${l.id}'})">Edit</button>
+        <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('upload',{locationId:'${l.id}'})">Add photo</button>
+      </div>
+      </div>
+    </div>`;
 }
 
 function screenLocations() {
   const topLevel = state.locations.filter((l) => !l.parent_location_id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
-
-function locationCard(l) {
-    const plantCount = aggregatePlantCount(l.id);
-    const photoCount = photosAtLocation(l.id).length;
-    const childCount = directChildLocations(l.id).length;
-    const cover = locationCoverPhoto(l);
-    if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
-    const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
-    return `
-      <div class="tag-card plant-list-card" onclick="openLocation('${l.id}')">
-        <div class="plant-list-thumb">
-          ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
-        </div>
-        <div style="flex:1;min-width:0;">
-        <div class="row">
-          <div>
-            <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
-            <div style="font-family:'Fraunces',serif;font-size:15px;font-weight:500;margin-top:2px;">${escapeHtml(l.name)}</div>
-          </div>
-          <div style="text-align:right;">
-            <div class="mono" style="font-size:11px;color:var(--moss-dim);">${plantCount} plant${plantCount === 1 ? "" : "s"}${photoCount ? ` · ${photoCount} photo${photoCount === 1 ? "" : "s"}` : ""}</div>
-            ${childCount ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${childCount} inside →</div>` : ""}
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('editLocation',{locationId:'${l.id}'})">Edit</button>
-          <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('upload',{locationId:'${l.id}'})">Add photo</button>
-        </div>
-        </div>
-      </div>`;
-  }
 
   return `
   <div class="screen">
@@ -1474,7 +1510,7 @@ function screenLocationDetail() {
             ${children.map((c) => {
               const count = aggregatePlantCount(c.id);
               const photoCount = aggregatePhotoCount(c.id);
-              const grandchildren = directChildLocations(c.id).length;
+              const grandchildren = directChildLocations(c.id);
               return `
               <div class="tag-card" style="cursor:pointer;padding:12px 14px;" onclick="openLocation('${c.id}')">
                 <div class="row">
@@ -1483,8 +1519,8 @@ function screenLocationDetail() {
                     <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;margin-top:1px;">${escapeHtml(c.name)}</div>
                   </div>
                   <div style="text-align:right;">
-                    <div class="mono" style="font-size:11px;color:var(--moss-dim);">${count} plant${count === 1 ? "" : "s"}${photoCount ? ` · ${photoCount} photo${photoCount === 1 ? "" : "s"}` : ""}</div>
-                    ${grandchildren ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${grandchildren} inside →</div>` : ""}
+                    <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(count, "plant", "plants")} · ${countLabel(photoCount, "photo", "photos")}</div>
+                    ${grandchildren.length ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${nestedCountLabel(grandchildren)} →</div>` : ""}
                   </div>
                 </div>
               </div>`;

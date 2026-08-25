@@ -86,7 +86,8 @@ The five fields above render on Plant Detail **even when blank**, because an unr
 - `hardy_to` text, nullable — free text ("Zone 9", "20F")
 - `light_conditions` **text[]**, default `{}` — multi-select: direct, indirect, partial, full, shade, morning, afternoon, all_day
 - `water_needs` text, nullable — low / moderate / high
-- `notes` text, nullable
+- `description` text, nullable — **species-level** prose: what this kind of plant looks like. Not observations of this specimen, which belong in `care_notes`. Prime candidate for Claude to fill under AI-2.
+- `notes` text, nullable — **legacy as of v1.38.0.** Migrated into `care_notes` and no longer displayed on Plant Detail. The column is retained and not cleared, so the migration stays reversible. `identification_notes` and `acquisition_notes` were deliberately **not** migrated — they stay in the Identification and Provenance sections.
 - `created_at` / `updated_at` timestamptz
 
 ### `photos`

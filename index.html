@@ -232,6 +232,41 @@
   .detail-split .detail-media{flex-shrink:0;}
   .detail-split .detail-body{padding:18px 18px 16px 22px;min-width:0;}
 
+  /* PD-7 — Plant Detail v2.
+     The whole screen holds one shape regardless of which fields are filled:
+     every section renders, every field renders, blanks show a dimmed dash. */
+
+  /* Third column of the hero on wide screens; full width below 1100px. */
+  .detail-actions{padding:0 18px 18px 22px;}
+  /* Vertical action list at the right of the hero card. */
+  .action-card{border:1px solid rgba(37,41,37,0.18);border-radius:10px;overflow:hidden;flex-shrink:0;}
+  .action-row{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;border-bottom:1px solid rgba(37,41,37,0.18);padding:13px 14px;font-size:13.5px;font-family:inherit;color:var(--ink);text-align:left;cursor:pointer;}
+  .action-row:last-child{border-bottom:none;}
+  .action-row:active{background:rgba(36,62,54,0.06);}
+  .action-row svg{width:19px;height:19px;flex-shrink:0;color:var(--moss-dim);}
+  .action-row .action-label{flex:1;min-width:0;}
+  .action-row .action-chevron{width:15px;height:15px;opacity:0.4;}
+  .action-row.action-danger{color:var(--terracotta);}
+  .action-row.action-danger svg{color:var(--terracotta);}
+
+  /* Section cards below the hero. */
+  .section-grid{display:flex;flex-direction:column;gap:14px;margin-top:14px;}
+  .section-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;padding:16px 18px;}
+  .section-card h4{font-family:'Fraunces',serif;font-style:italic;font-size:16px;font-weight:500;color:var(--cream);margin:0 0 10px;}
+  /* Icon + label + value. The icon column is fixed so labels align down the card. */
+  .field-row{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);}
+  .field-row:last-child{border-bottom:none;}
+  .field-row-icon{width:17px;flex-shrink:0;align-self:center;color:var(--blue);}
+  .field-row-icon svg{width:17px;height:17px;display:block;}
+  .field-row-label{font-size:12.5px;color:#8AA090;flex-shrink:0;}
+  .field-row-value{font-size:13.5px;color:#C9D6CC;margin-left:auto;text-align:right;min-width:0;word-break:break-word;}
+
+  /* Photo timeline: one column per location, photos descending inside it. */
+  .timeline-cols{display:flex;gap:14px;overflow-x:auto;padding-bottom:6px;align-items:flex-start;}
+  .timeline-col{flex:0 0 260px;min-width:0;}
+  .timeline-col-head{display:flex;align-items:center;gap:6px;font-family:'Fraunces',serif;font-style:italic;font-size:13px;color:var(--blue);margin-bottom:8px;line-height:1.3;}
+  .timeline-col-head svg{width:14px;height:14px;flex-shrink:0;}
+
   /* High-contrast pill variants for use on the cream card — the
      translucent dark-bg pill styles were nearly illegible here. */
   .pill-solid{display:inline-block;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:700;letter-spacing:0.2px;}
@@ -274,12 +309,17 @@
     .detail-split{flex-direction:row;align-items:flex-start;}
     .detail-split .detail-media{width:42%;max-width:400px;}
     .detail-split .detail-body{flex:1;}
+    .section-grid{display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;align-items:start;}
   }
   @media (min-width: 1100px) {
     .container{max-width:1280px;}
     .card-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
     .plant-list-thumb{width:140px;height:140px;}
     .login-wrap .container{max-width:none;}
+    .section-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
+    /* Actions become the hero's third column only when there is room. */
+    .detail-split .detail-media{width:34%;max-width:420px;}
+    .detail-split .detail-actions{width:270px;flex-shrink:0;padding:18px 18px 18px 0;}
   }
 </style>
 </head>
@@ -301,7 +341,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.37.1";
+const APP_VERSION = "1.38.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -499,7 +539,7 @@ async function exportFullBackup() {
 
 function exportPlantsCsv() {
   const headers = ["accession_number", "botanical_name", "common_name", "cultivar", "family", "genus", "species",
-    "plant_type", "growth_habit", "mature_size", "bloom_season", "origin",
+    "description", "plant_type", "growth_habit", "mature_size", "bloom_season", "origin",
     "identification_status", "collection_category", "original_collection", "status", "health_status",
     "location_path", "date_acquired", "acquisition_source_type", "acquisition_source_name",
     "native_range", "hardy_to", "light_requirements", "water_needs", "notes"];
@@ -507,7 +547,7 @@ function exportPlantsCsv() {
     const loc = locationById(pl.location_id);
     return [
       pl.accession_number, pl.botanical_name, pl.common_name, pl.cultivar, pl.family, pl.genus, pl.species,
-      pl.plant_type, pl.growth_habit, pl.mature_size, pl.bloom_season, pl.origin,
+      pl.description, pl.plant_type, pl.growth_habit, pl.mature_size, pl.bloom_season, pl.origin,
       pl.identification_status, pl.collection_category, pl.original_collection, pl.status, pl.health_status,
       loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
       pl.native_range, pl.hardy_to, (pl.light_conditions || []).join("; "), pl.water_needs, pl.notes,
@@ -933,6 +973,19 @@ function detailRow(label, value) {
   return `<div class="detail-row"><span class="detail-row-label">${label}</span><span class="detail-row-value${has ? "" : " value-blank"}">${has ? escapeHtml(value) : "—"}</span></div>`;
 }
 
+// PD-7 field row: optional leading icon, label, right-aligned value. Renders
+// whether or not there is a value, so Plant Detail holds the same shape on
+// every plant. `html` passes pre-built markup through unescaped (light chips).
+// Returns HTML, not text — do not escape at the call site.
+function fieldRow(iconName, label, value, html) {
+  const has = html ? true : value !== null && value !== undefined && value !== "";
+  return `<div class="field-row">`
+    + `<span class="field-row-icon">${iconName ? icon(iconName) : ""}</span>`
+    + `<span class="field-row-label">${label}</span>`
+    + `<span class="field-row-value${has ? "" : " value-blank"}">${html || (has ? escapeHtml(value) : "—")}</span>`
+    + `</div>`;
+}
+
 // Returns HTML, not text — do not escape at the call site.
 function countLabel(n, singular, plural) {
   const text = `${n} ${n === 1 ? singular : plural}`;
@@ -1002,6 +1055,23 @@ function icon(name) {
     statusConnected: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M9 12l2 2l4 -4" /></svg>`,
     statusDisconnected: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M14 14l-4 -4" /><path d="M10 14l4 -4" /></svg>`,
     tag: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.5 3.17H4a1 1 0 0 0-1 1v5.5a2 2 0 0 0 .66 1.5l9.58 9.58a2 2 0 0 0 2.83 0l4.52-4.52a2 2 0 0 0 0-2.83Z"/><circle cx="7.5" cy="7.5" r="1.2"/></svg>`,
+    // Real Tabler source supplied by Amanda (v1.38.0), normalized to the house
+    // format: width/height and class stripped, transparent filler path dropped.
+    edit: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" /><path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415" /><path d="M16 5l3 3" /></svg>`,
+    ambulance: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M15 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M5 17h-2v-11a1 1 0 0 1 1 -1h9v12m-4 0h6m4 0h2v-6h-8m0 -5h5l3 5" /><path d="M6 10h4m-2 -2v4" /></svg>`,
+    seedling: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a6 6 0 0 0 -6 -6h-3v2a6 6 0 0 0 6 6h3" /><path d="M12 14a6 6 0 0 1 6 -6h3v1a6 6 0 0 1 -6 6h-3" /><path d="M12 20l0 -10" /></svg>`,
+    temperature: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13.5a4 4 0 1 0 4 0v-8.5a2 2 0 0 0 -4 0v8.5" /><path d="M10 9l4 0" /></svg>`,
+    droplets: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.072 20.3a2.999 2.999 0 0 0 3.856 0a3.002 3.002 0 0 0 .67 -3.798l-2.095 -3.227a.6 .6 0 0 0 -1.005 0l-2.098 3.227a3.003 3.003 0 0 0 .671 3.798" /><path d="M16.072 20.3a2.999 2.999 0 0 0 3.856 0a3.002 3.002 0 0 0 .67 -3.798l-2.095 -3.227a.6 .6 0 0 0 -1.005 0l-2.098 3.227a3.003 3.003 0 0 0 .671 3.798" /><path d="M10.072 10.3a2.999 2.999 0 0 0 3.856 0a3.002 3.002 0 0 0 .67 -3.798l-2.095 -3.227a.6 .6 0 0 0 -1.005 0l-2.098 3.227a3.003 3.003 0 0 0 .671 3.798l.001 0" /></svg>`,
+    brightness: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9a3 3 0 0 0 0 6v-6" /><path d="M6 6h3.5l2.5 -2.5l2.5 2.5h3.5v3.5l2.5 2.5l-2.5 2.5v3.5h-3.5l-2.5 2.5l-2.5 -2.5h-3.5v-3.5l-2.5 -2.5l2.5 -2.5l0 -3.5" /></svg>`,
+    note: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 20l7 -7" /><path d="M13 20v-6a1 1 0 0 1 1 -1h6v-7a2 2 0 0 0 -2 -2h-12a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7" /></svg>`,
+    chevronRight: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6" /></svg>`,
+    photoStar: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M11 21h-5a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l2 2" /><path d="M17.8 20.817l-2.172 1.138a.392 .392 0 0 1 -.568 -.41l.415 -2.411l-1.757 -1.707a.389 .389 0 0 1 .217 -.665l2.428 -.352l1.086 -2.193a.392 .392 0 0 1 .702 0l1.086 2.193l2.428 .352a.39 .39 0 0 1 .217 .665l-1.757 1.707l.414 2.41a.39 .39 0 0 1 -.567 .411l-2.172 -1.138" /></svg>`,
+    // Not yet wired to a screen. shovel/bowlSpoon await Soil and Feeding fields;
+    // heartStar is GAL-1 favorites; plant2 is BLOOM-1 / GAL-5 in-bloom.
+    shovel: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 4l3 3" /><path d="M18.5 5.5l-8 8" /><path d="M8.276 11.284l4.44 4.44a.968 .968 0 0 1 0 1.369l-2.704 2.704a4.108 4.108 0 0 1 -5.809 -5.81l2.704 -2.703a.968 .968 0 0 1 1.37 0l-.001 0" /></svg>`,
+    bowlSpoon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11h16a1 1 0 0 1 1 1v.5c0 1.5 -2.517 5.573 -4 6.5v1a1 1 0 0 1 -1 1h-8a1 1 0 0 1 -1 -1v-1c-1.687 -1.054 -4 -5 -4 -6.5v-.5a1 1 0 0 1 1 -1" /><path d="M8 7c1.657 0 3 -.895 3 -2s-1.343 -2 -3 -2s-3 .895 -3 2s1.343 2 3 2" /><path d="M11 5h9" /></svg>`,
+    heartStar: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.73 17.753l-5.23 -5.181a5 5 0 1 1 7.5 -6.566a5 5 0 0 1 8.563 5.041" /><path d="M17.8 20.817l-2.172 1.138a.392 .392 0 0 1 -.568 -.41l.415 -2.411l-1.757 -1.707a.389 .389 0 0 1 .217 -.665l2.428 -.352l1.086 -2.193a.392 .392 0 0 1 .702 0l1.086 2.193l2.428 .352a.39 .39 0 0 1 .217 .665l-1.757 1.707l.414 2.41a.39 .39 0 0 1 -.567 .411l-2.172 -1.138" /></svg>`,
+    plant2: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a10 10 0 1 0 20 0" /><path d="M12 19a10 10 0 0 1 10 -10" /><path d="M2 9a10 10 0 0 1 10 10" /><path d="M12 4a9.7 9.7 0 0 1 2.99 7.5" /><path d="M9.01 11.5a9.7 9.7 0 0 1 2.99 -7.5" /></svg>`,
   };
   return icons[name] || "";
 }
@@ -1387,69 +1457,87 @@ function screenPlantDetail() {
             })()}
             <button class="btn-ghost" style="padding:6px 0 0;font-size:12px;color:var(--chicory-oncream);" onclick="openModal('addPlantLocation',{plantId:'${pl.id}'})">+ Add another location</button>
           </div>
-          ${parent ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:8px;">Propagated from <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}</div>` : ""}
+          ${pl.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(pl.description)}</div>` : ""}
+        </div>
 
-          ${pl.notes ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);">${escapeHtml(pl.notes)}</div>` : ""}
-          <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:12px;">
-            <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit full record</button>
-            <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="moveToHospital('${pl.id}')">Move to Plant Hospital</button>
-            <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">Propagate from this plant</button>
-            <button class="btn-ghost icon-btn" style="padding:0;font-size:12.5px;color:var(--terracotta);" onclick="deletePlant('${pl.id}')">${icon("trash")} Delete plant</button>
+        <div class="detail-actions">
+          <div class="action-card">
+            <button class="action-row" onclick="openModal('editPlant',{plantId:'${pl.id}'})">${icon("edit")}<span class="action-label">Edit full record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            <button class="action-row" onclick="moveToHospital('${pl.id}')">${icon("ambulance")}<span class="action-label">Move to Plant Hospital</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            <button class="action-row" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">${icon("seedling")}<span class="action-label">Propagate from this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            <button class="action-row action-danger" onclick="deletePlant('${pl.id}')">${icon("trash")}<span class="action-label">Delete plant</span></button>
           </div>
         </div>
         </div>
       </div>
 
-      <div class="surface" style="padding:16px;margin-top:14px;">
-        <div class="section-label" style="margin-top:0;">Details</div>
-        ${detailRow("Type", PLANT_TYPE_LABELS[pl.plant_type] || pl.plant_type)}
-        ${detailRow("Growth habit", GROWTH_HABIT_LABELS[pl.growth_habit] || pl.growth_habit)}
-        ${detailRow("Mature size", pl.mature_size)}
-        ${detailRow("Bloom season", BLOOM_SEASON_LABELS[pl.bloom_season] || pl.bloom_season)}
-        ${detailRow("Origin", ORIGIN_LABELS[pl.origin] || pl.origin)}
+      <div class="section-grid">
+        <div class="section-card">
+          <h4>Details</h4>
+          ${fieldRow("leaf", "Type", PLANT_TYPE_LABELS[pl.plant_type] || pl.plant_type)}
+          ${fieldRow("seedling", "Growth habit", GROWTH_HABIT_LABELS[pl.growth_habit] || pl.growth_habit)}
+          ${fieldRow("map", "Mature size", pl.mature_size)}
+          ${fieldRow("plant2", "Bloom season", BLOOM_SEASON_LABELS[pl.bloom_season] || pl.bloom_season)}
+          ${fieldRow("pin", "Origin", ORIGIN_LABELS[pl.origin] || pl.origin)}
+        </div>
+
+        <div class="section-card">
+          <h4>Care</h4>
+          ${fieldRow("leaf", "Native to", pl.native_range)}
+          ${fieldRow("temperature", "Hardy to", pl.hardy_to)}
+          ${fieldRow("droplets", "Water", pl.water_needs ? pl.water_needs.charAt(0).toUpperCase() + pl.water_needs.slice(1) : null)}
+          ${fieldRow("brightness", "Light", null,
+            (pl.light_conditions && pl.light_conditions.length)
+              ? `<span class="wrap-gap" style="justify-content:flex-end;">${pl.light_conditions.map((c) => `<span class="pill">${escapeHtml(c.replace(/_/g, " "))}</span>`).join("")}</span>`
+              : null)}
+        </div>
+
+        <div class="section-card">
+          <h4>Identification</h4>
+          ${fieldRow("check", "Status", ID_STATUS_LABELS[pl.identification_status] || pl.identification_status)}
+          ${fieldRow("note", "Notes", pl.identification_notes)}
+        </div>
+
+        <div class="section-card">
+          <h4>Collection</h4>
+          ${fieldRow("clipboard", "Category", CATEGORY_LABELS[pl.collection_category] || pl.collection_category)}
+          ${fieldRow("check", "Original collection", pl.original_collection ? "Yes" : "No")}
+          ${fieldRow("info", "Status", STATUS_LABELS[pl.status] || pl.status)}
+          ${fieldRow("alertTriangle", "Health", HEALTH_LABELS[pl.health_status] || pl.health_status)}
+        </div>
+
+        <div class="section-card">
+          <h4>Provenance</h4>
+          ${fieldRow("clipboard", "Date acquired", pl.date_acquired ? fmtDate(pl.date_acquired) : null)}
+          ${fieldRow("link", "Source", ACQ_SOURCE_LABELS[pl.acquisition_source_type] || pl.acquisition_source_type)}
+          ${fieldRow("tag", "Source name", pl.acquisition_source_name)}
+          ${fieldRow("note", "Acquisition notes", pl.acquisition_notes)}
+          ${fieldRow("seedling", "Propagated from", null,
+            parent ? `<span class="mono" style="font-size:11px;">${parent.accession_number}</span> ${escapeHtml(plantDisplayName(parent))}` : null)}
+        </div>
+
+        ${(() => {
+          const notes = careNotesForPlant(pl.id);
+          return `
+          <div class="section-card">
+            <div class="row" style="margin-bottom:10px;">
+              <h4 style="margin:0;">Care notes</h4>
+              <button class="btn btn-secondary btn-sm" onclick="openModal('addCareNote',{plantId:'${pl.id}'})">+ Add</button>
+            </div>
+            ${notes.length === 0
+              ? `<div class="empty" style="padding:20px 12px;"><div>${icon("note")}</div><div style="margin-top:6px;">No care notes yet.</div><div class="subtle">Tap + Add to record watering, repotting, and treatments.</div></div>`
+              : notes.map((n) => `
+                <div class="field-row" style="align-items:flex-start;">
+                  <span class="field-row-icon">${icon("note")}</span>
+                  <div style="flex:1;min-width:0;">
+                    <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(n.noted_on)}</div>
+                    <div style="font-size:13.5px;color:#C9D6CC;margin-top:3px;white-space:pre-wrap;">${escapeHtml(n.body)}</div>
+                  </div>
+                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);flex-shrink:0;" onclick="deleteCareNote('${n.id}')">${icon("trash")}</button>
+                </div>`).join("")}
+          </div>`;
+        })()}
       </div>
-
-      ${(pl.identification_notes || pl.acquisition_source_type || pl.acquisition_source_name || pl.acquisition_notes || pl.date_acquired) ? `
-      <div class="surface" style="padding:16px;margin-top:14px;">
-        ${pl.identification_notes ? `<div class="section-label">Identification notes</div><div style="font-size:13.5px;color:#C9D6CC;">${escapeHtml(pl.identification_notes)}</div>` : ""}
-        ${(pl.acquisition_source_type || pl.acquisition_source_name || pl.date_acquired || pl.acquisition_notes) ? `
-          <div class="section-label">Provenance</div>
-          <div style="font-size:13.5px;color:#C9D6CC;line-height:1.6;">
-            ${pl.date_acquired ? `Acquired: ${fmtDate(pl.date_acquired)}<br/>` : ""}
-            ${pl.acquisition_source_type ? `Source: ${ACQ_SOURCE_LABELS[pl.acquisition_source_type]}${pl.acquisition_source_name ? " — " + escapeHtml(pl.acquisition_source_name) : ""}<br/>` : ""}
-            ${pl.acquisition_notes ? escapeHtml(pl.acquisition_notes) : ""}
-          </div>` : ""}
-      </div>` : ""}
-
-      ${(pl.native_range || pl.hardy_to || (pl.light_conditions && pl.light_conditions.length) || pl.water_needs) ? `
-      <div class="surface" style="padding:16px;margin-top:14px;">
-        <div class="section-label">Care</div>
-        <div style="font-size:13.5px;color:#C9D6CC;line-height:1.7;">
-          ${pl.native_range ? `Native to: ${escapeHtml(pl.native_range)}<br/>` : ""}
-          ${pl.hardy_to ? `Hardy to: ${escapeHtml(pl.hardy_to)}<br/>` : ""}
-          ${pl.light_conditions && pl.light_conditions.length ? `Light: ${pl.light_conditions.map((c) => c.replace("_", " ")).join(", ")}<br/>` : ""}
-          ${pl.water_needs ? `Water: ${pl.water_needs}` : ""}
-        </div>
-      </div>` : ""}
-
-      ${(() => {
-        const notes = careNotesForPlant(pl.id);
-        return `
-        <div class="row" style="margin-top:26px;margin-bottom:4px;">
-          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Care notes</h3>
-          <button class="btn btn-secondary btn-sm" onclick="openModal('addCareNote',{plantId:'${pl.id}'})">+ Add</button>
-        </div>
-        ${notes.length === 0
-          ? `<div class="empty" style="padding:24px 20px;"><div>No care notes yet.</div></div>`
-          : notes.map((n) => `
-            <div class="surface" style="padding:12px 14px;margin-top:8px;">
-              <div class="row">
-                <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(n.noted_on)}</div>
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deleteCareNote('${n.id}')">${icon("trash")}</button>
-              </div>
-              <div style="font-size:13.5px;color:#C9D6CC;margin-top:4px;white-space:pre-wrap;">${escapeHtml(n.body)}</div>
-            </div>`).join("")}`;
-      })()}
 
       <div class="row" style="margin-top:26px;margin-bottom:4px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
@@ -1457,9 +1545,11 @@ function screenPlantDetail() {
       </div>
 
       ${timelinePhotos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
+        <div class="timeline-cols">
         ${groupPhotosByLocation(timelinePhotos).map((group) => `
-          <div class="loc-group-title" style="margin-top:18px;">${group.location ? "📍 " + escapeHtml(locationPath(group.location)) : "No location tagged"}</div>
-          <div class="card-grid">
+          <div class="timeline-col">
+          <div class="timeline-col-head">${icon("pin")}<span>${group.location ? escapeHtml(locationPath(group.location)) : "No location tagged"}</span></div>
+          <div class="stack">
             ${group.photos.map((p) => {
               const cachedUrl = state.photoUrlCache[p.drive_file_id];
               if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
@@ -1490,7 +1580,7 @@ function screenPlantDetail() {
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
-                  ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
+                  ${!isPrimary ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">${icon("photoStar")} Set as profile</button>` : ""}
                   ${isDirectAttachment
                     ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>`
                     : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="untagPlantFromPhoto('${p.id}','${pl.id}')">${icon("trash")} Remove tag</button>`}
@@ -1498,7 +1588,9 @@ function screenPlantDetail() {
               </div>`;
             }).join("")}
           </div>
-        `).join("")}`}
+          </div>
+        `).join("")}
+        </div>`}
     </div>
   </div>`;
 }
@@ -2227,6 +2319,8 @@ function modalContent() {
         <textarea id="ep-idnotes" rows="2" placeholder="e.g. Possible Echinopsis, species uncertain">${escapeHtml(pl.identification_notes || "")}</textarea>
 
         <div class="section-label">Details</div>
+        <label>Description</label>
+        <textarea id="ep-description" rows="3" placeholder="What this plant looks like — species level, not notes about this specimen">${escapeHtml(pl.description || "")}</textarea>
         <label>Type</label>
         <select id="ep-planttype">
           <option value="">— Not recorded —</option>
@@ -3277,6 +3371,7 @@ function wireModalForms() {
           species: document.getElementById("ep-species").value || null,
           identification_status: document.getElementById("ep-idstatus").value,
           identification_notes: document.getElementById("ep-idnotes").value || null,
+          description: document.getElementById("ep-description").value || null,
           plant_type: document.getElementById("ep-planttype").value || null,
           growth_habit: document.getElementById("ep-growthhabit").value || null,
           mature_size: document.getElementById("ep-maturesize").value || null,

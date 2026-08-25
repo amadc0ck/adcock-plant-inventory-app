@@ -254,6 +254,34 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 
 ## Completed
 
+### v1.38.0
+
+**PD-7 — Plant Detail layout v2.** Status: done · Schema: yes (below) · Touched `icon()`, `<style>`, `screenPlantDetail`, `editPlant` modal, `wireModalForms`, `exportPlantsCsv`, new `fieldRow()`.
+
+Built from Amanda's mockup. **The screen holds one shape on every plant** — every section renders, every field renders, blanks show a dimmed em-dash. A bare record renders all six sections with 15 dashes.
+
+- **Hero:** 4:3 image · identity + pills + Locations + description · vertical action card (Edit / Hospital / Propagate / Delete) with chevrons. Actions become a third column only at 1100px, where there's room.
+- **Six section cards:** Details, Care, Identification, Collection, Provenance, Care notes. 3-up at 1100px, 2-up at 700px, stacked below.
+- **Photo timeline is grouped by location as columns** — one column per location, photos descending inside it, horizontally scrollable. Grouping preserved; only the axis changed.
+- `description` added — species-level prose, distinct from `care_notes` observations.
+- **`plants.notes` migrated into `care_notes`** and no longer displayed. Column retained, not cleared, so the migration is reversible. `identification_notes` and `acquisition_notes` deliberately **not** migrated.
+- Light stays a list of selected values, rendered as chips.
+- 13 real Tabler icons added from Amanda's source, normalized to the house format. `shovel` / `bowlSpoon` (Soil, Feeding — fields not added yet), `heartStar` (GAL-1) and `plant2` (BLOOM-1 / GAL-5) are defined but not yet wired to a screen.
+
+```sql
+-- PD-7: species-level description
+alter table plants add column if not exists description text;
+
+-- Preview: how many notes will become care notes
+select count(*) from plants where notes is not null and btrim(notes) <> '';
+
+-- Migrate. NOT IDEMPOTENT — running twice duplicates every note.
+insert into care_notes (plant_id, noted_on, body)
+select id, created_at::date, notes
+from plants
+where notes is not null and btrim(notes) <> '';
+```
+
 ### v1.37.1
 
 **Fix: `@media` blocks were being shadowed by later base rules.** Status: done · Schema: none · Touched `<style>` ordering only.

@@ -34,6 +34,8 @@ Migration groups existing plants by botanical name into taxa, links them, and **
 
 **Scale note.** This is a personal collection in one front and back yard, not an institution. Professional apparatus — BG-BASE style accession qualifiers, taxon label codes, QR — is not warranted and was dropped. The taxa split is kept because it removes real repeated typing, and more so with every offset accessioned: twelve taxon facts entered once instead of once per specimen.
 
+**Actions divide by level too** (2026-08-25). Move to Plant Hospital, health status, location, and delete are **specimen** actions — one individual plant is sick and gets moved. Editing description, care requirements and traits are **taxon** actions. Propagate creates a specimen from a specimen. The PD-7 action card therefore splits across the two detail screens rather than being duplicated.
+
 **Taxon and lineage are independent relationships** (decided 2026-08-25). A taxon owns every specimen of it — purchased and propagated alike. `parent_plant_id` separately records which specimen an offset came off, exactly as a garden tracks provenance. Both hold at once: an offset shares its mother's `taxa_id` **and** points at her.
 
 Consequences:
@@ -69,6 +71,35 @@ Fix: on attach, if the photo has no location, default it to the specimen's curre
 `propagatePlant` creates one specimen per run. With every offset accessioned separately (SPECIES-1), taking five offsets off a mother plant means running the form five times and typing the same values five times.
 
 Add a count field: "How many offsets?" → create N specimens in one go, each getting its own accession number from the existing trigger, all sharing `parent_plant_id` and the chosen location.
+
+### SPECIES-2 — Split multi-location plants into one specimen per location
+**Status:** needs plan approval · **Effort:** medium–high · **Schema:** yes, retires `plant_locations` for specimens · **Depends on:** SPECIES-1 · **Touches:** `plants`, `plant_locations`, `photos`, `care_notes`, `screenPlantDetail`, `allLocationsForPlant`, `mergePlants`
+
+**"Every plant + location combo is a specimen"** (Amanda, 2026-08-25). A specimen is one physical individual and a physical individual is in exactly one place, so a plant row listing three locations is really up to three plants.
+
+This **reverses the plant↔location many-to-many in §6.** `plant_locations` existed to let one plant be in several places at once — a workaround for having no taxon/specimen distinction. With specimens real, a specimen has exactly one `location_id` and the junction is retired. Photo↔plant and photo↔location many-to-many **stay**: a single photo genuinely can show several plants and several containers.
+
+**The split is not mechanical.** Locations recorded for one plant frequently sit in an **ancestor/descendant chain** — e.g. ABG-2026-0002 lists both "Top Row" and "Top Row > Bucket 02". That is almost always **one specimen recorded at two precisions**, not two plants. A naive row-per-location split would invent a phantom specimen for every record ever logged loosely and later refined.
+
+Migration rules:
+- Locations in an **ancestor/descendant chain collapse to one specimen**, placed at the most specific location.
+- Locations in **disjoint branches become separate specimens**.
+- Anything ambiguous is reviewed by hand, not guessed.
+- **Photos route by their own `location_id`** — a photo at location L belongs to the specimen at L. This is clean and needs no judgement. Photos with no location stay with the originating specimen and are reassigned manually.
+- **Care notes** have no location and stay with the originating specimen.
+- The original row **keeps its accession number** (immutable, §5); each newly split-out specimen draws a fresh one from the existing trigger.
+
+Consequences for the UI: Plant Detail's "+ Add another location" / "Remove" block disappears — it was the workaround. `allLocationsForPlant()` becomes a taxon-level query (where can I find any specimen of this taxon) rather than a per-plant one.
+
+**Size the job first:**
+```sql
+-- Plants carrying more than one location today
+select p.id, p.accession_number, p.botanical_name, count(*) + 1 as location_count
+from plants p
+join plant_locations pl on pl.plant_id = p.id
+group by p.id, p.accession_number, p.botanical_name
+order by location_count desc;
+```
 
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`

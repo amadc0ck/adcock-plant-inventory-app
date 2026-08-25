@@ -9,6 +9,36 @@ Item IDs are permanent. Never renumber.
 
 ## Observed 2026-08-25 — triaged from Amanda's session notes
 
+### SPECIES-1 — Split taxa from specimens (epic)
+**Status:** needs plan approval · **Effort:** high · **Schema:** yes, new table + FK · **Touches:** nearly every screen
+
+`plants` is one row per accessioned specimen, so **every species-level fact is copied onto every specimen of that species** and nothing keeps the copies in sync. Four offsets of one plant store the same mature size four times.
+
+Costs today: correcting a species fact means editing every specimen or letting them drift; AI-2 would fill identical facts once per specimen; propagation via `parent_plant_id` re-enters everything by hand.
+
+**Decided with Amanda 2026-08-25:**
+- Navigation becomes **taxon list → taxon detail → specimen list → specimen detail**. The Plants tab browses taxa, not specimens.
+- The table is **taxa**, not species — a row is the most specific level known: a species, a cultivar, or a bare genus. Cultivars are **separate rows** because their traits genuinely differ (*Aeonium arboreum* is green, 'Zwartkop' is near-black). Name stored in structured parts — `genus`, `species_epithet`, `cultivar`, `is_hybrid` — and composed for display. "All Aeoniums" is a query on `genus`, so no self-referencing tree is needed.
+- **Unidentified plants stay first-class.** `taxa_id` is nullable. Confirming an identification either creates a taxon and links it, or links an existing one. This makes AI-1 cleaner: identify once, link, fill taxon facts once.
+- **Identifiers:** specimens keep `ABG-YYYY-NNNN` **unchanged** — existing trigger, existing data, still immutable per §5. Taxa get their own `ABG-TX-NNNN` from a trigger mirroring the accession one, plus the composed name as a unique natural key. The synthetic code is only worth the trigger if labels or QR codes are wanted.
+
+Field split:
+- **Taxon:** description, plant_type, growth_habit, mature_size, bloom_season, origin, native_range, hardy_to, light_conditions, water_needs, family/genus/species/cultivar, primary_photo_id (any specimen's photo).
+- **Specimen:** accession_number, identification_status/notes, collection_category, original_collection, status, health_status, location_id, date_acquired, acquisition_*, parent_plant_id, primary_photo_id, care_notes, photos.
+
+**Locations need no schema change.** "Where can I find any specimen of this taxon" is a query over its specimens; "where exactly is this one" is the specimen's existing `location_id`.
+
+Migration groups existing plants by botanical name into taxa, links them, and **leaves the duplicated columns on `plants` until confirmed** — the reversible pattern used for the notes migration in v1.38.0.
+
+Open before building:
+- **Does every individual offset get accessioned?** If a bucket holds five offsets of one taxon, is that five specimen rows or one? Decides whether specimen count stays manageable.
+- Are labels/QR codes wanted, i.e. is the `ABG-TX-NNNN` trigger worth building?
+- Does taxon detail show a merged photo gallery across its specimens, or only the profile photo?
+- Interaction with GAL-2: `plant_type` moves to taxa, so Collection Highlights becomes a taxon-level filter.
+- Interaction with `mergePlants`: merging two specimens of different taxa needs a rule.
+
+Supersedes the plant-level half of GAL-2. AI-1 and AI-2 should be designed against this model, not the current flat one.
+
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`
 
@@ -63,17 +93,6 @@ Add `photos.focal_x` / `focal_y` (0–100 percent, default 50/50 or 50/0) and em
 ---
 
 ## Ready now — no upstream dependencies
-
-### PD-1 — Plant Detail layout rebuild
-**Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `screenPlantDetail`
-
-- Replace the full-width 16:9 hero with a side-by-side layout: square or 4:3 primary image beside the details block.
-- Improve visual cohesion between the primary card and the photo timeline below it.
-- Keep the existing per-location timeline grouping intact.
-- **PD-1 owns the reusable card-media / 4:3 image treatment.** Design it once here as a shared CSS pattern, not a one-off inside `screenPlantDetail` — LOC-1 consumes it afterward. It replaces `.plant-hero`'s `aspect-ratio:16/9`; 16:9 crops off-center subjects badly, which is the reason for the change.
-- Depends on nothing. Run before LOC-1.
-
----
 
 ### LOC-1 — Locations list card layout
 **Status:** ready · **Effort:** low · **Schema:** none · **Depends on:** PD-1 (image treatment must exist to apply) · **Touches:** `locationCard`, `.plant-list-card` / `.plant-list-thumb` CSS

@@ -267,7 +267,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.34.2";
+const APP_VERSION = "1.34.3";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -968,7 +968,10 @@ function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; r
 function openLocation(id) { state.tab = "locationDetail"; state.currentLocationId = id; render(); }
 
 function plantPhotosOrdered(plantId) {
-  return state.photos.filter((p) => p.plant_id === plantId).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+  const taggedPhotoIds = new Set(state.photoPlants.filter((pp) => pp.plant_id === plantId).map((pp) => pp.photo_id));
+  return state.photos
+    .filter((p) => p.plant_id === plantId || taggedPhotoIds.has(p.id))
+    .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
 }
 function plantCoverPhoto(pl) {
   const photos = plantPhotosOrdered(pl.id);
@@ -1226,7 +1229,7 @@ function screenPlantDetail() {
   if (!pl) return `<div class="screen container"><p>Plant not found.</p></div>`;
   const loc = locationById(pl.location_id);
   const parent = pl.parent_plant_id ? state.plants.find((p) => p.id === pl.parent_plant_id) : null;
-  const photos = state.photos.filter((p) => p.plant_id === pl.id).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+  const photos = plantPhotosOrdered(pl.id);
   // Reference/ID photos (e.g. a profile picture that isn't a dated
   // observation of this exact specimen) are excluded from the timeline list.
   const timelinePhotos = photos.filter((p) => p.photo_type !== "identification");
@@ -1334,6 +1337,12 @@ function screenPlantDetail() {
               const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
               const photoLocs = allLocationsForPhoto(p);
               const isPrimary = pl.primary_photo_id === p.id;
+              // Photos can appear here either because this plant owns them directly
+              // (p.plant_id) or because this plant was tagged into someone else's
+              // photo via photo_plants. Only the owner gets the full Delete action —
+              // a tagged plant just removes its own tag, so it can never destroy a
+              // photo that's actually another plant's primary attachment/profile picture.
+              const isDirectAttachment = p.plant_id === pl.id;
               return `
               <div class="surface" style="padding:14px;">
                 <div class="row">
@@ -1346,13 +1355,15 @@ function screenPlantDetail() {
                       ${photoLocs.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:2px;">📍 ${photoLocs.map((l2) => escapeHtml(l2.name)).join(", ")}</div>` : ""}
                     </div>
                   </div>
-                  ${isPrimary ? `<span class="pill pill-orange">Profile</span>` : ""}
+                  ${isPrimary ? `<span class="pill pill-orange">Profile</span>` : !isDirectAttachment ? `<span class="pill">Tagged</span>` : ""}
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
                   ${!isPrimary ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">Set as profile picture</button>` : ""}
-                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>
+                  ${isDirectAttachment
+                    ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>`
+                    : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="untagPlantFromPhoto('${p.id}','${pl.id}')">${icon("trash")} Remove tag</button>`}
                 </div>
               </div>`;
             }).join("")}
@@ -2672,6 +2683,19 @@ async function deletePhoto(photoId) {
     toast("Photo deleted");
     await loadAll();
     maybeResumeLightbox();
+  } catch (e) { toast(e.message, true); }
+}
+// Removes just this plant's tag from a photo it doesn't primarily own —
+// unlike deletePhoto(), this never touches the photo record itself, so it's
+// safe to use from a plant's timeline even when the photo is that plant's
+// secondary tag and someone else's primary attachment/profile picture.
+async function untagPlantFromPhoto(photoId, plantId) {
+  if (!confirm("Remove this plant's tag from the photo? The photo itself won't be deleted.")) return;
+  try {
+    const row = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id === plantId);
+    if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
+    toast("Tag removed");
+    await loadAll();
   } catch (e) { toast(e.message, true); }
 }
 async function saveTaggedPlants(photoId) {

@@ -20,7 +20,7 @@ Costs today: correcting a species fact means editing every specimen or letting t
 - Navigation becomes **taxon list → taxon detail → specimen list → specimen detail**. The Plants tab browses taxa, not specimens.
 - The table is **taxa**, not species — a row is the most specific level known: a species, a cultivar, or a bare genus. Cultivars are **separate rows** because their traits genuinely differ (*Aeonium arboreum* is green, 'Zwartkop' is near-black). Name stored in structured parts — `genus`, `species_epithet`, `cultivar`, `is_hybrid` — and composed for display. "All Aeoniums" is a query on `genus`, so no self-referencing tree is needed.
 - **Unidentified plants stay first-class.** `taxa_id` is nullable. Confirming an identification either creates a taxon and links it, or links an existing one. This makes AI-1 cleaner: identify once, link, fill taxon facts once.
-- **Identifiers:** specimens keep `ABG-YYYY-NNNN` **unchanged** — existing trigger, existing data, still immutable per §5. Taxa get their own `ABG-TX-NNNN` from a trigger mirroring the accession one, plus the composed name as a unique natural key. The synthetic code is only worth the trigger if labels or QR codes are wanted.
+- **Identifiers:** specimens keep `ABG-YYYY-NNNN` **unchanged** — existing trigger, existing data, still immutable per §5. Taxa are identified by a **uuid PK plus the composed name as a unique natural key**. No synthetic taxon code: it only earns a trigger if labels or QR codes are printed, which they are not.
 
 Field split:
 - **Taxon:** description, plant_type, growth_habit, mature_size, bloom_season, origin, native_range, hardy_to, light_conditions, water_needs, family/genus/species/cultivar, primary_photo_id (any specimen's photo).
@@ -30,14 +30,35 @@ Field split:
 
 Migration groups existing plants by botanical name into taxa, links them, and **leaves the duplicated columns on `plants` until confirmed** — the reversible pattern used for the notes migration in v1.38.0.
 
+**Every individual offset is accessioned** (decided 2026-08-25) — five offsets in a bucket are five specimen rows. Two consequences: propagation needs batch creation (PROP-1), and a taxon's specimen list will often be several near-identical rows, so it must distinguish them by **photo, location and health**, never by name — they share a name by definition.
+
+**Scale note.** This is a personal collection in one front and back yard, not an institution. Professional apparatus — BG-BASE style accession qualifiers, taxon label codes, QR — is not warranted and was dropped. The taxa split is kept because it removes real repeated typing, and more so with every offset accessioned: twelve taxon facts entered once instead of once per specimen.
+
 Open before building:
-- **Does every individual offset get accessioned?** If a bucket holds five offsets of one taxon, is that five specimen rows or one? Decides whether specimen count stays manageable.
-- Are labels/QR codes wanted, i.e. is the `ABG-TX-NNNN` trigger worth building?
 - Does taxon detail show a merged photo gallery across its specimens, or only the profile photo?
 - Interaction with GAL-2: `plant_type` moves to taxa, so Collection Highlights becomes a taxon-level filter.
 - Interaction with `mergePlants`: merging two specimens of different taxa needs a rule.
 
 Supersedes the plant-level half of GAL-2. AI-1 and AI-2 should be designed against this model, not the current flat one.
+
+### PHOTO-2 — Attach an Inbox photo from the specimen side
+**Status:** ready · **Effort:** low–medium · **Schema:** none · **Touches:** `screenPlantDetail`, new modal, `attachPhotoToExistingPlant`
+
+Today the flow is photo-first: open a photo in the Inbox, then attach it to a plant. Amanda wants the reverse — open a specimen, pull in a waiting Inbox photo.
+
+- Candidate list = photos with `plant_id` null, **regardless of location**. Filtering by location would hide exactly the photos most likely to need attaching, since Inbox photos usually have no location either.
+- Sort newest first, show thumbnails, allow multi-select.
+
+**Location inheritance.** `attachPhotoToExistingPlant()` currently sets `plant_id` only and never touches `location_id`. So attached photos stay location-less and all land in the timeline's "No location tagged" group, which will grow without bound now that PD-7 renders one column per location.
+
+Fix: on attach, if the photo has no location, default it to the specimen's current location, and let Amanda override before confirming. **Snapshot at attach time, never dynamic** — a photo records where it was taken, so it must not follow the plant when the plant later moves.
+
+### PROP-1 — Propagate more than one offset at a time
+**Status:** ready · **Effort:** low · **Schema:** none · **Touches:** `propagatePlant` modal, `wireModalForms`
+
+`propagatePlant` creates one specimen per run. With every offset accessioned separately (SPECIES-1), taking five offsets off a mother plant means running the form five times and typing the same values five times.
+
+Add a count field: "How many offsets?" → create N specimens in one go, each getting its own accession number from the existing trigger, all sharing `parent_plant_id` and the chosen location.
 
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`

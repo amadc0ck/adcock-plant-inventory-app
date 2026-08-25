@@ -267,7 +267,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.34.1";
+const APP_VERSION = "1.34.2";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1193,7 +1193,6 @@ function screenPlants() {
 }
 
 function plantRow(pl) {
-  const loc = locationById(pl.location_id);
   const photos = plantPhotosOrdered(pl.id);
   const cover = plantCoverPhoto(pl);
   if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
@@ -1213,11 +1212,9 @@ function plantRow(pl) {
       <div class="wrap-gap" style="margin-top:7px;">
         ${pl.collection_category === "historical" ? `<span class="pill-solid pill-solid-outline">Historical</span>` : ""}
         ${pl.original_collection ? `<span class="pill-solid pill-solid-pink">Original</span>` : ""}
-        ${pl.identification_status !== "confirmed" ? `<span class="pill-solid pill-solid-outline">${ID_STATUS_LABELS[pl.identification_status]}</span>` : ""}
         ${pl.status !== "active" ? `<span class="pill-solid pill-solid-terracotta">${STATUS_LABELS[pl.status]}</span>` : ""}
       </div>
-      <div class="row" style="margin-top:8px;">
-        <div style="font-size:12px;color:var(--ink-soft);">📍 ${loc ? escapeHtml(locationPath(loc)) : "No location set"}${additionalLocationRows(pl.id).length ? ` <span style="color:var(--blue);">+${additionalLocationRows(pl.id).length} more</span>` : ""}</div>
+      <div class="row" style="margin-top:8px;justify-content:flex-end;">
         <div class="mono" style="font-size:11px;color:var(--moss-dim);flex-shrink:0;">${photos.length} photo${photos.length === 1 ? "" : "s"}</div>
       </div>
     </div>

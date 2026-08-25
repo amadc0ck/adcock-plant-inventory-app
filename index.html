@@ -266,7 +266,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.32.0";
+const APP_VERSION = "1.33.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -297,6 +297,7 @@ const state = {
   photoLocations: [],
   inboxLimit: 20,
   tagLocationSearch: "",
+  galleryFilters: { locationId: "", photoType: "", search: "" },
   inboxSelectMode: false,
   inboxSelected: new Set(),
   lightboxResumePending: false,
@@ -469,7 +470,7 @@ function exportPlantsCsv() {
       pl.accession_number, pl.botanical_name, pl.common_name, pl.cultivar, pl.family, pl.genus, pl.species,
       pl.identification_status, pl.collection_category, pl.original_collection, pl.status, pl.health_status,
       loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
-      pl.native_range, pl.hardy_to, pl.light_requirements, pl.water_needs, pl.notes,
+      pl.native_range, pl.hardy_to, (pl.light_conditions || []).join("; "), pl.water_needs, pl.notes,
     ].map(csvEscape).join(",");
   });
   const csv = [headers.join(","), ...rows].join("\r\n");
@@ -537,12 +538,85 @@ function driveErrorMessage(status, fallback) {
   return fallback;
 }
 
+// Reads the JPEG's embedded EXIF DateTimeOriginal, when present, so photos
+// batch-uploaded from a phone/camera keep their real capture date instead
+// of showing whenever they happened to be uploaded to this app.
+function extractExifDate(file) {
+  return new Promise((resolve) => {
+    if (!file.type || (!file.type.includes("jpeg") && !file.type.includes("jpg"))) { resolve(null); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const view = new DataView(e.target.result);
+        if (view.getUint16(0, false) !== 0xffd8) { resolve(null); return; }
+        let offset = 2;
+        while (offset < view.byteLength - 1) {
+          const marker = view.getUint16(offset, false);
+          offset += 2;
+          if (marker === 0xffe1) {
+            offset += 2; // segment length, unused
+            if (view.getUint32(offset, false) !== 0x45786966) { resolve(null); return; } // "Exif"
+            offset += 6;
+            const tiffOffset = offset;
+            const little = view.getUint16(offset, false) === 0x4949;
+            offset += 4; // byte-order + magic number
+            const firstIFDOffset = view.getUint32(offset, little);
+            offset = tiffOffset + firstIFDOffset;
+            const numEntries = view.getUint16(offset, little);
+            offset += 2;
+            let exifIFDOffset = null;
+            for (let i = 0; i < numEntries; i++) {
+              const entryOffset = offset + i * 12;
+              if (view.getUint16(entryOffset, little) === 0x8769) {
+                exifIFDOffset = view.getUint32(entryOffset + 8, little);
+              }
+            }
+            if (exifIFDOffset !== null) {
+              let exifOffset = tiffOffset + exifIFDOffset;
+              const exifEntries = view.getUint16(exifOffset, little);
+              exifOffset += 2;
+              for (let i = 0; i < exifEntries; i++) {
+                const entryOffset = exifOffset + i * 12;
+                const tag = view.getUint16(entryOffset, little);
+                if (tag === 0x9003 || tag === 0x0132) { // DateTimeOriginal / DateTime
+                  const strOffset = tiffOffset + view.getUint32(entryOffset + 8, little);
+                  let str = "";
+                  for (let j = 0; j < 19; j++) {
+                    const code = view.getUint8(strOffset + j);
+                    if (!code) break;
+                    str += String.fromCharCode(code);
+                  }
+                  const m = str.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+                  if (m) { resolve(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`); return; }
+                }
+              }
+            }
+            resolve(null);
+            return;
+          } else if ((marker & 0xff00) !== 0xff00) {
+            break;
+          } else {
+            offset += view.getUint16(offset, false);
+          }
+        }
+        resolve(null);
+      } catch (err) {
+        resolve(null);
+      }
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsArrayBuffer(file.slice(0, 131072)); // EXIF lives near the start of the file
+  });
+}
+
 async function uploadPhoto(file, plantId, locationId, notes) {
+  const takenAt = await extractExifDate(file);
   const fd = new FormData();
   fd.append("photo", file);
   if (plantId) fd.append("plant_id", plantId);
   if (locationId) fd.append("location_id", locationId);
   if (notes) fd.append("notes", notes);
+  if (takenAt) fd.append("taken_at", takenAt);
   const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/upload-photo`, {
     method: "POST",
     headers: { apikey: state.configKey, Authorization: `Bearer ${state.session.access_token}` },
@@ -770,6 +844,9 @@ function fmtDate(iso) {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
+function photoDate(p) {
+  return p.taken_at || p.uploaded_at;
+}
 function icon(name) {
   const icons = {
     inbox: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12h4l2 3h4l2-3h4M4 12l1.5-6.5A2 2 0 0 1 7.44 4h9.12a2 2 0 0 1 1.94 1.5L20 12M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/></svg>`,
@@ -856,7 +933,7 @@ function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; r
 function openLocation(id) { state.tab = "locationDetail"; state.currentLocationId = id; render(); }
 
 function plantPhotosOrdered(plantId) {
-  return state.photos.filter((p) => p.plant_id === plantId).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  return state.photos.filter((p) => p.plant_id === plantId).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
 }
 function plantCoverPhoto(pl) {
   const photos = plantPhotosOrdered(pl.id);
@@ -874,6 +951,10 @@ function openInboxLightbox(photoId) {
   state.lightbox = { mode: "inbox", photoId };
   render();
 }
+function openGalleryLightbox(photoId) {
+  state.lightbox = { mode: "gallery", photoId };
+  render();
+}
 function prepareLightboxResume() {
   if (!state.lightbox || state.lightbox.mode !== "inbox") return;
   const list = lightboxPhotoList();
@@ -883,7 +964,7 @@ function prepareLightboxResume() {
 function maybeResumeLightbox() {
   if (!state.lightboxResumePending) return;
   state.lightboxResumePending = false;
-  const freshList = state.photos.filter((p) => !p.plant_id && !p.location_id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  const freshList = state.photos.filter((p) => !p.plant_id && !p.location_id && p.photo_type !== "historical").sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
   if (freshList.length > 0) {
     const idx = Math.min(state.lightboxResumeIndex, freshList.length - 1);
     const next = freshList[idx];
@@ -898,10 +979,13 @@ function closeLightbox() {
 }
 function lightboxPhotoList() {
   if (state.lightbox.mode === "inbox") {
-    return state.photos.filter((p) => !p.plant_id && !p.location_id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+    return state.photos.filter((p) => !p.plant_id && !p.location_id && p.photo_type !== "historical").sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+  }
+  if (state.lightbox.mode === "gallery") {
+    return filteredGalleryPhotos();
   }
   if (state.lightbox.mode === "location") {
-    return photosAtLocation(state.lightbox.locationId).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+    return photosAtLocation(state.lightbox.locationId).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
   }
   return plantPhotosOrdered(state.lightbox.plantId);
 }
@@ -960,7 +1044,7 @@ function screenLogin() {
 }
 
 function screenInbox() {
-  const unassigned = state.photos.filter((p) => !p.plant_id && !p.location_id);
+  const unassigned = state.photos.filter((p) => !p.plant_id && !p.location_id && p.photo_type !== "historical");
   const limit = state.inboxLimit || 20;
   const visible = unassigned.slice(0, limit);
   const remaining = unassigned.length - visible.length;
@@ -1012,7 +1096,7 @@ function photoRow(p, selectMode) {
       ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-hero-empty">${icon("photo")}</div>`}
     </div>
     <div style="padding:12px 14px 14px;">
-      <div class="tag-id">Photo · ${fmtDate(p.uploaded_at)}</div>
+      <div class="tag-id">Photo · ${fmtDate(photoDate(p))}</div>
       <div style="font-size:13.5px;margin-top:2px;color:var(--ink-soft);cursor:pointer;" onclick="openModal('editPhotoNote',{photoId:'${p.id}'})">${p.notes ? escapeHtml(p.notes) : "No notes — tap to add"}</div>
       ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
       ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
@@ -1024,7 +1108,8 @@ function photoRow(p, selectMode) {
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")} New</button>
         <button class="btn btn-danger btn-sm icon-btn" onclick="deletePhoto('${p.id}')" aria-label="Delete">${icon("trash")}</button>
-      </div>` : ""}
+      </div>
+      <button class="btn-ghost" style="margin-top:8px;font-size:11.5px;" onclick="archivePhoto('${p.id}')">Archive as historical (no plant/container needed)</button>` : ""}
     </div>
   </div>`;
 }
@@ -1108,7 +1193,7 @@ function screenPlantDetail() {
   if (!pl) return `<div class="screen container"><p>Plant not found.</p></div>`;
   const loc = locationById(pl.location_id);
   const parent = pl.parent_plant_id ? state.plants.find((p) => p.id === pl.parent_plant_id) : null;
-  const photos = state.photos.filter((p) => p.plant_id === pl.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  const photos = state.photos.filter((p) => p.plant_id === pl.id).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
   // Reference/ID photos (e.g. a profile picture that isn't a dated
   // observation of this exact specimen) are excluded from the timeline list.
   const timelinePhotos = photos.filter((p) => p.photo_type !== "identification");
@@ -1189,13 +1274,13 @@ function screenPlantDetail() {
           </div>` : ""}
       </div>` : ""}
 
-      ${(pl.native_range || pl.hardy_to || pl.light_requirements || pl.water_needs) ? `
+      ${(pl.native_range || pl.hardy_to || (pl.light_conditions && pl.light_conditions.length) || pl.water_needs) ? `
       <div class="surface" style="padding:16px;margin-top:14px;">
         <div class="section-label">Care</div>
         <div style="font-size:13.5px;color:#C9D6CC;line-height:1.7;">
           ${pl.native_range ? `Native to: ${escapeHtml(pl.native_range)}<br/>` : ""}
           ${pl.hardy_to ? `Hardy to: ${escapeHtml(pl.hardy_to)}<br/>` : ""}
-          ${pl.light_requirements ? `Light: ${pl.light_requirements.replace("_", " ")}<br/>` : ""}
+          ${pl.light_conditions && pl.light_conditions.length ? `Light: ${pl.light_conditions.map((c) => c.replace("_", " ")).join(", ")}<br/>` : ""}
           ${pl.water_needs ? `Water: ${pl.water_needs}` : ""}
         </div>
       </div>` : ""}
@@ -1220,7 +1305,7 @@ function screenPlantDetail() {
                 <div class="photo-row">
                   <div class="photo-icon" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openLightbox('${pl.id}','${p.id}')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
                   <div>
-                    <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(p.uploaded_at)}</div>
+                    <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(photoDate(p))}</div>
                     <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
                     ${taggedPlants.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:4px;">Also shows: ${taggedPlants.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
                     ${photoLocs.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:2px;">📍 ${photoLocs.map((l2) => escapeHtml(l2.name)).join(", ")}</div>` : ""}
@@ -1247,7 +1332,7 @@ function locationCoverPhoto(l) {
     const primary = photos.find((p) => p.id === l.primary_photo_id);
     if (primary) return primary;
   }
-  return photos.sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at))[0] || null;
+  return photos.sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)))[0] || null;
 }
 
 function screenLocations() {
@@ -1302,7 +1387,7 @@ function screenLocationDetail() {
   const l = locationById(state.currentLocationId);
   if (!l) return `<div class="screen container"><p>Location not found.</p></div>`;
   const plants = plantsAtLocation(l.id);
-  const photos = photosAtLocation(l.id).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+  const photos = photosAtLocation(l.id).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
 
   const heroPhoto = l.primary_photo_id ? photos.find((p) => p.id === l.primary_photo_id) : photos[0];
   if (heroPhoto && !state.photoUrlCache[heroPhoto.drive_file_id]) ensurePhotoLoaded(heroPhoto.drive_file_id);
@@ -1393,7 +1478,7 @@ function screenLocationDetail() {
               <div class="photo-row">
                 <div class="photo-icon on-cream" style="cursor:${cachedUrl ? "pointer" : "default"};" ${cachedUrl ? `onclick="openLightbox('${l.id}','${p.id}','location')"` : ""}>${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;" />` : icon("photo")}</div>
                 <div style="flex:1;min-width:0;">
-                  <div class="tag-id">${fmtDate(p.uploaded_at)}</div>
+                  <div class="tag-id">${fmtDate(photoDate(p))}</div>
                   <div style="font-size:13.5px;color:var(--ink-soft);margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
                   ${claimedBy || taggedPlants.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:4px;">Identified: ${[claimedBy, ...taggedPlants].filter(Boolean).map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
                   ${(() => {
@@ -1491,14 +1576,15 @@ function screenReports() {
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Reports</h2>
-      <p class="subtle" style="margin-bottom:16px;">Gaps in your records worth cleaning up — tap any item to jump straight to it.</p>
+      <p class="subtle" style="margin-bottom:12px;">Gaps in your records worth cleaning up — tap any item to jump straight to it.</p>
+      <button class="btn btn-secondary btn-sm" style="margin-bottom:16px;" onclick="goTab('gallery')">${icon("photo")} Browse full photo gallery →</button>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:6px;">
         ${[
           ["Plants", state.plants.length],
           ["Locations", state.locations.length],
           ["Photos", state.photos.length],
-          ["Inbox", state.photos.filter((p) => !p.plant_id && !p.location_id).length],
+          ["Inbox", state.photos.filter((p) => !p.plant_id && !p.location_id && p.photo_type !== "historical").length],
         ].map(([label, val]) => `
           <div class="surface" style="padding:12px;text-align:center;">
             <div class="display" style="font-size:22px;font-weight:600;">${val}</div>
@@ -1534,6 +1620,72 @@ function screenReports() {
       ${reportSection("Plants with no photos", plantsNoPhotos, "Every plant has at least one photo.", plantItem)}
       ${reportSection("Unidentified plants", plantsUnidentified, "No unidentified plants remaining.", plantItem)}
       ${reportSection("Plants flagged Watch or Recovery", plantsNeedingAttention, "No plants currently flagged for health concerns.", plantItem)}
+    </div>
+  </div>`;
+}
+
+function filteredGalleryPhotos() {
+  const f = state.galleryFilters;
+  const q = (f.search || "").toLowerCase();
+  return state.photos.filter((p) => {
+    if (f.photoType === "historical" && p.photo_type !== "historical") return false;
+    if (f.photoType && f.photoType !== "historical" && p.photo_type !== f.photoType) return false;
+    if (f.locationId) {
+      const photoLocIds = allLocationsForPhoto(p).map((l) => l.id);
+      const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
+      const plantLocIds = plant ? allLocationsForPlant(plant).map((l) => l.id) : [];
+      if (!photoLocIds.includes(f.locationId) && !plantLocIds.includes(f.locationId)) return false;
+    }
+    if (q) {
+      const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
+      const hay = [p.notes, plant ? plantDisplayName(plant) : "", plant ? plant.accession_number : "", ...allLocationsForPhoto(p).map((l) => l.name)].filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+}
+
+function screenGallery() {
+  const f = state.galleryFilters;
+  const matches = filteredGalleryPhotos();
+
+  const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
+
+  return `
+  <div class="screen">
+    <div class="container">
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('reports')">${icon("back")} Reports</button>
+      <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Gallery</h2>
+      <p class="subtle" style="margin-bottom:16px;">Every photo in the collection — filter by location, type, or search.</p>
+
+      <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" oninput="state.galleryFilters.search=this.value;render()" />
+      <div class="row" style="margin-bottom:16px;">
+        <button class="btn btn-secondary btn-sm" onclick="openModal('galleryFilters')">
+          Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
+        </button>
+        <span class="subtle">${matches.length} photo${matches.length === 1 ? "" : "s"}</span>
+      </div>
+
+      ${matches.length === 0 ? `<div class="empty"><div class="display">No photos match</div><div>Try different filters or search.</div></div>` : `
+        <div class="card-grid">
+          ${matches.map((p) => {
+            const cachedUrl = state.photoUrlCache[p.drive_file_id];
+            if (!cachedUrl) ensurePhotoLoaded(p.drive_file_id);
+            const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
+            const locs = allLocationsForPhoto(p);
+            return `
+            <div class="tag-card" style="padding:0;overflow:hidden;cursor:pointer;" onclick="openGalleryLightbox('${p.id}')">
+              <div style="width:100%;aspect-ratio:1;background:var(--parchment-dim);">
+                ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ""}
+              </div>
+              <div style="padding:10px 12px;">
+                <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type === "historical" ? " · Archive" : ""}</div>
+                ${plant ? `<div style="font-size:12.5px;font-style:italic;margin-top:2px;">${escapeHtml(plantDisplayName(plant))}</div>` : ""}
+                ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}${locs.length > 1 ? ` +${locs.length - 1}` : ""}</div>` : ""}
+              </div>
+            </div>`;
+          }).join("")}
+        </div>`}
     </div>
   </div>`;
 }
@@ -1867,13 +2019,14 @@ function modalContent() {
         <input id="ep-native" placeholder="e.g. Central Mexico" value="${escapeHtml(pl.native_range || "")}" />
         <label>Hardy to</label>
         <input id="ep-hardy" placeholder="e.g. Zone 9 or 20&deg;F" value="${escapeHtml(pl.hardy_to || "")}" />
-        <label>Light requirements</label>
-        <select id="ep-light">
-          <option value="">— Unspecified —</option>
-          <option value="full_sun" ${pl.light_requirements === "full_sun" ? "selected" : ""}>Full sun</option>
-          <option value="partial_shade" ${pl.light_requirements === "partial_shade" ? "selected" : ""}>Partial shade</option>
-          <option value="shade" ${pl.light_requirements === "shade" ? "selected" : ""}>Shade</option>
-        </select>
+        <label>Light needs</label>
+        <div class="wrap-gap" style="margin-top:2px;">
+          ${["direct","indirect","partial","full","shade","morning","afternoon","all_day"].map((opt) => `
+            <label class="checkbox-row" style="margin-top:6px;background:var(--bg);padding:6px 10px 6px 8px;border-radius:20px;width:auto;">
+              <input type="checkbox" class="ep-light-checkbox" value="${opt}" ${(pl.light_conditions || []).includes(opt) ? "checked" : ""} />
+              <span style="text-transform:capitalize;font-size:13px;">${opt.replace("_", " ")}</span>
+            </label>`).join("")}
+        </div>
         <label>Water needs</label>
         <select id="ep-water">
           <option value="">— Unspecified —</option>
@@ -1960,6 +2113,30 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "galleryFilters") {
+    const f = state.galleryFilters;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Filters</h3>
+      <label>Location</label>
+      <select onchange="state.galleryFilters.locationId=this.value;render()">
+        <option value="">All locations</option>
+        ${locationOptionList().map((o) => `<option value="${o.id}" ${f.locationId === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
+      </select>
+      <label>Photo type</label>
+      <select onchange="state.galleryFilters.photoType=this.value;render()">
+        <option value="">All types</option>
+        <option value="general" ${f.photoType === "general" ? "selected" : ""}>General</option>
+        <option value="identification" ${f.photoType === "identification" ? "selected" : ""}>Identification</option>
+        <option value="flower" ${f.photoType === "flower" ? "selected" : ""}>Flower</option>
+        <option value="detail" ${f.photoType === "detail" ? "selected" : ""}>Detail</option>
+        <option value="condition" ${f.photoType === "condition" ? "selected" : ""}>Condition</option>
+        <option value="historical" ${f.photoType === "historical" ? "selected" : ""}>Archive (historical)</option>
+      </select>
+      <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="closeModal()">Done</button>
+      <button class="btn-ghost btn-block" style="margin-top:8px;text-align:center;justify-content:center;" onclick="state.galleryFilters={locationId:'',photoType:'',search:state.galleryFilters.search};render()">Clear filters</button>`;
+  }
+
   if (type === "plantFilters") {
     const f = state.plantFilters;
     return `
@@ -2029,7 +2206,7 @@ function modalContent() {
   }
 
   if (type === "chooseLocationPhoto") {
-    const photos = photosAtLocation(data.locationId).sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
+    const photos = photosAtLocation(data.locationId).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Choose main photo</h3>
@@ -2343,6 +2520,15 @@ async function moveToHospital(plantId) {
   } catch (e) { toast(e.message, true); }
 }
 
+async function archivePhoto(photoId) {
+  if (!confirm("Archive this as a historical photo? It won't need a plant or container, and moves out of the Inbox into the Gallery's Archive filter.")) return;
+  try {
+    await restPatch("photos", `id=eq.${photoId}`, { photo_type: "historical" });
+    toast("Archived");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function attachPhotoToPlant(photoId, plantId) {
   try {
     await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
@@ -2479,13 +2665,13 @@ function escapeHtml(str) {
 
 function navBtn(t) {
   return `
-    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") || (t.id === "locations" && state.tab === "locationDetail") ? "active" : ""}" onclick="goTab('${t.id}')">
+    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") || (t.id === "locations" && state.tab === "locationDetail") || (t.id === "reports" && state.tab === "gallery") ? "active" : ""}" onclick="goTab('${t.id}')">
       ${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
     </button>`;
 }
 function navBar() {
   const leftTabs = [
-    { id: "inbox", label: "Inbox", icon: "inbox", badge: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
+    { id: "inbox", label: "Inbox", icon: "inbox", badge: state.photos.filter((p) => !p.plant_id && !p.location_id && p.photo_type !== "historical").length },
     { id: "plants", label: "Plants", icon: "leaf" },
   ];
   const rightTabs = [
@@ -2501,7 +2687,7 @@ function navBar() {
 }
 
 function topBar() {
-  const unassignedCount = state.photos.filter((p) => !p.plant_id && !p.location_id).length;
+  const unassignedCount = state.photos.filter((p) => !p.plant_id && !p.location_id && p.photo_type !== "historical").length;
   const driveOk = !!state.driveToken;
   const inboxSubBar = state.tab === "inbox" ? `
     <div class="inbox-subbar"><div class="container" style="display:flex;align-items:center;justify-content:space-between;">
@@ -2586,6 +2772,7 @@ function render() {
   else if (state.tab === "locations") screen = screenLocations();
   else if (state.tab === "locationDetail") screen = screenLocationDetail();
   else if (state.tab === "reports") screen = screenReports();
+  else if (state.tab === "gallery") screen = screenGallery();
   else if (state.tab === "settings") screen = screenSettings();
 
   app.innerHTML = `
@@ -2601,13 +2788,14 @@ function render() {
 function renderLightbox() {
   const isInbox = state.lightbox.mode === "inbox";
   const isLocation = state.lightbox.mode === "location";
+  const isGallery = state.lightbox.mode === "gallery";
   const { plantId, locationId, photoId } = state.lightbox;
   const list = lightboxPhotoList();
   const idx = list.findIndex((p) => p.id === photoId);
   const p = list[idx];
   if (!p) { state.lightbox = null; return ""; }
   const url = state.photoUrlCache[p.drive_file_id];
-  const pl = (!isInbox && !isLocation) ? state.plants.find((x) => x.id === plantId) : null;
+  const pl = (!isInbox && !isLocation && !isGallery) ? state.plants.find((x) => x.id === plantId) : (isGallery && p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null);
   const loc = isLocation ? locationById(locationId) : null;
   const isPrimary = isLocation ? loc?.primary_photo_id === p.id : pl?.primary_photo_id === p.id;
   const plantnetSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "PlantNet") : null;
@@ -2617,6 +2805,8 @@ function renderLightbox() {
 
   const titleLine = isInbox
     ? `<div style="font-size:13.5px;">Inbox photo</div>`
+    : isGallery
+    ? `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : "Gallery photo"}</div><div style="font-size:11px;color:#9FB0A3;">${allLocationsForPhoto(p).map((l) => escapeHtml(l.name)).join(", ") || (p.photo_type === "historical" ? "Archived — no plant or container" : "")}</div>`
     : isLocation
     ? `<div style="font-size:13.5px;">${loc ? escapeHtml(loc.name) : ""}</div><div style="font-size:11px;color:#9FB0A3;">${loc ? escapeHtml(locationPath(loc)) : ""}</div>`
     : `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : ""}</div><div style="font-size:11px;color:#9FB0A3;">📍 ${pl && locationById(pl.location_id) ? escapeHtml(locationPath(locationById(pl.location_id))) : "No location set"}</div>`;
@@ -2645,6 +2835,14 @@ function renderLightbox() {
         ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setLocationPhoto('${locationId}','${p.id}')">Set as main photo</button>` : `<span class="pill pill-orange">Main photo</span>`}
         <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('editLocation',{locationId:'${locationId}'})">Edit location</button>
       </div>`;
+  } else if (isGallery) {
+    const galleryLocs = allLocationsForPhoto(p);
+    bottomActions = `
+      <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
+        ${pl ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openPlant('${pl.id}')">View plant</button>` : ""}
+        ${galleryLocs[0] ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openLocation('${galleryLocs[0].id}')">View location</button>` : ""}
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">Delete</button>
+      </div>`;
   } else {
     bottomActions = `
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
@@ -2659,7 +2857,7 @@ function renderLightbox() {
     <div class="lightbox-top">
       <div>
         ${titleLine}
-        <div class="mono" style="font-size:11px;color:#9FB0A3;">${fmtDate(p.uploaded_at)}</div>
+        <div class="mono" style="font-size:11px;color:#9FB0A3;">${fmtDate(photoDate(p))}</div>
       </div>
       <button class="lightbox-close" onclick="closeLightbox()">${icon("close")}</button>
     </div>
@@ -2788,7 +2986,7 @@ function wireModalForms() {
           identification_notes: document.getElementById("ep-idnotes").value || null,
           native_range: document.getElementById("ep-native").value || null,
           hardy_to: document.getElementById("ep-hardy").value || null,
-          light_requirements: document.getElementById("ep-light").value || null,
+          light_conditions: Array.from(document.querySelectorAll(".ep-light-checkbox:checked")).map((el) => el.value),
           water_needs: document.getElementById("ep-water").value || null,
           collection_category: document.getElementById("ep-category").value,
           original_collection: document.getElementById("ep-original").checked,

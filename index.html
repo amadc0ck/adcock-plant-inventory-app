@@ -152,26 +152,6 @@
   .card-grid{display:flex;flex-direction:column;gap:10px;}
   .wrap-gap{display:flex;flex-wrap:wrap;gap:6px;}
 
-  /* ============================================================
-     RESPONSIVE — mobile-first base above; from here up, use the
-     extra real estate on tablet/laptop screens instead of just
-     centering a phone-width column.
-     ============================================================ */
-  @media (min-width: 700px) {
-    .container{max-width:900px;}
-    .card-grid{display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;align-items:start;}
-    .plant-list-thumb{width:120px;height:120px;}
-    .detail-split{flex-direction:row;align-items:flex-start;}
-    .detail-split .detail-media{width:42%;max-width:400px;}
-    .detail-split .detail-body{flex:1;}
-  }
-  @media (min-width: 1100px) {
-    .container{max-width:1280px;}
-    .card-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
-    .plant-list-thumb{width:140px;height:140px;}
-    .login-wrap .container{max-width:none;}
-  }
-
   .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
   .login-box{width:100%;max-width:360px;}
   .login-card{
@@ -274,6 +254,33 @@
   .lightbox-close svg{width:22px;height:22px;}
   .lightbox-bottom{padding:16px 18px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:10px;}
   .lightbox-counter{color:#9FB0A3;font-size:12.5px;}
+
+  /* ============================================================
+     RESPONSIVE — mobile-first base above; from here up, use the
+     extra real estate on tablet/laptop screens instead of just
+     centering a phone-width column.
+
+     THIS BLOCK MUST STAY LAST. Media queries add no specificity, so
+     any single-class base rule declared below it silently wins at
+     every width and the breakpoint quietly stops working. That is
+     what happened to .plant-list-thumb (stuck at 92px on every
+     screen) and to .detail-split (stuck stacked). Add new base rules
+     above this block, never after it.
+     ============================================================ */
+  @media (min-width: 700px) {
+    .container{max-width:900px;}
+    .card-grid{display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;align-items:start;}
+    .plant-list-thumb{width:120px;height:120px;}
+    .detail-split{flex-direction:row;align-items:flex-start;}
+    .detail-split .detail-media{width:42%;max-width:400px;}
+    .detail-split .detail-body{flex:1;}
+  }
+  @media (min-width: 1100px) {
+    .container{max-width:1280px;}
+    .card-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
+    .plant-list-thumb{width:140px;height:140px;}
+    .login-wrap .container{max-width:none;}
+  }
 </style>
 </head>
 <body>
@@ -294,7 +301,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.37.0";
+const APP_VERSION = "1.37.1";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 

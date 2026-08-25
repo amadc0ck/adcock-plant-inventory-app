@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.39.0";
+const APP_VERSION = "1.40.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1572,7 +1572,10 @@ function screenPlantDetail() {
 
       <div class="row" style="margin-top:26px;margin-bottom:4px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
-        <span class="subtle">${timelinePhotos.length} total</span>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="subtle">${timelinePhotos.length} total</span>
+          <button class="btn btn-secondary btn-sm" onclick="openModal('attachInboxPhoto',{plantId:'${pl.id}'})">+ Add photos</button>
+        </div>
       </div>
 
       ${timelinePhotos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
@@ -1611,7 +1614,8 @@ function screenPlantDetail() {
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
                   ${!isPrimary ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">${icon("photoStar")} Set as profile</button>` : ""}
                   ${isDirectAttachment
-                    ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>`
+                    ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="detachPhotoFromPlant('${p.id}')">${icon("link")} Detach</button>
+                       <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>`
                     : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="untagPlantFromPhoto('${p.id}','${pl.id}')">${icon("trash")} Remove tag</button>`}
                 </div>
               </div>`;
@@ -2563,6 +2567,40 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "attachInboxPhoto") {
+    const pl = state.plants.find((p) => p.id === data.plantId);
+    const specimenLoc = pl && pl.location_id ? locationById(pl.location_id) : null;
+    // Every photo not yet assigned to a plant, regardless of its location.
+    // Filtering by the specimen's location would hide almost everything,
+    // since unassigned photos usually have no location either.
+    const available = state.photos
+      .filter((p) => !p.plant_id)
+      .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+    const CAP = 24;
+    const shown = available.slice(0, CAP);
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Add photos to this plant</h3>
+      <p class="subtle" style="margin:0 0 14px;">
+        ${available.length === 0 ? "Nothing waiting." : `Tap a photo to attach it. The list updates as you go, so you can add several.`}
+        ${specimenLoc ? ` Photos with no location will be filed under <strong>${escapeHtml(specimenLoc.name)}</strong>.` : ""}
+      </p>
+      ${available.length === 0 ? `<p class="subtle">Every photo is already assigned to a plant. Upload more from the Inbox.</p>` : `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:52vh;overflow-y:auto;">
+          ${shown.map((p) => {
+            const loc = p.location_id ? locationById(p.location_id) : null;
+            return `
+            <button onclick="attachInboxPhotoToPlant('${p.id}','${data.plantId}')" style="border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);text-align:left;">
+              <div style="aspect-ratio:1;">${photoImg(p.drive_file_id)}</div>
+              <div class="mono" style="font-size:10px;color:#8AA090;padding:4px 5px 2px;">${fmtDate(photoDate(p))}</div>
+              ${loc ? `<div style="font-size:10px;color:var(--blue);padding:0 5px 5px;">${escapeHtml(loc.name)}</div>` : ""}
+            </button>`;
+          }).join("")}
+        </div>
+        ${available.length > CAP ? `<p class="subtle" style="margin-top:10px;">Showing the ${CAP} newest of ${available.length} unassigned photos.</p>` : ""}`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
+  }
+
   if (type === "chooseLocationPhoto") {
     const photos = photosAtLocation(data.locationId).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
     return `
@@ -3029,6 +3067,40 @@ async function deletePhoto(photoId) {
 // unlike deletePhoto(), this never touches the photo record itself, so it's
 // safe to use from a plant's timeline even when the photo is that plant's
 // secondary tag and someone else's primary attachment/profile picture.
+// PHOTO-2. Attaches a waiting photo from the specimen side, the reverse of the
+// Inbox-first flow. Deliberately leaves the modal open — loadAll() re-renders
+// it with this photo gone from the list, so several can be added in a row.
+async function attachInboxPhotoToPlant(photoId, plantId) {
+  const photo = state.photos.find((p) => p.id === photoId);
+  const plant = state.plants.find((p) => p.id === plantId);
+  if (!photo || !plant) return;
+  try {
+    const body = { plant_id: plantId };
+    // Snapshot the plant's location, never a live link: a photo records where
+    // it was taken, so it must not follow the plant when the plant later moves.
+    if (!photo.location_id && plant.location_id) body.location_id = plant.location_id;
+    await restPatch("photos", `id=eq.${photoId}`, body);
+    toast("Photo attached");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// PHOTO-3. Unassigns the photo without touching the record, so the EXIF date
+// and the Drive file survive — deleting and re-uploading loses both.
+// Note it does NOT clear location_id: per REFERENCE section 3 a photo is only
+// back in the Inbox once BOTH plant_id and location_id are null, so a photo
+// with a location stays filed under that location. The toast says which.
+async function detachPhotoFromPlant(photoId) {
+  const photo = state.photos.find((p) => p.id === photoId);
+  if (!photo) return;
+  try {
+    await restPatch("photos", `id=eq.${photoId}`, { plant_id: null });
+    const loc = photo.location_id ? locationById(photo.location_id) : null;
+    toast(loc ? `Detached — still filed under ${loc.name}` : "Detached — back in the Inbox");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function untagPlantFromPhoto(photoId, plantId) {
   if (!confirm("Remove this plant's tag from the photo? The photo itself won't be deleted.")) return;
   try {

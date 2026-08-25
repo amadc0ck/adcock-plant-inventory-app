@@ -20,6 +20,10 @@ Costs today: correcting a species fact means editing every specimen or letting t
 - Navigation becomes **taxon list → taxon detail → specimen list → specimen detail**. The Plants tab browses taxa, not specimens.
 - The table is **taxa**, not species — a row is the most specific level known: a species, a cultivar, or a bare genus. Cultivars are **separate rows** because their traits genuinely differ (*Aeonium arboreum* is green, 'Zwartkop' is near-black). Name stored in structured parts — `genus`, `species_epithet`, `cultivar`, `is_hybrid` — and composed for display. "All Aeoniums" is a query on `genus`, so no self-referencing tree is needed.
 - **Unidentified plants stay first-class.** `taxa_id` is nullable. Confirming an identification either creates a taxon and links it, or links an existing one. This makes AI-1 cleaner: identify once, link, fill taxon facts once.
+- **Unidentified *taxa* must also be trackable** (Amanda, 2026-08-25). Three plants can obviously be the same kind without anyone knowing what that kind is. A null `taxa_id` cannot express that — each would stand alone with no way to say "these are the same mystery plant." So **a taxon does not require a name**: it can be created with a working label ("spiky thing from Mom's") and named properly later. Identifying it then **fills in the existing row**, so every specimen link survives and nothing needs re-linking. Two distinct states result:
+  - `taxa_id` null — not yet grouped with anything.
+  - linked to an unnamed taxon — grouped with its siblings, kind still unknown.
+  Consequence: `genus` / `species_epithet` are nullable, and the composed display name needs a working-label fallback.
 - **Identifiers:** specimens keep `ABG-YYYY-NNNN` **unchanged** — existing trigger, existing data, still immutable per §5. Taxa are identified by a **uuid PK plus the composed name as a unique natural key**. No synthetic taxon code: it only earns a trigger if labels or QR codes are printed, which they are not.
 
 Field split — confirmed column by column with Amanda 2026-08-25:
@@ -45,7 +49,7 @@ Field split — confirmed column by column with Amanda 2026-08-25:
 
 Three consequences worth holding onto:
 - **`identification_status` describes the link, not the taxon.** It is not "how sure are we what this species is" but "how sure are we that *this plant* is that taxon." An unidentified specimen has `taxa_id` null and status `unidentified`; identifying it links a taxon and sets `confirmed`/`tentative`. A specimen must never be `confirmed` with no taxon — worth a soft check.
-- **`botanical_name` becomes redundant** against structured `genus` / `species_epithet` / `cultivar`. Recommendation: **compose the display name from the parts and drop the free-text column.** That is what makes ABG-2026-0014's hybrid (*Echeveria gibbiflora* 'Metallica' × *Echeveria elegans* 'Potosina') render correctly rather than being an unparseable string. Needs an explicit decision — carrying both invites drift.
+- **`botanical_name` becomes redundant** against structured `genus` / `species_epithet` / `cultivar`. **Decided 2026-08-25: compose the display name from the parts and drop the free-text column.** That is what makes ABG-2026-0014's hybrid (*Echeveria gibbiflora* 'Metallica' × *Echeveria elegans* 'Potosina') render correctly rather than being an unparseable string. Carrying both would invite drift.
 - **`species` is renamed `species_epithet`** — `taxa.species` reads badly next to the table name, and it holds the epithet (*arboreum*), not the full name.
 
 **Locations need no schema change.** "Where can I find any specimen of this taxon" is a query over its specimens; "where exactly is this one" is the specimen's existing `location_id`.
@@ -75,17 +79,6 @@ Open before building:
 
 Supersedes the plant-level half of GAL-2. AI-1 and AI-2 should be designed against this model, not the current flat one.
 
-### PHOTO-2 — Attach an Inbox photo from the specimen side
-**Status:** ready · **Effort:** low–medium · **Schema:** none · **Touches:** `screenPlantDetail`, new modal, `attachPhotoToExistingPlant`
-
-Today the flow is photo-first: open a photo in the Inbox, then attach it to a plant. Amanda wants the reverse — open a specimen, pull in a waiting Inbox photo.
-
-- Candidate list = photos with `plant_id` null, **regardless of location**. Filtering by location would hide exactly the photos most likely to need attaching, since Inbox photos usually have no location either.
-- Sort newest first, show thumbnails, allow multi-select.
-
-**Location inheritance.** `attachPhotoToExistingPlant()` currently sets `plant_id` only and never touches `location_id`. So attached photos stay location-less and all land in the timeline's "No location tagged" group, which will grow without bound now that PD-7 renders one column per location.
-
-Fix: on attach, if the photo has no location, default it to the specimen's current location, and let Amanda override before confirming. **Snapshot at attach time, never dynamic** — a photo records where it was taken, so it must not follow the plant when the plant later moves.
 
 ### PROP-1 — Propagate more than one offset at a time
 **Status:** ready · **Effort:** low · **Schema:** none · **Touches:** `propagatePlant` modal, `wireModalForms`
@@ -123,16 +116,6 @@ group by p.id, p.accession_number, p.botanical_name
 order by location_count desc;
 ```
 
-### PHOTO-3 — Detach a photo from a specimen without deleting it
-**Status:** ready · **Effort:** low · **Schema:** none · **Touches:** `screenPlantDetail` timeline, new `detachPhotoFromPlant()`
-
-The Plant Detail timeline offers **Delete** (destroys the photo record) or **Remove tag** (tagged photos only). There is no way to say "this photo belongs to a different specimen" — the only route is deleting and re-uploading, which loses the EXIF date and the Drive file.
-
-Add **Detach** — sets `photos.plant_id = null`, returning the photo to the Inbox. `deletePlant()` already does exactly this internally, so the behaviour exists and is simply not exposed per-photo.
-
-Pairs with PHOTO-2: detach from the wrong specimen, then attach from the right one. Together those two make the SPECIES-2 photo reassignment a **UI job rather than a SQL job**, which matters because the ambiguous photos have to be looked at to be assigned.
-
-Consider also a direct **Move to another specimen** as detach+attach in one step, once taxa exist and the candidate list is "other specimens of this taxon" — a short, obviously-correct list.
 
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`
@@ -347,6 +330,17 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.40.0
+
+**PHOTO-2 + PHOTO-3 — Attach and detach photos from the specimen side.** Status: done · Schema: none · Touched `screenPlantDetail`, new `attachInboxPhoto` modal, `attachInboxPhotoToPlant()`, `detachPhotoFromPlant()`.
+
+Together these make the photo half of SPECIES-2 a UI job rather than a SQL job, which matters because ambiguous photos have to be *looked at* to be assigned.
+
+- **Detach** on owned timeline photos sets `plant_id = null` without touching the record, so the EXIF date and Drive file survive — deleting and re-uploading loses both. It deliberately does **not** clear `location_id`: per §3 a photo returns to the Inbox only when both are null, so one with a location stays filed there. The toast says which happened rather than claiming "back in the Inbox" when it isn't.
+- **+ Add photos** on the timeline header opens every photo with no plant attached, **regardless of location** — filtering by the specimen's location would hide almost everything, since unassigned photos usually have no location either. Newest first, capped at 24 with the total shown.
+- The modal **stays open** after attaching; `loadAll()` re-renders it with that photo gone, so several can be added in a row.
+- On attach, a photo with no location **inherits the specimen's** — a snapshot, never a live link, since a photo records where it was taken and must not follow the plant when the plant moves. A photo that already has a location keeps it.
 
 ### v1.39.0
 

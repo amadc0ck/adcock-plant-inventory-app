@@ -22,9 +22,31 @@ Costs today: correcting a species fact means editing every specimen or letting t
 - **Unidentified plants stay first-class.** `taxa_id` is nullable. Confirming an identification either creates a taxon and links it, or links an existing one. This makes AI-1 cleaner: identify once, link, fill taxon facts once.
 - **Identifiers:** specimens keep `ABG-YYYY-NNNN` **unchanged** — existing trigger, existing data, still immutable per §5. Taxa are identified by a **uuid PK plus the composed name as a unique natural key**. No synthetic taxon code: it only earns a trigger if labels or QR codes are printed, which they are not.
 
-Field split:
-- **Taxon:** description, plant_type, growth_habit, mature_size, bloom_season, origin, native_range, hardy_to, light_conditions, water_needs, family/genus/species/cultivar, primary_photo_id (any specimen's photo).
-- **Specimen:** accession_number, identification_status/notes, collection_category, original_collection, status, health_status, location_id, date_acquired, acquisition_*, parent_plant_id, primary_photo_id, care_notes, photos.
+Field split — confirmed column by column with Amanda 2026-08-25:
+
+| Current `plants` column | Goes to |
+| --- | --- |
+| `common_name`, `cultivar` | taxon |
+| `family`, `genus`, `species` → `species_epithet` | taxon |
+| `description` | taxon |
+| `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `origin` | taxon (Details) |
+| `native_range`, `hardy_to`, `light_conditions`, `water_needs` | taxon (Care) |
+| `accession_number` | specimen |
+| `identification_status`, `identification_notes` | specimen |
+| `collection_category`, `original_collection` | specimen |
+| `status`, `health_status` | specimen |
+| `location_id` | specimen |
+| `date_acquired`, `acquisition_source_type`/`_name`/`_notes` | specimen |
+| `parent_plant_id` | specimen (lineage) |
+| `primary_photo_id` | **both** — taxon profile photo, and each specimen's own |
+| `notes` | already migrated to `care_notes` (specimen) |
+
+`care_notes`, `photos`, `photo_plants` and `plant_location_history` stay keyed to **specimen**. `plant_locations` is retired by SPECIES-2. `identifications` is keyed to photos and does not move.
+
+Three consequences worth holding onto:
+- **`identification_status` describes the link, not the taxon.** It is not "how sure are we what this species is" but "how sure are we that *this plant* is that taxon." An unidentified specimen has `taxa_id` null and status `unidentified`; identifying it links a taxon and sets `confirmed`/`tentative`. A specimen must never be `confirmed` with no taxon — worth a soft check.
+- **`botanical_name` becomes redundant** against structured `genus` / `species_epithet` / `cultivar`. Recommendation: **compose the display name from the parts and drop the free-text column.** That is what makes ABG-2026-0014's hybrid (*Echeveria gibbiflora* 'Metallica' × *Echeveria elegans* 'Potosina') render correctly rather than being an unparseable string. Needs an explicit decision — carrying both invites drift.
+- **`species` is renamed `species_epithet`** — `taxa.species` reads badly next to the table name, and it holds the epithet (*arboreum*), not the full name.
 
 **Locations need no schema change.** "Where can I find any specimen of this taxon" is a query over its specimens; "where exactly is this one" is the specimen's existing `location_id`.
 

@@ -341,7 +341,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.38.0";
+const APP_VERSION = "1.38.1";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2871,12 +2871,21 @@ async function deletePlant(plantId) {
 }
 
 async function moveToHospital(plantId) {
-  const hospital = state.locations.find((l) => l.name === "Plant Hospital" && !l.parent_location_id);
-  if (!hospital) {
-    toast("Plant Hospital location not found — check Locations tab", true);
+  // Match the standardized `hospital` location type, not a literal English
+  // name. The old lookup required name === "Plant Hospital" exactly AND
+  // top-level, so a rename, a casing change, stray whitespace, or nesting the
+  // hospital under a yard all made the button silently do nothing.
+  const byType = state.locations.filter((l) => l.type === "hospital");
+  const byName = state.locations.filter((l) => (l.name || "").trim().toLowerCase() === "plant hospital");
+  const candidates = (byType.length ? byType : byName).sort((a, b) => a.name.localeCompare(b.name));
+  if (candidates.length === 0) {
+    toast("No location of type Hospital — set one on the Locations tab", true);
     return;
   }
-  if (!confirm("Move this plant to Plant Hospital and mark its health as Watch?")) return;
+  // More than one hospital is legitimate. Name the destination in the confirm
+  // rather than silently picking for her.
+  const hospital = candidates[0];
+  if (!confirm(`Move this plant to ${locationPath(hospital)} and mark its health as Watch?`)) return;
   try {
     await restPatch("plants", `id=eq.${plantId}`, {
       location_id: hospital.id,

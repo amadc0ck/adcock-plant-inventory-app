@@ -9,21 +9,6 @@ Item IDs are permanent. Never renumber.
 
 ## Observed 2026-08-25 — triaged from Amanda's session notes
 
-### BUG-1 — "Move to Plant Hospital" does nothing
-**Status:** ready · **Effort:** trivial · **Schema:** none · **Touches:** `moveToHospital` (~`index.html:2780`)
-
-```js
-const hospital = state.locations.find((l) => l.name === "Plant Hospital" && !l.parent_location_id);
-```
-
-Two ways this silently fails, and it toasts "Plant Hospital location not found" rather than explaining which:
-1. **Name is matched as an exact, case-sensitive string.** "Hospital", "Plant hospital", or a trailing space all miss.
-2. **It must be top-level.** A Plant Hospital nested under Front Yard is invisible to this lookup, which is an arbitrary restriction.
-
-The app already has a location **type** of `hospital` (in the new/edit location dropdowns). Matching a hardcoded English name instead of the standardized type field is the actual defect. Fix: prefer `l.type === "hospital"`, fall back to the name match, drop the top-level requirement, and if several match, ask rather than silently picking the first.
-
-**Check first:** Locations tab — does a location named exactly `Plant Hospital` exist, and is it top-level? That determines whether this is only the lookup or also missing data.
-
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`
 
@@ -246,6 +231,14 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.38.1
+
+**BUG-1 — "Move to Plant Hospital" did nothing.** Status: done · Schema: none · Touched `moveToHospital`.
+
+The lookup required `name === "Plant Hospital"` **exactly** and `!parent_location_id`. Amanda's hospital location exists, is top-level and is typed `hospital`, so the name string differed invisibly — stray whitespace or casing. Matching a literal English name instead of the standardized `hospital` location **type** was the real defect.
+
+Now matches `type === "hospital"` first, falls back to a trimmed case-insensitive name match, and drops the top-level requirement. Multiple hospitals are allowed; the destination is named in the confirm dialog rather than silently chosen. Empty-case toast now says what to fix.
 
 ### v1.38.0
 

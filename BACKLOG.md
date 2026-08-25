@@ -51,6 +51,13 @@ Acceptance criteria:
 
 Counts, inline actions, and the nested indicator already ship — see LOC-2. This item is layout and imagery only.
 
+### LOC-3 — Apply the zero-count treatment to plant cards
+**Status:** ready · **Effort:** trivial · **Schema:** none · **Touches:** `plantRow` (`index.html:1242`)
+
+LOC-2 established the rule that a zero count renders dimmed rather than hidden (`countLabel()` / `.count-zero`, `REFERENCE.md` §12), and applied it to the Locations card and the Location Detail child cards. `plantRow` still renders its photo count by hand, so a plant with no photos shows an undimmed `0 photos` while location cards dim theirs.
+
+One-line change: route it through `countLabel()`. Deliberately deferred out of LOC-2 to keep that commit scoped to the Locations screens.
+
 ---
 
 ## Foundation — unblocks most of the rest

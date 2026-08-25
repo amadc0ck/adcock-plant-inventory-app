@@ -134,6 +134,19 @@ Proposed behaviour, mirroring `deletePlant()`:
   - **Delete**: the row should never have existed — a duplicate, an accident, or something created with an intention that changed. There is no history worth keeping, and leaving it archived just clutters the list forever.
   Offer both. Default the button to Archive when the location has any history or attachments, and to Delete only when it is genuinely empty.
 
+### NAME-1 — Normalize botanical names into structured parts
+**Status:** ready · **Effort:** low–medium · **Schema:** none · **Depends on:** SPECIES-1
+
+`taxa` has `genus` / `species_epithet` / `cultivar` / `is_hybrid`, but they are barely populated — **family 3/27, genus 5/27, species 3/27, cultivar 3/27**. So `taxonDisplayName()` prefers the free-text `botanical_name`, which is backwards from the intent.
+
+The free text is also inconsistent in ways that will break parsing:
+- **Mixed quote characters** — 'Zwartkop' and 'Metallica' use curly `\u2019`, 'Hamaji Silver' and 'fuzzy navel' use straight `'`. Two characters meaning one thing breaks matching and dedup.
+- **Lowercase cultivar** — 'fuzzy navel' should be 'Fuzzy Navel'; cultivar epithets are capitalized.
+- **Two hybrid notations** — *Parodia* × *erubescens* uses a proper `×`, the Echeveria cross uses a plain `x`.
+- **Unquoted trailing descriptor** — "Austrocylindropuntia subulata monstrose": either cultivar 'Monstrose' or forma *monstrosa*.
+
+Fill the parts for all 27 taxa, then flip `taxonDisplayName()` to prefer composed names. Cheap at 27 rows and annoying at 200. Once done, italics can be applied correctly per-part (genus and epithet italic, cultivar upright in quotes), which a single free-text string can never do.
+
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`
 
@@ -347,6 +360,25 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.41.0
+
+**SPECIES-1 phases 1 & 2 — taxa split and full navigation.** Status: done · Schema: yes, new `taxa` table + `plants.taxa_id` · Touched `state`, `loadAll`, `icon` consumers, `screenPlants` → `screenTaxa`, new `screenTaxonDetail`, `screenPlantDetail`, two new modals and form handlers.
+
+- **27 plants → 27 taxa, 1:1.** Not a simplification — all 27 botanical names are distinct, so a taxon per plant is the correct grouping. Zero judgement calls, fully mechanical.
+- Navigation is now **Plants tab → taxon list → taxon detail → specimen → specimen detail**, as specified.
+- Taxon detail carries Details, Care, Taxonomy, description, the cover photo, every location its specimens occupy, and the **specimen list as a lineage tree** — bought plants at top level, propagated offsets nested underneath their mother, at any depth.
+- **Specimen detail lost its Details and Care cards**, replaced by a read-only Species summary linking up. Duplicating them is the exact thing SPECIES-1 exists to prevent.
+- **+ Add specimen** inherits the taxon, so only location, provenance and health are entered.
+- `plant_type` grew from 9 values to 14 — Cotyledon, Haworthia, Kalanchoe, Portulacaria and Senecio added. Five real plants had no valid value. `aloe`, `sedum` and `sempervivum` remain unused by any plant.
+- **Display name precedence is `botanical_name` first**, composed parts second — backwards from the intent, and deliberate: family 3/27, genus 5/27, species 3/27 populated, so composing would produce worse names than the free text. See NAME-1.
+
+Phase 3 (drop the duplicated columns from `plants`, retire `plant_locations`) waits until Amanda has created the ~10 missing specimens by hand.
+
+```sql
+-- Run before loading v1.41.0. See the full block in the session notes.
+-- create table taxa (...); alter table plants add column taxa_id ...;
+```
 
 ### v1.40.0
 

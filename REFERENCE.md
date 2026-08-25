@@ -55,6 +55,22 @@ Physical containers and spaces. Self-referencing hierarchy (Front Yard → Wall 
 - `notes` text, nullable
 - `created_at` timestamptz
 
+### `taxa`
+The **kind** of plant — whatever the most specific level is known: a species, a cultivar, or a bare genus. Introduced v1.41.0 (SPECIES-1 phase 1). Species-level facts live here once instead of on every specimen.
+
+- `id` uuid PK · `taxa_id` on `plants` links a specimen to it, **nullable** so unidentified plants stay first-class
+- `botanical_name` / `common_name` / `cultivar` / `family` / `genus` / `species_epithet` / `is_hybrid`
+- `working_label` — names an unidentified taxon until it has a real one. Three plants can obviously be the same kind without anyone knowing what that kind is; a null `taxa_id` cannot express that.
+- `description`, `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `origin`
+- `native_range`, `hardy_to`, `light_conditions`, `water_needs`
+- `primary_photo_id` — any specimen's photo
+
+**Display name precedence is `botanical_name` first, composed parts second.** Backwards from the eventual intent, and deliberate: the structured parts are barely populated in the real data (family 3/27, genus 5/27, species 3/27), so composing would render "Aeonium" where the free text says "Aeonium arboreum 'Zwartkop'". Composition requires **both** genus and epithet, since partial parts produce a worse name than none. This flips once names are normalized into parts.
+
+**Cultivar is stored bare**, without quotes; the display layer adds them.
+
+**Phase 1 copied, did not move.** `plants` still carries every species column and new specimens copy them down, so nothing breaks mid-migration. Phase 3 drops them and `taxa` becomes the single source.
+
 ### `plants`
 One row per individual accessioned specimen.
 

@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.40.0";
+const APP_VERSION = "1.41.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -378,6 +378,9 @@ const state = {
   plantLocations: [],
   photoLocations: [],
   careNotes: [],
+  taxa: [],
+  currentTaxonId: null,
+  taxaSearch: "",
   inboxLimit: 20,
   tagLocationSearch: "",
   galleryFilters: { locationId: "", photoType: "", search: "" },
@@ -801,7 +804,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa] = await Promise.all([
       restGet("photos", "?select=*&order=uploaded_at.desc"),
       restGet("plants", "?select=*&order=accession_number.asc"),
       restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -811,6 +814,7 @@ async function loadAll() {
       restGet("plant_locations", "?select=*"),
       restGet("photo_locations", "?select=*"),
       restGet("care_notes", "?select=*&order=noted_on.desc,created_at.desc"),
+      restGet("taxa", "?select=*&order=botanical_name.asc"),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -821,6 +825,7 @@ async function loadAll() {
     state.plantLocations = plantLocations;
     state.photoLocations = photoLocations;
     state.careNotes = careNotes;
+    state.taxa = taxa;
   } catch (e) {
     toast(e.message, true);
   }
@@ -985,6 +990,70 @@ function locationTypeLabel(t) {
 // Mixed child types, or types with no natural plural (Indoor, Hanging, Other),
 // fall back to the generic word.
 const CHILD_TYPE_PLURALS = { area: ["area", "areas"], row: ["row", "rows"], slot: ["slot", "slots"], container: ["container", "containers"], pot: ["pot", "pots"], bed: ["bed", "beds"], greenhouse: ["greenhouse", "greenhouses"], work_area: ["work area", "work areas"], hospital: ["hospital", "hospitals"] };
+// ============================================================
+// TAXA (SPECIES-1). A taxon is the kind of plant — whatever the most specific
+// level known: a species, a cultivar, or a bare genus. Specimens are `plants`
+// rows. Species-level facts live here once instead of on every specimen.
+// ============================================================
+function taxonById(id) {
+  return state.taxa.find((t) => t.id === id) || null;
+}
+// `botanical_name` wins, and that is deliberate. The structured parts are
+// barely populated in the real data — family 3/27, genus 5/27, species 3/27 —
+// so composing from them would render "Aeonium" where the free text already
+// says "Aeonium arboreum 'Zwartkop'". Partial parts produce a worse name than
+// no parts, which is why composition requires BOTH genus and epithet and still
+// only applies when there is no free-text name to beat.
+// Once the names are normalized into parts (see NAME-1) this precedence flips.
+function taxonDisplayName(t) {
+  if (!t) return "Unknown";
+  if (t.botanical_name && t.botanical_name.trim()) return t.botanical_name.trim();
+  const composed = (t.genus && t.species_epithet) ? `${t.genus} ${t.species_epithet}` : "";
+  const withCultivar = composed && t.cultivar ? `${composed} '${t.cultivar}'` : composed;
+  return withCultivar || t.working_label || "Unnamed taxon";
+}
+function taxonSecondaryName(t) {
+  if (!t) return "";
+  const primary = taxonDisplayName(t);
+  return t.common_name && t.common_name !== primary ? t.common_name : "";
+}
+function specimensOfTaxon(taxonId) {
+  return state.plants
+    .filter((p) => p.taxa_id === taxonId)
+    .sort((a, b) => (a.accession_number || "").localeCompare(b.accession_number || ""));
+}
+// Specimens with no parent, i.e. acquired rather than propagated. Offsets hang
+// underneath their mother plant via parent_plant_id.
+function rootSpecimensOfTaxon(taxonId) {
+  const all = specimensOfTaxon(taxonId);
+  const ids = new Set(all.map((p) => p.id));
+  return all.filter((p) => !p.parent_plant_id || !ids.has(p.parent_plant_id));
+}
+function offspringOf(plantId, taxonId) {
+  return specimensOfTaxon(taxonId).filter((p) => p.parent_plant_id === plantId);
+}
+// The taxon's own profile photo, else the newest photo from any of its
+// specimens. Once GAL-1 lands this becomes the favourited photos.
+function taxonCoverPhoto(t) {
+  if (!t) return null;
+  if (t.primary_photo_id) {
+    const p = state.photos.find((x) => x.id === t.primary_photo_id);
+    if (p) return p;
+  }
+  const specimens = specimensOfTaxon(t.id);
+  const photos = specimens.flatMap((sp) => plantPhotosOrdered(sp.id));
+  return photos.sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)))[0] || null;
+}
+// Every distinct location any specimen of this taxon sits in — "where can I
+// find one of these". Derived, never stored.
+function locationsOfTaxon(taxonId) {
+  const seen = new Map();
+  specimensOfTaxon(taxonId).forEach((sp) => {
+    allLocationsForPlant(sp).forEach((l) => { if (l && !seen.has(l.id)) seen.set(l.id, l); });
+  });
+  return Array.from(seen.values());
+}
+
 // Dated care events for a plant, newest first. `noted_on` is the observation
 // date Amanda sets; created_at only breaks ties between notes on the same day.
 function careNotesForPlant(plantId) {
@@ -1043,7 +1112,12 @@ const ACQ_SOURCE_LABELS = { nursery: "Nursery", gift: "Gift", propagation: "Prop
 // PD-2 structured detail fields. Stored as plain text and standardized here
 // rather than by a DB enum (§3), so extending any list is a one-line edit with
 // no migration. `plant_type` doubles as the plant-level grouping GAL-2 needs.
-const PLANT_TYPE_LABELS = { cactus: "Cactus", agave: "Agave", aloe: "Aloe", euphorbia: "Euphorbia", sedum: "Sedum", crassula: "Crassula", echeveria: "Echeveria", sempervivum: "Sempervivum", aeonium: "Aeonium" };
+// `cactus` leads because it is the only value doing real work: it rolls up 8
+// genera (Cephalocereus, Echinopsis, Ferocactus, Mammillaria, Opuntia, Parodia,
+// Austrocylindropuntia). Every other value maps 1:1 to a genus. Cotyledon,
+// Haworthia, Kalanchoe, Portulacaria and Senecio added v1.41.0 — five real
+// plants in the collection had no valid value before.
+const PLANT_TYPE_LABELS = { cactus: "Cactus", aeonium: "Aeonium", agave: "Agave", aloe: "Aloe", cotyledon: "Cotyledon", crassula: "Crassula", echeveria: "Echeveria", euphorbia: "Euphorbia", haworthia: "Haworthia", kalanchoe: "Kalanchoe", portulacaria: "Portulacaria", sedum: "Sedum", sempervivum: "Sempervivum", senecio: "Senecio" };
 const GROWTH_HABIT_LABELS = { columnar: "Columnar", globular: "Globular / barrel", rosette: "Rosette", clumping: "Clumping / offsetting", caudiciform: "Caudiciform", trailing: "Trailing / sprawling", mounding: "Mounding", upright: "Upright", climbing: "Climbing", groundcover: "Groundcover", solitary: "Solitary" };
 // `bloom_season` is the plant's expected trait. Observed blooming is BLOOM-1's
 // bloom_events table — RPT-4 reads that, not this.
@@ -1170,6 +1244,7 @@ async function bulkAttachToLocation(locationId) {
 function openModal(type, data = {}) { state.modal = { type, data }; render(); }
 function closeModal() { state.modal = null; render(); }
 function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
+function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; render(); }
 function openLocation(id) { state.tab = "locationDetail"; state.currentLocationId = id; render(); }
 
 function plantPhotosOrdered(plantId) {
@@ -1355,6 +1430,157 @@ function photoRow(p, selectMode) {
   </div>`;
 }
 
+// SPECIES-1. The Plants tab now browses taxa; specimens live one level down.
+function taxonCard(t) {
+  const specimens = specimensOfTaxon(t.id);
+  const locs = locationsOfTaxon(t.id);
+  const cover = taxonCoverPhoto(t);
+  const secondary = taxonSecondaryName(t);
+  return `
+    <div class="tag-card plant-list-card" onclick="openTaxon('${t.id}')">
+      <div class="plant-list-thumb">
+        ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div class="tag-id">${escapeHtml(PLANT_TYPE_LABELS[t.plant_type] || t.plant_type || "Unclassified")}</div>
+        <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-top:2px;font-style:${t.botanical_name || t.genus ? "italic" : "normal"};line-height:1.25;">${escapeHtml(taxonDisplayName(t))}</div>
+        ${secondary ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(secondary)}</div>` : ""}
+        <div class="row" style="margin-top:8px;">
+          <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(specimens.length, "specimen", "specimens")}</div>
+          ${locs.length ? `<div style="font-size:11px;color:var(--blue);">${locs.length === 1 ? escapeHtml(locs[0].name) : locs.length + " locations"}</div>` : ""}
+        </div>
+      </div>
+    </div>`;
+}
+
+function screenTaxa() {
+  const q = (state.taxaSearch || "").toLowerCase();
+  const list = state.taxa.filter((t) => {
+    if (!q) return true;
+    const hay = [taxonDisplayName(t), t.common_name, t.botanical_name, t.genus, t.family, t.working_label]
+      .filter(Boolean).join(" ").toLowerCase();
+    return hay.includes(q);
+  }).sort((a, b) => taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
+
+  return `
+  <div class="screen">
+    <div class="container">
+      <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
+      <input class="search-input" placeholder="Search name, genus, family…" value="${escapeHtml(state.taxaSearch || "")}" id="search-taxa" oninput="state.taxaSearch=this.value;render()" />
+      <div class="row" style="margin-bottom:16px;">
+        <span class="subtle">${q ? `${list.length} of ${state.taxa.length}` : countLabel(state.taxa.length, "kind", "kinds")} · ${countLabel(state.plants.length, "specimen", "specimens")}</span>
+        <button class="btn btn-accent btn-sm" onclick="openModal('newPlant')">+ New Plant</button>
+      </div>
+      ${list.length === 0 ? `
+        <div class="empty"><div class="display">${state.taxa.length === 0 ? "No plants yet" : "No matches"}</div>
+        <div>${state.taxa.length === 0 ? "Add your first plant from the Inbox or a photo." : "Try a different search."}</div></div>` : `
+        <div class="card-grid">${list.map(taxonCard).join("")}</div>`}
+    </div>
+  </div>`;
+}
+
+function screenTaxonDetail() {
+  const t = taxonById(state.currentTaxonId);
+  if (!t) return `<div class="screen container"><p>Plant not found.</p></div>`;
+  const roots = rootSpecimensOfTaxon(t.id);
+  const all = specimensOfTaxon(t.id);
+  const locs = locationsOfTaxon(t.id);
+  const cover = taxonCoverPhoto(t);
+
+  // Specimens render as a lineage tree — purchases at top level, propagated
+  // offsets nested under the plant they came off. They share a name by
+  // definition, so location and health are what tell them apart, never the name.
+  const specimenRow = (sp, depth) => {
+    const loc = sp.location_id ? locationById(sp.location_id) : null;
+    const kids = offspringOf(sp.id, t.id);
+    const cov = plantCoverPhoto(sp);
+    const needsAttention = sp.status !== "active" || sp.health_status === "watch" || sp.health_status === "recovery";
+    return `
+      <div class="tag-card plant-list-card" style="margin-left:${depth * 18}px;padding:10px 12px;" onclick="openPlant('${sp.id}')">
+        <div class="plant-list-thumb" style="width:56px;height:56px;">
+          ${cov ? photoImg(cov.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div class="row">
+            <div class="mono tag-id">${sp.accession_number}</div>
+            <span class="pill-solid ${needsAttention ? "pill-solid-terracotta" : "pill-solid-moss"}">${HEALTH_LABELS[sp.health_status] || sp.health_status}</span>
+          </div>
+          <div style="font-size:13px;color:var(--ink);margin-top:3px;">${loc ? "📍 " + escapeHtml(locationPath(loc)) : `<span class="value-blank">No location</span>`}</div>
+          ${depth > 0 ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${icon("seedling")} propagated</div>` : ""}
+        </div>
+      </div>
+      ${kids.map((k) => specimenRow(k, depth + 1)).join("")}`;
+  };
+
+  return `
+  <div class="screen">
+    <div class="container">
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('plants')">${icon("back")} Plants</button>
+
+      <div class="tag-card" style="padding:0;overflow:hidden;">
+        <div class="detail-split">
+          <div class="detail-media">
+            <div class="card-media ratio-4x3">
+              ${cover ? photoImg(cover.drive_file_id) : `<div class="card-media-empty">${icon("photo")}<span>No photos yet</span></div>`}
+            </div>
+          </div>
+          <div class="detail-body">
+            <div class="tag-id">${escapeHtml(PLANT_TYPE_LABELS[t.plant_type] || t.plant_type || "Unclassified")}${t.family ? " · " + escapeHtml(t.family) : ""}</div>
+            <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;font-style:${t.botanical_name || t.genus ? "italic" : "normal"};line-height:1.2;">${escapeHtml(taxonDisplayName(t))}</div>
+            ${taxonSecondaryName(t) ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(taxonSecondaryName(t))}</div>` : ""}
+            ${t.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(t.description)}</div>` : ""}
+            <div style="margin-top:12px;font-size:13px;color:var(--ink);">
+              ${countLabel(all.length, "specimen", "specimens")}${locs.length ? ` in ${countLabel(locs.length, "location", "locations")}` : ""}
+            </div>
+          </div>
+          <div class="detail-actions">
+            <div class="action-card">
+              <button class="action-row" onclick="openModal('editTaxon',{taxonId:'${t.id}'})">${icon("edit")}<span class="action-label">Edit species record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+              <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-grid">
+        <div class="section-card">
+          <h4>Details</h4>
+          ${fieldRow("leaf", "Type", PLANT_TYPE_LABELS[t.plant_type] || t.plant_type)}
+          ${fieldRow("seedling", "Growth habit", GROWTH_HABIT_LABELS[t.growth_habit] || t.growth_habit)}
+          ${fieldRow("map", "Mature size", t.mature_size)}
+          ${fieldRow("plant2", "Bloom season", BLOOM_SEASON_LABELS[t.bloom_season] || t.bloom_season)}
+          ${fieldRow("pin", "Origin", ORIGIN_LABELS[t.origin] || t.origin)}
+        </div>
+        <div class="section-card">
+          <h4>Care</h4>
+          ${fieldRow("leaf", "Native to", t.native_range)}
+          ${fieldRow("temperature", "Hardy to", t.hardy_to)}
+          ${fieldRow("droplets", "Water", t.water_needs ? t.water_needs.charAt(0).toUpperCase() + t.water_needs.slice(1) : null)}
+          ${fieldRow("brightness", "Light", null,
+            (t.light_conditions && t.light_conditions.length)
+              ? `<span class="wrap-gap" style="justify-content:flex-end;">${t.light_conditions.map((c) => `<span class="pill">${escapeHtml(c.replace(/_/g, " "))}</span>`).join("")}</span>`
+              : null)}
+        </div>
+        <div class="section-card">
+          <h4>Taxonomy</h4>
+          ${fieldRow("clipboard", "Family", t.family)}
+          ${fieldRow("clipboard", "Genus", t.genus)}
+          ${fieldRow("clipboard", "Species", t.species_epithet)}
+          ${fieldRow("tag", "Cultivar", t.cultivar)}
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:26px;margin-bottom:8px;">
+        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Specimens</h3>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">+ Add specimen</button>
+      </div>
+      ${all.length === 0
+        ? `<div class="empty" style="padding:28px 20px;"><div>No specimens of this plant yet.</div><div class="subtle">Add one and pick the pot or bucket it lives in.</div></div>`
+        : `<div class="stack">${roots.map((sp) => specimenRow(sp, 0)).join("")}</div>`}
+    </div>
+  </div>`;
+}
+
 function screenPlants() {
   const q = (state.plantSearch || "").toLowerCase();
   const f = state.plantFilters;
@@ -1430,6 +1656,7 @@ function screenPlantDetail() {
   if (!pl) return `<div class="screen container"><p>Plant not found.</p></div>`;
   const loc = locationById(pl.location_id);
   const parent = pl.parent_plant_id ? state.plants.find((p) => p.id === pl.parent_plant_id) : null;
+  const taxon = pl.taxa_id ? taxonById(pl.taxa_id) : null;
   const photos = plantPhotosOrdered(pl.id);
   // Reference/ID photos (e.g. a profile picture that isn't a dated
   // observation of this exact specimen) are excluded from the timeline list.
@@ -1441,7 +1668,7 @@ function screenPlantDetail() {
   return `
   <div class="screen">
     <div class="container">
-      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('plants')">${icon("back")} Plants</button>
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${taxon ? `openTaxon('${taxon.id}')` : "goTab('plants')"}">${icon("back")} ${taxon ? escapeHtml(taxonDisplayName(taxon)) : "Plants"}</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
@@ -1503,24 +1730,19 @@ function screenPlantDetail() {
       </div>
 
       <div class="section-grid">
+        ${/* Details and Care describe the kind of plant, not this individual, so
+             they live on the taxon. Shown here read-only with a link up, rather
+             than duplicated — duplicating them is the whole thing SPECIES-1
+             exists to stop. */""}
         <div class="section-card">
-          <h4>Details</h4>
-          ${fieldRow("leaf", "Type", PLANT_TYPE_LABELS[pl.plant_type] || pl.plant_type)}
-          ${fieldRow("seedling", "Growth habit", GROWTH_HABIT_LABELS[pl.growth_habit] || pl.growth_habit)}
-          ${fieldRow("map", "Mature size", pl.mature_size)}
-          ${fieldRow("plant2", "Bloom season", BLOOM_SEASON_LABELS[pl.bloom_season] || pl.bloom_season)}
-          ${fieldRow("pin", "Origin", ORIGIN_LABELS[pl.origin] || pl.origin)}
-        </div>
-
-        <div class="section-card">
-          <h4>Care</h4>
-          ${fieldRow("leaf", "Native to", pl.native_range)}
-          ${fieldRow("temperature", "Hardy to", pl.hardy_to)}
-          ${fieldRow("droplets", "Water", pl.water_needs ? pl.water_needs.charAt(0).toUpperCase() + pl.water_needs.slice(1) : null)}
-          ${fieldRow("brightness", "Light", null,
-            (pl.light_conditions && pl.light_conditions.length)
-              ? `<span class="wrap-gap" style="justify-content:flex-end;">${pl.light_conditions.map((c) => `<span class="pill">${escapeHtml(c.replace(/_/g, " "))}</span>`).join("")}</span>`
-              : null)}
+          <h4>Species</h4>
+          ${taxon ? `
+            ${fieldRow("leaf", "Kind", taxonDisplayName(taxon))}
+            ${fieldRow("clipboard", "Type", PLANT_TYPE_LABELS[taxon.plant_type] || taxon.plant_type)}
+            ${fieldRow("droplets", "Water", taxon.water_needs ? taxon.water_needs.charAt(0).toUpperCase() + taxon.water_needs.slice(1) : null)}
+            ${fieldRow("temperature", "Hardy to", taxon.hardy_to)}
+            <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openTaxon('${taxon.id}')">View full species record →</button>`
+          : `<p class="subtle" style="margin:0;">Not linked to a species yet.</p>`}
         </div>
 
         <div class="section-card">
@@ -2567,6 +2789,121 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "editTaxon") {
+    const t = taxonById(data.taxonId);
+    if (!t) return `<p>Not found.</p>`;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Edit species record</h3>
+      <p class="subtle" style="margin:0 0 14px;">Applies to every specimen of this plant.</p>
+      <form id="edit-taxon-form">
+        <div class="section-label">Identity</div>
+        <label>Botanical name</label>
+        <input id="et-botanical" value="${escapeHtml(t.botanical_name || "")}" />
+        <label>Common name</label>
+        <input id="et-common" value="${escapeHtml(t.common_name || "")}" />
+        <label>Working label</label>
+        <input id="et-working" placeholder="For a plant you can't identify yet" value="${escapeHtml(t.working_label || "")}" />
+        <div class="field-help">Used as the display name only when there is no botanical name — so an unidentified plant can still be grouped and tracked.</div>
+
+        <div class="section-label">Taxonomy</div>
+        <label>Family</label>
+        <input id="et-family" placeholder="e.g. Crassulaceae" value="${escapeHtml(t.family || "")}" />
+        <label>Genus</label>
+        <input id="et-genus" placeholder="e.g. Aeonium" value="${escapeHtml(t.genus || "")}" />
+        <label>Species</label>
+        <input id="et-species" placeholder="e.g. arboreum" value="${escapeHtml(t.species_epithet || "")}" />
+        <label>Cultivar</label>
+        <input id="et-cultivar" placeholder="e.g. Zwartkop (no quotes)" value="${escapeHtml(t.cultivar || "")}" />
+        <div class="checkbox-row">
+          <input type="checkbox" id="et-hybrid" ${t.is_hybrid ? "checked" : ""} />
+          <label for="et-hybrid">This is a hybrid</label>
+        </div>
+
+        <div class="section-label">Details</div>
+        <label>Description</label>
+        <textarea id="et-description" rows="3" placeholder="What this kind of plant looks like">${escapeHtml(t.description || "")}</textarea>
+        <label>Type</label>
+        <select id="et-planttype">
+          <option value="">— Not recorded —</option>
+          ${Object.entries(PLANT_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${t.plant_type === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Growth habit</label>
+        <select id="et-growthhabit">
+          <option value="">— Not recorded —</option>
+          ${Object.entries(GROWTH_HABIT_LABELS).map(([k, v]) => `<option value="${k}" ${t.growth_habit === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Mature size</label>
+        <input id="et-maturesize" placeholder="e.g. 3&ndash;4 ft tall &times; 5 ft wide" value="${escapeHtml(t.mature_size || "")}" />
+        <label>Bloom season</label>
+        <select id="et-bloomseason">
+          <option value="">— Not recorded —</option>
+          ${Object.entries(BLOOM_SEASON_LABELS).map(([k, v]) => `<option value="${k}" ${t.bloom_season === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Origin</label>
+        <select id="et-origin">
+          ${Object.entries(ORIGIN_LABELS).map(([k, v]) => `<option value="${k}" ${(t.origin || "unknown") === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+
+        <div class="section-label">Care</div>
+        <label>Native range</label>
+        <input id="et-native" placeholder="e.g. Central Mexico" value="${escapeHtml(t.native_range || "")}" />
+        <label>Hardy to</label>
+        <input id="et-hardy" placeholder="e.g. Zone 9 or 20&deg;F" value="${escapeHtml(t.hardy_to || "")}" />
+        <label>Light needs</label>
+        <div class="wrap-gap" style="margin-top:2px;">
+          ${["direct","indirect","partial","full","shade","morning","afternoon","all_day"].map((opt) => `
+            <label class="checkbox-row" style="margin-top:6px;background:var(--bg);padding:6px 10px 6px 8px;border-radius:20px;width:auto;">
+              <input type="checkbox" class="et-light-checkbox" value="${opt}" ${(t.light_conditions || []).includes(opt) ? "checked" : ""} />
+              <span style="text-transform:capitalize;font-size:13px;">${opt.replace("_", " ")}</span>
+            </label>`).join("")}
+        </div>
+        <label>Water needs</label>
+        <select id="et-water">
+          <option value="">— Unspecified —</option>
+          <option value="low" ${t.water_needs === "low" ? "selected" : ""}>Low</option>
+          <option value="moderate" ${t.water_needs === "moderate" ? "selected" : ""}>Moderate</option>
+          <option value="high" ${t.water_needs === "high" ? "selected" : ""}>High</option>
+        </select>
+
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Save changes</button>
+      </form>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "newSpecimen") {
+    const t = taxonById(data.taxonId);
+    if (!t) return `<p>Not found.</p>`;
+    const siblings = specimensOfTaxon(t.id);
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Add a specimen</h3>
+      <p class="subtle" style="margin:0 0 14px;">Another <em>${escapeHtml(taxonDisplayName(t))}</em>. Species details are inherited — you only set where this one lives and where it came from.</p>
+      <form id="new-specimen-form">
+        <label>Location *</label>
+        <select id="ns-location" required>${locationSelectOptions(null)}</select>
+        <label>Acquisition source</label>
+        <select id="ns-acqtype">
+          <option value="">— Unspecified —</option>
+          ${Object.entries(ACQ_SOURCE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+        </select>
+        <label>Propagated from</label>
+        <select id="ns-parent">
+          <option value="">— Not a propagation —</option>
+          ${siblings.map((sp) => `<option value="${sp.id}">${sp.accession_number}${sp.location_id && locationById(sp.location_id) ? " — " + escapeHtml(locationById(sp.location_id).name) : ""}</option>`).join("")}
+        </select>
+        <div class="field-help">Pick the specimen this one was taken off, if it was propagated. It will nest underneath that plant.</div>
+        <label>Date acquired</label>
+        <input type="date" id="ns-dateacquired" />
+        <label>Health</label>
+        <select id="ns-health">
+          ${Object.entries(HEALTH_LABELS).map(([k, v]) => `<option value="${k}" ${k === "healthy" ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Create specimen</button>
+      </form>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "attachInboxPhoto") {
     const pl = state.plants.find((p) => p.id === data.plantId);
     const specimenLoc = pl && pl.location_id ? locationById(pl.location_id) : null;
@@ -3147,7 +3484,7 @@ function escapeHtml(str) {
 
 function navBtn(t) {
   return `
-    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && state.tab === "plantDetail") || (t.id === "locations" && state.tab === "locationDetail") || (t.id === "reports" && state.tab === "gallery") ? "active" : ""}" onclick="goTab('${t.id}')">
+    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && (state.tab === "plantDetail" || state.tab === "taxonDetail")) || (t.id === "locations" && state.tab === "locationDetail") || (t.id === "reports" && state.tab === "gallery") ? "active" : ""}" onclick="goTab('${t.id}')">
       ${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
     </button>`;
 }
@@ -3270,7 +3607,8 @@ function render() {
 
   let screen = "";
   if (state.tab === "inbox") screen = screenInbox();
-  else if (state.tab === "plants") screen = screenPlants();
+  else if (state.tab === "plants") screen = screenTaxa();
+  else if (state.tab === "taxonDetail") screen = screenTaxonDetail();
   else if (state.tab === "plantDetail") screen = screenPlantDetail();
   else if (state.tab === "locations") screen = screenLocations();
   else if (state.tab === "locationDetail") screen = screenLocationDetail();
@@ -3470,6 +3808,80 @@ function wireModalForms() {
         closeModal();
         await loadAll();
         maybeResumeLightbox();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  const editTaxonForm = document.getElementById("edit-taxon-form");
+  if (editTaxonForm) {
+    editTaxonForm.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const body = {
+          botanical_name: document.getElementById("et-botanical").value.trim() || null,
+          common_name: document.getElementById("et-common").value.trim() || null,
+          working_label: document.getElementById("et-working").value.trim() || null,
+          family: document.getElementById("et-family").value.trim() || null,
+          genus: document.getElementById("et-genus").value.trim() || null,
+          species_epithet: document.getElementById("et-species").value.trim() || null,
+          // Stored bare; the display layer adds the quotes, so a name never
+          // ends up with two sets of them.
+          cultivar: document.getElementById("et-cultivar").value.trim().replace(/^['\u2018\u2019"]+|['\u2018\u2019"]+$/g, "") || null,
+          is_hybrid: document.getElementById("et-hybrid").checked,
+          description: document.getElementById("et-description").value || null,
+          plant_type: document.getElementById("et-planttype").value || null,
+          growth_habit: document.getElementById("et-growthhabit").value || null,
+          mature_size: document.getElementById("et-maturesize").value || null,
+          bloom_season: document.getElementById("et-bloomseason").value || null,
+          origin: document.getElementById("et-origin").value || "unknown",
+          native_range: document.getElementById("et-native").value || null,
+          hardy_to: document.getElementById("et-hardy").value || null,
+          light_conditions: Array.from(document.querySelectorAll(".et-light-checkbox:checked")).map((el) => el.value),
+          water_needs: document.getElementById("et-water").value || null,
+          updated_at: new Date().toISOString(),
+        };
+        await restPatch("taxa", `id=eq.${state.modal.data.taxonId}`, body);
+        toast("Species record saved");
+        closeModal();
+        await loadAll();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  const newSpecimenForm = document.getElementById("new-specimen-form");
+  if (newSpecimenForm) {
+    newSpecimenForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const taxonId = state.modal.data.taxonId;
+      const t = taxonById(taxonId);
+      try {
+        const parentId = document.getElementById("ns-parent").value || null;
+        const body = {
+          taxa_id: taxonId,
+          location_id: document.getElementById("ns-location").value || null,
+          acquisition_source_type: document.getElementById("ns-acqtype").value || null,
+          parent_plant_id: parentId,
+          date_acquired: document.getElementById("ns-dateacquired").value || null,
+          health_status: document.getElementById("ns-health").value,
+          // A specimen of a known taxon is identified by definition — the link
+          // IS the identification. See REFERENCE section 3.
+          identification_status: "confirmed",
+          collection_category: "current",
+          status: "active",
+          // Copied onto the specimen only while plants still carries these
+          // columns. SPECIES-1 phase 3 drops them and the taxon becomes the
+          // single source. Copying keeps the old screens working meanwhile.
+          botanical_name: t ? t.botanical_name : null,
+          common_name: t ? t.common_name : null,
+          cultivar: t ? t.cultivar : null,
+          family: t ? t.family : null,
+          genus: t ? t.genus : null,
+          species: t ? t.species_epithet : null,
+        };
+        await restPost("plants", body);
+        toast("Specimen added");
+        closeModal();
+        await loadAll();
       } catch (e) { toast(e.message, true); }
     };
   }

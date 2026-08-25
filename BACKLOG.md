@@ -43,13 +43,6 @@ Images visibly flash and blink while loading. Every resolved Drive URL triggers 
 
 Name to confirm: `urgent` / "Urgent care".
 
-### PD-5 — Show all Plant Detail fields even when empty
-**Status:** ready · **Effort:** low · **Touches:** `screenPlantDetail`
-
-**Supersedes the "new five only" decision made during PD-2.** Care (`native_range`, `hardy_to`, `light_conditions`, `water_needs`) and Provenance (`date_acquired`, acquisition fields, parent plant) currently hide entirely when empty. Make them render like the PD-2 Details block — every field listed, blanks as a dimmed em-dash via `detailRow()`.
-
-Result: one rule across the whole screen, and an incomplete record visibly reads as incomplete.
-
 ### PD-6 — New Plant form is missing most fields
 **Status:** ready · **Effort:** low–medium · **Touches:** `newPlant` / `newPlantFromPhoto` modal (~`index.html:2166`), `wireModalForms`
 
@@ -257,6 +250,8 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ### v1.38.0
 
 **PD-7 — Plant Detail layout v2.** Status: done · Schema: yes (below) · Touched `icon()`, `<style>`, `screenPlantDetail`, `editPlant` modal, `wireModalForms`, `exportPlantsCsv`, new `fieldRow()`.
+
+**Closes PD-5** (show all Plant Detail fields even when empty) — delivered here rather than as its own item, since the rebuild had to decide the empty-field treatment anyway. PD-5's rule now applies to Care, Provenance, Identification and Collection, superseding the "new five only" decision from PD-2.
 
 Built from Amanda's mockup. **The screen holds one shape on every plant** — every section renders, every field renders, blanks show a dimmed em-dash. A bare record renders all six sections with 15 dashes.
 

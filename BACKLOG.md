@@ -117,6 +117,20 @@ order by location_count desc;
 ```
 
 
+### LOC-4 — No way to delete or archive a location
+**Status:** ready · **Effort:** low–medium · **Schema:** none · **Touches:** `screenLocationDetail`, `editLocation` modal, new `deleteLocation()`
+
+A location can be created and edited but never removed, so mistakes and scaffolding accumulate with no way to clear them. Removing two ("Large Containers", "Container 001") took hand-written SQL on 2026-08-25.
+
+Six things reference `locations.id` and all must be handled before the row goes, or the delete FK-errors or strips data silently:
+`locations.parent_location_id` · `plants.location_id` · `photos.location_id` · `plant_locations` · `photo_locations` · `plant_location_history`
+
+Proposed behaviour, mirroring `deletePlant()`:
+- **Refuse outright** if the location has child locations — reparent or delete those first, and say so.
+- **Plants and photos are unassigned, never deleted** — same principle as `deletePlant()` leaving photos intact. Offer to reassign to another location instead of nulling.
+- **`plant_location_history` is the real decision.** It is a trigger-populated audit trail; the FK means deleting a location forces deleting its history. The confirm dialog must say how many history rows will be destroyed rather than doing it quietly. In the real case they were 5 and 4 rows and were judged not meaningful, but that was a judgement made only because the counts were visible first.
+- Consider **archive instead of delete** (`locations.archived` boolean): hides it from pickers and lists while keeping history intact. Probably the better default, with hard delete reserved for genuinely empty rows.
+
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`
 

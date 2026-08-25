@@ -154,7 +154,9 @@
     .container{max-width:900px;}
     .card-grid{display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;align-items:start;}
     .plant-list-thumb{width:120px;height:120px;}
-    .plant-hero{aspect-ratio:16/9;}
+    .detail-split{flex-direction:row;align-items:flex-start;}
+    .detail-split .detail-media{width:42%;max-width:400px;}
+    .detail-split .detail-body{flex:1;}
   }
   @media (min-width: 1100px) {
     .container{max-width:1280px;}
@@ -220,13 +222,28 @@
 
   .bulk-action-bar{position:fixed;left:0;right:0;bottom:76px;background:var(--bg-raised);border-top:1px solid var(--line);padding:12px 0;z-index:28;}
 
-  /* Plant Detail hero image (profile picture) */
-  .plant-hero{width:100%;aspect-ratio:16/9;max-height:280px;background:var(--parchment-dim);position:relative;cursor:pointer;}
-  .plant-hero-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
-  .inbox-photo-hero{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);position:relative;}
-  .plant-hero-empty svg{width:36px;height:36px;}
-  .plant-hero-empty span{font-size:12.5px;}
-  .hero-change-btn{position:absolute;margin-top:-40px;margin-left:12px;background:rgba(37,41,37,0.72);color:var(--parchment);border:none;font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;backdrop-filter:blur(4px);}
+  /* ============================================================
+     CARD MEDIA — one image treatment, shared by Plant Detail,
+     Location Detail and the Inbox card. LOC-1 adopts it for the
+     Locations cards. 16:9 was dropped: it crops off-center subjects
+     badly, which is the whole reason for the pattern. Reach for a
+     ratio class here; do not add another bespoke image box.
+     ============================================================ */
+  .card-media{width:100%;background:var(--parchment-dim);position:relative;overflow:hidden;}
+  .card-media.ratio-4x3{aspect-ratio:4/3;}
+  .card-media.ratio-1x1{aspect-ratio:1;}
+  .card-media img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
+  .card-media-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
+  .card-media-empty svg{width:36px;height:36px;}
+  .card-media-empty span{font-size:12.5px;}
+  /* Lives inside the media box. The old .hero-change-btn floated over a
+     full-width hero via negative margin, which breaks in a two-column split. */
+  .card-media .media-btn{position:absolute;left:12px;bottom:12px;background:rgba(37,41,37,0.72);color:var(--parchment);border:none;font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;backdrop-filter:blur(4px);z-index:1;}
+
+  /* Detail screens: image stacked on phones, beside the details from 700px. */
+  .detail-split{display:flex;flex-direction:column;}
+  .detail-split .detail-media{flex-shrink:0;}
+  .detail-split .detail-body{padding:18px 18px 16px 22px;min-width:0;}
 
   /* High-contrast pill variants for use on the cream card — the
      translucent dark-bg pill styles were nearly illegible here. */
@@ -270,7 +287,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.34.5";
+const APP_VERSION = "1.35.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1150,9 +1167,9 @@ function photoRow(p, selectMode) {
 
   return `
   <div class="tag-card" style="padding:0;overflow:hidden;${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
-    <div class="inbox-photo-hero" ${cachedUrl && !selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${cachedUrl && !selectMode ? "pointer" : "default"};">
-      ${selectMode ? `<div class="select-check ${isSelected ? "checked" : ""}" style="top:8px;left:8px;">${isSelected ? icon("check") : ""}</div>` : ""}
-      ${cachedUrl ? `<img src="${cachedUrl}" style="width:100%;height:100%;object-fit:cover;" />` : `<div class="plant-hero-empty">${icon("photo")}</div>`}
+    <div class="card-media ratio-4x3" ${cachedUrl && !selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${cachedUrl && !selectMode ? "pointer" : "default"};">
+      ${selectMode ? `<div class="select-check ${isSelected ? "checked" : ""}" style="top:8px;left:8px;z-index:1;">${isSelected ? icon("check") : ""}</div>` : ""}
+      ${cachedUrl ? `<img src="${cachedUrl}" />` : `<div class="card-media-empty">${icon("photo")}</div>`}
     </div>
     <div style="padding:12px 14px 14px;">
       <div class="tag-id">Photo · ${fmtDate(photoDate(p))}</div>
@@ -1266,14 +1283,17 @@ function screenPlantDetail() {
       <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('plants')">${icon("back")} Plants</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
-        <div class="plant-hero" ${heroUrl ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : `onclick="openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})"`}>
-          ${heroUrl
-            ? `<img src="${heroUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />`
-            : `<div class="plant-hero-empty">${icon("photo")}<span>Tap to add a profile picture</span></div>`}
+        <div class="detail-split">
+        <div class="detail-media">
+          <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroUrl ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : `onclick="openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})"`}>
+            ${heroUrl
+              ? `<img src="${heroUrl}" />`
+              : `<div class="card-media-empty">${icon("photo")}<span>Tap to add a profile picture</span></div>`}
+            <button class="media-btn" onclick="event.stopPropagation();openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})">${heroUrl ? "Change photo" : "Add photo"}</button>
+          </div>
         </div>
-        <button class="hero-change-btn" onclick="event.stopPropagation();openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})">${heroUrl ? "Change photo" : "Add photo"}</button>
 
-        <div style="padding:18px 18px 16px 22px;">
+        <div class="detail-body">
           <div class="tag-id">${pl.accession_number}</div>
           <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;font-style:${pl.botanical_name ? "italic" : "normal"};line-height:1.2;">${escapeHtml(plantDisplayName(pl))}</div>
           ${pl.botanical_name && pl.common_name ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(pl.common_name)}</div>` : ""}
@@ -1316,6 +1336,7 @@ function screenPlantDetail() {
             <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">Propagate from this plant</button>
             <button class="btn-ghost icon-btn" style="padding:0;font-size:12.5px;color:var(--terracotta);" onclick="deletePlant('${pl.id}')">${icon("trash")} Delete plant</button>
           </div>
+        </div>
         </div>
       </div>
 
@@ -1482,19 +1503,23 @@ function screenLocationDetail() {
       <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${l.parent_location_id ? `openLocation('${l.parent_location_id}')` : "goTab('locations')"}">${icon("back")} ${l.parent_location_id ? escapeHtml(locationById(l.parent_location_id).name) : "Locations"}</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
-        <div class="plant-hero" ${heroUrl ? `onclick="openLightbox('${l.id}','${heroPhoto.id}','location')"` : `onclick="openModal('chooseLocationPhoto',{locationId:'${l.id}'})"`}>
-          ${heroUrl
-            ? `<img src="${heroUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />`
-            : `<div class="plant-hero-empty">${icon("photo")}<span>Tap to add a main photo</span></div>`}
+        <div class="detail-split">
+        <div class="detail-media">
+          <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroUrl ? `onclick="openLightbox('${l.id}','${heroPhoto.id}','location')"` : `onclick="openModal('chooseLocationPhoto',{locationId:'${l.id}'})"`}>
+            ${heroUrl
+              ? `<img src="${heroUrl}" />`
+              : `<div class="card-media-empty">${icon("photo")}<span>Tap to add a main photo</span></div>`}
+            <button class="media-btn" onclick="event.stopPropagation();openModal('chooseLocationPhoto',{locationId:'${l.id}'})">${heroUrl ? "Change photo" : "Add photo"}</button>
+          </div>
         </div>
-        <button class="hero-change-btn" onclick="event.stopPropagation();openModal('chooseLocationPhoto',{locationId:'${l.id}'})">${heroUrl ? "Change photo" : "Add photo"}</button>
 
-        <div style="padding:16px 16px 14px 20px;">
+        <div class="detail-body" style="padding:16px 16px 14px 20px;">
         <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
         <div class="display" style="font-size:22px;font-weight:600;margin-top:3px;">${escapeHtml(l.name)}</div>
         <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px;">${escapeHtml(locationPath(l))}</div>
         ${l.notes ? `<div style="font-size:13.5px;color:var(--ink-soft);margin-top:10px;">${escapeHtml(l.notes)}</div>` : ""}
         <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
+        </div>
         </div>
       </div>
 

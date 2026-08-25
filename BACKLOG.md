@@ -129,7 +129,10 @@ Proposed behaviour, mirroring `deletePlant()`:
 - **Refuse outright** if the location has child locations — reparent or delete those first, and say so.
 - **Plants and photos are unassigned, never deleted** — same principle as `deletePlant()` leaving photos intact. Offer to reassign to another location instead of nulling.
 - **`plant_location_history` is the real decision.** It is a trigger-populated audit trail; the FK means deleting a location forces deleting its history. The confirm dialog must say how many history rows will be destroyed rather than doing it quietly. In the real case they were 5 and 4 rows and were judged not meaningful, but that was a judgement made only because the counts were visible first.
-- Consider **archive instead of delete** (`locations.archived` boolean): hides it from pickers and lists while keeping history intact. Probably the better default, with hard delete reserved for genuinely empty rows.
+- **Archive and delete are both needed, for different reasons** (Amanda, 2026-08-25) — this is not archive-versus-delete:
+  - **Archive** (`locations.archived` boolean): the container was real and has history, but no longer exists physically — the usual case being a **repot**. Hide it from pickers and lists; keep every history row intact.
+  - **Delete**: the row should never have existed — a duplicate, an accident, or something created with an intention that changed. There is no history worth keeping, and leaving it archived just clutters the list forever.
+  Offer both. Default the button to Archive when the location has any history or attachments, and to Delete only when it is genuinely empty.
 
 ### PERF-1 — Photo loading flicker
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`

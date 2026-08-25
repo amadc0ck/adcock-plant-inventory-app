@@ -255,7 +255,7 @@ One system (`state.lightbox = { mode, photoId, plantId?/locationId? }`) covering
 ## 11. Frontend Structure
 
 - **Single file:** `index.html`. CSS in a `<style>` block, all JS inline.
-- **Rendering:** `render()` rebuilds `#app.innerHTML` from scratch on every state change. `debouncedRender()` (150ms) batches rapid updates — necessary once Inbox counts reached the hundreds, since each async thumbnail load used to trigger its own full rebuild.
+- **Rendering:** `render()` rebuilds `#app.innerHTML` from scratch on every state change. **This destroys any focused input**, so live-search fields lose focus and caret position mid-typing; `captureFocus()` / `restoreFocus()` in `render()` save and restore them by element id (v1.38.2). Any new input that triggers a re-render while focused needs a stable `id` to participate. `debouncedRender()` (150ms) batches rapid updates — necessary once Inbox counts reached the hundreds, since each async thumbnail load used to trigger its own full rebuild.
 - **State:** one global `state` object. Session persists in `localStorage` with access-token refresh before each data load (`ensureFreshSession()`).
 - **Screens:** Login, Inbox, Plants, PlantDetail, Locations, LocationDetail, Gallery, Reports (doubles as dashboard), Settings.
 - **Modals:** single `state.modal = {type, data}` rendered through one `modalContent()` switch. ~20 modal types.

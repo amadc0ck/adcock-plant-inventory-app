@@ -341,7 +341,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.38.1";
+const APP_VERSION = "1.38.2";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1346,7 +1346,7 @@ function screenPlants() {
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
-      <input class="search-input" placeholder="Search name, accession #, cultivar…" value="${escapeHtml(state.plantSearch || "")}" oninput="state.plantSearch=this.value;render()" />
+      <input class="search-input" placeholder="Search name, accession #, cultivar…" value="${escapeHtml(state.plantSearch || "")}" id="search-plants" oninput="state.plantSearch=this.value;render()" />
       <div class="row" style="margin-bottom:16px;">
         <button class="btn btn-secondary btn-sm" onclick="openModal('plantFilters')">
           Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
@@ -1946,7 +1946,7 @@ function screenGallery() {
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Gallery</h2>
       <p class="subtle" style="margin-bottom:16px;">Every photo in the collection — filter by location, type, or search.</p>
 
-      <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" oninput="state.galleryFilters.search=this.value;render()" />
+      <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" id="search-gallery" oninput="state.galleryFilters.search=this.value;render()" />
       <div class="row" style="margin-bottom:16px;">
         <button class="btn btn-secondary btn-sm" onclick="openModal('galleryFilters')">
           Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
@@ -2049,7 +2049,7 @@ function modalContent() {
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Attach to plant</h3>
-      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" id="search-attach" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${matches.length === 0 ? `<p class="subtle">No plants match. Try "New plant" instead.</p>` : matches.map((p) => `
           <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="attachPhotoToPlant('${data.photoId}','${p.id}')">
@@ -2149,7 +2149,7 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Tag other containers</h3>
       <p class="subtle" style="margin:0 0 14px;">Check every container visible in this photo, besides its primary attachment.</p>
-      <input placeholder="Search locations…" value="${escapeHtml(state.tagLocationSearch || "")}" oninput="state.tagLocationSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search locations…" value="${escapeHtml(state.tagLocationSearch || "")}" id="search-tag-location" oninput="state.tagLocationSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
           <label class="checkbox-row" style="margin-top:0;background:var(--bg);padding:10px 12px;border-radius:8px;">
@@ -2168,7 +2168,7 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach ${state.inboxSelected.size} photos to plant</h3>
       <p class="subtle" style="margin:0 0 14px;">All selected photos will be attached to the same plant.</p>
-      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" id="search-attach" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${matches.length === 0 ? `<p class="subtle">No plants match.</p>` : matches.map((p) => `
           <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="bulkAttachToPlant('${p.id}')">
@@ -2185,7 +2185,7 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location to ${state.inboxSelected.size} photos</h3>
       <p class="subtle" style="margin:0 0 14px;">All selected photos will move out of the Inbox onto that container's page.</p>
-      <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" id="search-attach-location" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
           <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="bulkAttachToLocation('${o.id}')">${escapeHtml(o.label)}</button>`).join("")}
@@ -2247,7 +2247,7 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location</h3>
       <p class="subtle" style="margin:0 0 14px;">Sets this photo's primary container. You can still identify or tag plants from it afterward.</p>
-      <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" id="search-attach-location" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
           <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="attachPhotoToLocation('${data.photoId}','${o.id}')">${escapeHtml(o.label)}</button>`).join("")}
@@ -2511,7 +2511,7 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Link existing plant</h3>
       <p class="subtle" style="margin:0 0 14px;">Adds this location to the plant — either as its main location (if it doesn't have one) or as an additional one.</p>
-      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" id="search-attach" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${candidates.length === 0 ? `<p class="subtle">No plants match.</p>` : candidates.map((p) => `
           <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="linkPlantToLocation('${p.id}','${data.locationId}')">
@@ -2657,7 +2657,7 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Tag plants in this photo</h3>
       <p class="subtle" style="margin:0 0 14px;">Check every plant visible in this photo, besides the one it's already attached to.</p>
-      <input placeholder="Search accession #, name…" value="${escapeHtml(state.tagSearch || "")}" oninput="state.tagSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.tagSearch || "")}" id="search-tag" oninput="state.tagSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${candidates.length === 0 ? `<p class="subtle">No other plants match.</p>` : candidates.map((p) => `
           <label class="checkbox-row" style="margin-top:0;background:var(--bg);padding:10px 12px;border-radius:8px;">
@@ -3120,8 +3120,29 @@ function configGate() {
   </div></div>`;
 }
 
+// Live-search inputs call render() on every keystroke, and render() replaces
+// app.innerHTML wholesale — so the field being typed into is destroyed and
+// rebuilt each character, dropping focus and the caret. Capture both before
+// the rebuild and restore them after, keyed on the element's id.
+function captureFocus() {
+  const el = document.activeElement;
+  if (!el || !el.id) return null;
+  if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") return null;
+  return { id: el.id, start: el.selectionStart, end: el.selectionEnd };
+}
+function restoreFocus(snap) {
+  if (!snap) return;
+  const el = document.getElementById(snap.id);
+  if (!el) return;
+  el.focus();
+  // Throws on input types with no text selection (date, number in some
+  // browsers). The focus is the important half; the caret is best-effort.
+  try { el.setSelectionRange(snap.start, snap.end); } catch (e) {}
+}
+
 function render() {
   const app = document.getElementById("app");
+  const focusSnapshot = captureFocus();
 
   if (state.configKey === "REPLACE_WITH_YOUR_PUBLISHABLE_KEY" || !state.configKey) {
     app.innerHTML = configGate();
@@ -3179,6 +3200,7 @@ function render() {
     ${state.lightbox ? renderLightbox() : ""}
   `;
   wireModalForms();
+  restoreFocus(focusSnapshot);
 }
 
 function renderLightbox() {

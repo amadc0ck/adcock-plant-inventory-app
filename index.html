@@ -82,7 +82,10 @@
   .navbtn .badge{position:absolute;transform:translate(10px,-8px);background:var(--terracotta);color:var(--cream);font-size:9px;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
 
   .tag-card{background:var(--parchment);color:var(--ink);border-radius:3px;position:relative;padding:16px 16px 14px 22px;box-shadow:0 1px 0 rgba(0,0,0,0.15), 0 6px 14px -8px rgba(0,0,0,0.4);}
-  .tag-card::before{content:"";position:absolute;left:8px;top:14px;width:7px;height:7px;border-radius:50%;background:var(--bg);box-shadow:inset 0 0 0 1px rgba(0,0,0,0.15);}
+  .tag-card::before{content:"";position:absolute;left:8px;top:14px;width:7px;height:7px;border-radius:50%;display:none;}
+  .tag-card.status-dot::before{display:block;}
+  .tag-card.status-active::before{background:var(--moss);}
+  .tag-card.status-attention::before{background:var(--terracotta);}
   .tag-id{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;color:var(--moss-dim);text-transform:uppercase;}
 
   .surface{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;}
@@ -262,7 +265,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.29.0";
+const APP_VERSION = "1.30.0";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1071,9 +1074,10 @@ function plantRow(pl) {
   const cover = plantCoverPhoto(pl);
   if (cover && !state.photoUrlCache[cover.drive_file_id]) ensurePhotoLoaded(cover.drive_file_id);
   const coverUrl = cover ? state.photoUrlCache[cover.drive_file_id] : null;
+  const needsAttention = pl.status !== "active" || pl.health_status === "watch" || pl.health_status === "recovery";
 
   return `
-  <div class="tag-card plant-list-card" onclick="openPlant('${pl.id}')">
+  <div class="tag-card plant-list-card status-dot ${needsAttention ? "status-attention" : "status-active"}" onclick="openPlant('${pl.id}')" title="${needsAttention ? "Needs attention" : "Active & healthy"}">
     <div class="plant-list-thumb">
       ${coverUrl ? `<img src="${coverUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top;" />` : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
     </div>
@@ -1164,6 +1168,7 @@ function screenPlantDetail() {
             <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('editPlant',{plantId:'${pl.id}'})">Edit full record</button>
             <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="moveToHospital('${pl.id}')">Move to Plant Hospital</button>
             <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--chicory-oncream);" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">Propagate from this plant</button>
+            <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--terracotta);" onclick="deletePlant('${pl.id}')">Delete plant</button>
           </div>
         </div>
       </div>
@@ -1393,6 +1398,17 @@ function screenLocationDetail() {
   </div>`;
 }
 
+function findDuplicatePlantGroups() {
+  const groups = {};
+  state.plants.forEach((pl) => {
+    const nameKey = (pl.botanical_name || pl.common_name || "").trim().toLowerCase();
+    if (!nameKey) return;
+    const key = `${pl.location_id || "none"}|${nameKey}`;
+    (groups[key] = groups[key] || []).push(pl);
+  });
+  return Object.values(groups).filter((g) => g.length > 1);
+}
+
 function screenReports() {
   // Containers with photos attached but no plants recorded there yet
   const locationsNeedingReview = state.locations.filter((l) => photosAtLocation(l.id).length > 0 && plantsAtLocation(l.id).length === 0);
@@ -1408,6 +1424,12 @@ function screenReports() {
 
   // Health flagged
   const plantsNeedingAttention = state.plants.filter((pl) => pl.health_status === "watch" || pl.health_status === "recovery");
+
+  // Completely empty leaf containers — no children, no photos, no plants
+  const emptyContainers = state.locations.filter((l) => directChildLocations(l.id).length === 0 && photosAtLocation(l.id).length === 0 && plantsAtLocation(l.id).length === 0);
+
+  // Possible duplicate plants — same location + same name
+  const duplicateGroups = findDuplicatePlantGroups();
 
   function reportSection(title, items, emptyText, renderItem) {
     return `
@@ -1439,8 +1461,44 @@ function screenReports() {
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Reports</h2>
-      <p class="subtle" style="margin-bottom:6px;">Gaps in your records worth cleaning up — tap any item to jump straight to it.</p>
+      <p class="subtle" style="margin-bottom:16px;">Gaps in your records worth cleaning up — tap any item to jump straight to it.</p>
 
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:6px;">
+        ${[
+          ["Plants", state.plants.length],
+          ["Locations", state.locations.length],
+          ["Photos", state.photos.length],
+          ["Inbox", state.photos.filter((p) => !p.plant_id && !p.location_id).length],
+        ].map(([label, val]) => `
+          <div class="surface" style="padding:12px;text-align:center;">
+            <div class="display" style="font-size:22px;font-weight:600;">${val}</div>
+            <div class="subtle" style="font-size:11px;text-transform:uppercase;letter-spacing:0.3px;">${label}</div>
+          </div>`).join("")}
+      </div>
+
+      ${duplicateGroups.length > 0 ? `
+      <div class="row" style="margin-top:22px;margin-bottom:10px;">
+        <h3 class="display" style="font-size:16px;font-weight:500;margin:0;">Possible duplicate plants</h3>
+        <span class="pill pill-terracotta">${duplicateGroups.length}</span>
+      </div>
+      <div class="stack">
+        ${duplicateGroups.map((group) => `
+          <div class="surface" style="padding:14px;">
+            <p class="subtle" style="margin:0 0 10px;">Same name, same location — likely the same plant entered twice.</p>
+            ${group.map((pl) => `
+              <div class="row" style="margin-top:6px;">
+                <div style="cursor:pointer;" onclick="openPlant('${pl.id}')">
+                  <span class="mono" style="font-size:11px;opacity:0.7;">${pl.accession_number}</span>
+                  <span style="font-size:13.5px;margin-left:6px;">${escapeHtml(plantDisplayName(pl))}</span>
+                </div>
+                <div style="display:flex;gap:6px;">
+                  ${group.filter((other) => other.id !== pl.id).map((other) => `<button class="btn btn-secondary btn-sm" onclick="mergePlants('${pl.id}','${other.id}')" title="Keep ${pl.accession_number}, merge ${other.accession_number} into it">Keep this</button>`).join("")}
+                </div>
+              </div>`).join("")}
+          </div>`).join("")}
+      </div>` : ""}
+
+      ${reportSection("Empty containers (no photos, no plants)", emptyContainers, "No completely empty containers.", locationItem)}
       ${reportSection("Containers with photos but no plants recorded", locationsNeedingReview, "Every container with a photo has at least one plant recorded. Nice.", locationItem)}
       ${reportSection("Plants with no location set", plantsNoLocation, "Every plant has a location.", plantItem)}
       ${reportSection("Plants with no photos", plantsNoPhotos, "Every plant has at least one photo.", plantItem)}
@@ -2149,6 +2207,54 @@ async function removePlantLocation(rowId) {
   try {
     await restDelete("plant_locations", `id=eq.${rowId}`);
     toast("Location removed");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function mergePlants(keepId, removeId) {
+  const keep = state.plants.find((p) => p.id === keepId);
+  const remove = state.plants.find((p) => p.id === removeId);
+  if (!confirm(`Merge "${plantDisplayName(remove)}" (${remove.accession_number}) into "${plantDisplayName(keep)}" (${keep.accession_number})? All photos and tags move over, then ${remove.accession_number} is deleted. This can't be undone.`)) return;
+  try {
+    // Move photos primarily attached to the removed plant
+    await restPatch("photos", `plant_id=eq.${removeId}`, { plant_id: keepId });
+
+    // Move multi-plant photo tags, skipping any that would duplicate an existing tag
+    const tagsToMove = state.photoPlants.filter((pp) => pp.plant_id === removeId);
+    for (const t of tagsToMove) {
+      const exists = state.photoPlants.some((pp) => pp.plant_id === keepId && pp.photo_id === t.photo_id);
+      if (exists) await restDelete("photo_plants", `id=eq.${t.id}`);
+      else await restPatch("photo_plants", `id=eq.${t.id}`, { plant_id: keepId });
+    }
+
+    // Move additional locations, skipping duplicates
+    const locsToMove = state.plantLocations.filter((pl2) => pl2.plant_id === removeId);
+    for (const l of locsToMove) {
+      const exists = state.plantLocations.some((pl2) => pl2.plant_id === keepId && pl2.location_id === l.location_id);
+      if (exists) await restDelete("plant_locations", `id=eq.${l.id}`);
+      else await restPatch("plant_locations", `id=eq.${l.id}`, { plant_id: keepId });
+    }
+
+    // Reparent anything propagated from the plant being removed
+    await restPatch("plants", `parent_plant_id=eq.${removeId}`, { parent_plant_id: keepId });
+
+    await restDelete("plants", `id=eq.${removeId}`);
+    toast(`Merged into ${keep.accession_number}`);
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deletePlant(plantId) {
+  const pl = state.plants.find((p) => p.id === plantId);
+  if (!confirm(`Delete ${pl.accession_number} — ${plantDisplayName(pl)}? Its photos are unassigned, not deleted. This can't be undone.`)) return;
+  try {
+    await restPatch("photos", `plant_id=eq.${plantId}`, { plant_id: null });
+    await restDelete("photo_plants", `plant_id=eq.${plantId}`);
+    await restDelete("plant_locations", `plant_id=eq.${plantId}`);
+    await restPatch("plants", `parent_plant_id=eq.${plantId}`, { parent_plant_id: null });
+    await restDelete("plants", `id=eq.${plantId}`);
+    toast("Plant deleted");
+    goTab("plants");
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

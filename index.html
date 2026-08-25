@@ -267,7 +267,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.34.3";
+const APP_VERSION = "1.34.4";
 const APP_UPDATED = "2026-08-24";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1882,12 +1882,14 @@ function modalContent() {
   }
 
   if (type === "attachToLocalPlant") {
-    const localPlants = plantsAtLocation(data.locationId);
+    const photo = state.photos.find((p) => p.id === data.photoId);
+    const alreadyTaggedIds = new Set(state.photoPlants.filter((pp) => pp.photo_id === data.photoId).map((pp) => pp.plant_id));
+    const localPlants = plantsAtLocation(data.locationId).filter((pl) => pl.id !== photo?.plant_id && !alreadyTaggedIds.has(pl.id));
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add to a plant here</h3>
       <p class="subtle" style="margin:0 0 14px;">Tags this photo to a plant already in this container — doesn't affect the plant's other photos.</p>
-      ${localPlants.length === 0 ? `<p class="subtle">No plants assigned to this location yet. Use "New plant from this photo" instead.</p>` : `
+      ${localPlants.length === 0 ? `<p class="subtle">No other plants assigned to this location to add. Use "New plant from this photo" instead.</p>` : `
         <div class="stack">
           ${localPlants.map((pl) => `
             <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="attachPhotoToExistingPlant('${data.photoId}','${pl.id}')">
@@ -2664,6 +2666,12 @@ async function attachPhotoToExistingPlant(photoId, plantId) {
     const photo = state.photos.find((p) => p.id === photoId);
     if (photo && !photo.plant_id) {
       await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
+    } else if (photo && photo.plant_id === plantId) {
+      toast("Already attached to this plant");
+      return;
+    } else if (state.photoPlants.some((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
+      toast("Already tagged to this plant");
+      return;
     } else {
       await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
     }

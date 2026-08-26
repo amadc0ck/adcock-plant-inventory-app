@@ -201,6 +201,18 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.80.1
+
+**"Failed 9" with no reason was my bug.** Schema: none. Deploy: both functions again.
+
+The batch ran with toasts suppressed and reported a count, so nine identical failures looked the same as nine different ones. It now carries the **first error message** into the summary, and gives up after three consecutive failures with nothing succeeding — every photo failing the same way means the cause is the setup, not the photos, and there is no reason to spend 37 more calls proving it.
+
+Three specific diagnoses replace the shrug:
+
+- **Function not deployed.** A 404 answers with HTML, so `res.json()` threw and looked identical to "Claude failed". It now reads the status and says `run: supabase functions deploy suggest-photo`.
+- **Table missing.** Both functions detect `does not exist` / `PGRST205` on insert and name the migration to run.
+- **`buildContext` no longer requires the table.** It reads past decisions from `suggestions` to feed back as examples — a nice-to-have that was taking the whole call down with it before the migration ran.
+
 ### v1.80.0
 
 **AI-1 and AI-2 — Claude suggests filing, and fills species blanks.** Schema: new `suggestions` table. Deploy: two Edge Functions.

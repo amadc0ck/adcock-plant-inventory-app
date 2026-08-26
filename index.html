@@ -512,7 +512,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.80.0";
+const APP_VERSION = "1.80.1";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5788,7 +5788,17 @@ async function askClaudeAboutPhoto(photoId, opts) {
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ photo_id: photoId }),
     });
-    const data = await res.json();
+    // A function that is not deployed answers with an HTML 404, which is not
+    // JSON — and res.json() throwing looked identical to "Claude failed".
+    // Reporting the status is the difference between a diagnosis and a shrug.
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(res.status === 404
+        ? "suggest-photo is not deployed yet — run: supabase functions deploy suggest-photo"
+        : `The suggest-photo function returned ${res.status} with no JSON body`);
+    }
     if (data.error) throw new Error(data.error);
     state.suggestions = state.suggestions.filter((x) => x.photo_id !== photoId);
     (data.suggestions || []).forEach((row) => state.suggestions.unshift(row));
@@ -5797,10 +5807,12 @@ async function askClaudeAboutPhoto(photoId, opts) {
         ? `${countLabel(data.suggestions.length, "suggestion", "suggestions")} from Claude`
         : (data.note || "Nothing Claude could match"), !(data.suggestions || []).length);
     }
-    return true;
+    return null;
   } catch (e) {
     if (!quiet) toast(e.message, true);
-    return false;
+    // Handed back so a batch can report WHY, rather than a count of failures
+    // with no cause — which is what nine silent failures looked like.
+    return e.message || "Unknown error";
   } finally {
     if (!quiet) { state.suggestingPhotoId = null; render(); }
   }
@@ -5840,15 +5852,23 @@ async function askClaudeAboutSelection() {
   if (!confirm(`Ask Claude about ${ids.length} photo${ids.length === 1 ? "" : "s"}? This calls the API once per photo.`)) return;
   state.suggestBatch = { done: 0, total: ids.length, failed: 0 };
   render();
+  let firstError = null;
   for (const id of ids) {
-    const okRun = await askClaudeAboutPhoto(id, { quiet: true });
+    const err = await askClaudeAboutPhoto(id, { quiet: true });
     state.suggestBatch.done += 1;
-    if (!okRun) state.suggestBatch.failed += 1;
+    if (err) {
+      state.suggestBatch.failed += 1;
+      if (!firstError) firstError = err;
+      // Every photo failing the same way means the cause is the setup, not the
+      // photos. Stopping after three saves 37 pointless calls and a bill.
+      if (state.suggestBatch.failed >= 3 && state.suggestBatch.done === state.suggestBatch.failed) break;
+    }
     refreshImportProgress();
   }
   const { done, failed } = state.suggestBatch;
   state.suggestBatch = null;
-  toast(`Asked about ${done} photo${done === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`);
+  if (failed) toast(`${failed} of ${done} failed — ${firstError}`, true);
+  else toast(`Asked about ${done} photo${done === 1 ? "" : "s"}`);
   await loadAll();
 }
 

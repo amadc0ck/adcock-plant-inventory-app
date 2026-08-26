@@ -466,7 +466,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.70.0";
+const APP_VERSION = "1.70.1";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3613,10 +3613,28 @@ function screenGallery() {
             ${plant ? `<div style="font-size:13px;margin-top:1px;">${plantDisplayHtml(plant)}</div>` : ""}
             ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}</div>` : `<div class="value-blank" style="font-size:11px;margin-top:1px;">No location</div>`}
           </div>
-          <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;flex-shrink:0;" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+          <div style="display:flex;gap:10px;flex-shrink:0;">
+            ${identifyBtn(p, "12px")}
+            <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" title="Edit this photo" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+          </div>
         </div>`;
       }).join("")}
     </div>`;
+
+  // Working the "Needs a plant" bucket means looking at a photo and asking what
+  // it is. Pl@ntNet only — Ask Claude is a per-photo cost and belongs where the
+  // decision is deliberate, not on every tile in a 317-photo grid.
+  const identifyBtn = (p, size) => {
+    if (p.plant_id) return "";
+    const pending = pendingIdentifications(p.id).find((x) => x.source !== "Claude");
+    if (pending) {
+      return `<button class="btn-ghost icon-btn" style="padding:0;font-size:${size};color:var(--blue);" title="Pl@ntNet suggested ${escapeHtml(pending.suggested_name)} — compare"
+              onclick="event.stopPropagation();openModal('identificationDetail',{identificationId:'${pending.id}'})">${icon("photoQuestion")}</button>`;
+    }
+    const busy = state.identifyingPhotoId === p.id;
+    return `<button class="btn-ghost icon-btn" style="padding:0;font-size:${size};" ${busy ? "disabled" : ""} title="Identify with Pl@ntNet"
+            onclick="event.stopPropagation();identifyPhoto('${p.id}')">${busy ? '<span class="spinner"></span>' : icon("search")}</button>`;
+  };
 
   const grid = (photos) => `
     <div class="card-grid">
@@ -3631,7 +3649,10 @@ function screenGallery() {
           <div style="padding:10px 12px;">
             <div class="row">
               <div class="tag-id">${fmtDate(photoDate(p))}${isArchivePhoto(p) ? " · Archive" : ""}</div>
-              <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+              <div style="display:flex;gap:10px;flex-shrink:0;">
+                ${identifyBtn(p, "12px")}
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" title="Edit this photo" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+              </div>
             </div>
             ${plant ? `<div style="font-size:12.5px;margin-top:2px;">${plantDisplayHtml(plant)}</div>` : ""}
             ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}${locs.length > 1 ? ` +${locs.length - 1}` : ""}</div>` : ""}

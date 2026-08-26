@@ -227,6 +227,14 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.70.1
+
+**Identify from the Gallery grid.** Schema: none.
+
+Working the "Needs a plant" bucket means looking at a photo and asking what it is, but the tiles only offered Edit — so identifying meant opening each photo first. A magnifier now sits beside the pencil in both the large and compact layouts, on any photo with no plant yet.
+
+**Pl@ntNet only.** Ask Claude is a per-photo cost and belongs where the decision is deliberate, not on every tile in a 317-photo grid. Once Pl@ntNet answers, the button becomes a compare link naming the suggestion rather than offering to run it again; a Claude suggestion does not satisfy it.
+
 ### v1.70.0
 
 **Locations list, and a report that contradicted itself.** Schema: none.

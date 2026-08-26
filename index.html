@@ -474,7 +474,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.73.2";
+const APP_VERSION = "1.74.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -527,6 +527,7 @@ const state = {
   dupeDelete: null,
   editPhotoPlant: undefined,   // staged plant choice inside the edit-photo form
   editPhotoPickerOpen: false,
+  editPhotoLocation: "",
   locPickerParent: null,   // where the location picker is currently standing
   locPickerSearch: "",
   batchPlant: "",
@@ -2042,6 +2043,7 @@ function openModal(type, data = {}) {
   if (type === "editPhoto") {
     const ph = state.photos.find((x) => x.id === data.photoId);
     state.editPhotoPlant = ph ? (ph.plant_id || "") : "";
+    state.editPhotoLocation = ph ? (ph.location_id || "") : "";
     state.editPhotoPickerOpen = !!ph && !ph.plant_id;
     // The photo's own container is very nearly always where the plant is, and
     // it cuts 52 specimens down to the two or three actually standing there.
@@ -5331,7 +5333,22 @@ function modalContent() {
         <div class="field-help">What the photo shows, never how it is filed. Archive photos are archive photos because of where they are filed, not their type.</div>
 
         <label>Location</label>
-        <select id="eph-location">${locationSelectOptions(ph.location_id || null)}</select>
+        <select id="eph-location" onchange="state.editPhotoLocation=this.value;render()">${locationSelectOptions(state.editPhotoLocation || null)}</select>
+        ${(() => {
+          // The specimen already knows where it stands, and a photo of it was
+          // almost certainly taken there. Offered rather than applied: a photo
+          // can show a plant that has since moved, or been photographed
+          // somewhere else entirely, and silently filing it to the wrong
+          // container is worse than one extra tap.
+          const chosen = state.editPhotoPlant ? state.plants.find((x) => x.id === state.editPhotoPlant) : null;
+          const loc = chosen && chosen.location_id ? locationById(chosen.location_id) : null;
+          if (!loc || loc.id === state.editPhotoLocation) return "";
+          return `
+            <div class="field-help" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span>${escapeHtml(plantPickerName(chosen).primary)} lives in <strong>${escapeHtml(locationPath(loc))}</strong>.</span>
+              <button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--blue);" onclick="state.editPhotoLocation='${loc.id}';render()">Use it</button>
+            </div>`;
+        })()}
 
         ${/* PL-3. Was a <select> of all 52 specimens labelled by accession
              number — the one picker PL-2 missed, and the one that matters most,
@@ -7123,7 +7140,7 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
       try {
         await restPatch("photos", `id=eq.${state.modal.data.photoId}`, {
           photo_type: document.getElementById("eph-type").value || "general",
-          location_id: document.getElementById("eph-location").value || null,
+          location_id: state.editPhotoLocation || null,
           plant_id: state.editPhotoPlant || null,
           notes: document.getElementById("eph-notes").value || null,
         });

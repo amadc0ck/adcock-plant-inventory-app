@@ -227,6 +227,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.74.0
+
+**The photo form suggests where the plant lives.** Schema: none.
+
+A photo attached to a specimen and filed to no container is a gap the record can close itself: the specimen already knows where it stands. The form now offers *"Santa Rita lives in Front Yard > Bucket 22 — Use it"* under the Location field, one tap.
+
+**Offered, not applied.** A photo can show a plant that has since moved, or one photographed somewhere else entirely — silently filing it to the wrong container is worse than one extra tap. The suggestion disappears once the location matches, and reappears if you pick a different plant.
+
+Location is **staged** like the plant now, rather than read from the DOM at save. Without that the suggestion could not survive its own re-render.
+
 ### v1.73.2
 
 **Two sticky layers were fighting for the same 0px.** Schema: none.

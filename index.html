@@ -249,6 +249,7 @@
      content. Whole frame, no crop (the focal point is for thumbnails, and
      there is nothing to centre on here), one column, captions underneath. */
   .photo-feed{max-width:620px;margin:0 auto;display:flex;flex-direction:column;gap:26px;}
+  .photo-feed-card{break-inside:avoid;-webkit-column-break-inside:avoid;}
   .photo-feed-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
   .photo-feed-media{width:100%;background:#0B1410;cursor:zoom-in;line-height:0;min-height:80px;}
   .photo-feed-media .photo-img{width:100%;height:auto;object-fit:contain;object-position:center;}
@@ -423,6 +424,8 @@
        order becomes down-then-across, which is fine for independent
        reference cards. */
     .section-grid{display:block;columns:2;column-gap:14px;}
+    .photo-feed{columns:2;column-gap:18px;max-width:none;display:block;}
+    .photo-feed-card{display:inline-block;vertical-align:top;width:100%;margin-bottom:18px;}
     .section-grid > *{display:inline-block;vertical-align:top;width:100%;margin-bottom:14px;}
   }
   @media (min-width: 1100px) {
@@ -431,6 +434,10 @@
     .plant-list-thumb{width:140px;height:140px;}
     .login-wrap .container{max-width:none;}
     .section-grid{columns:3;column-gap:16px;}
+    /* Columns, not grid: photos are shown at their own aspect ratio, so cell
+       heights vary wildly and a grid would leave every short one over a hole. */
+    .photo-feed{columns:3;column-gap:20px;max-width:none;display:block;}
+    .photo-feed-card{margin-bottom:20px;}
     .section-grid > *{margin-bottom:16px;}
     /* Actions become the hero's third column only when there is room. */
     .detail-split .detail-media{width:34%;max-width:420px;}
@@ -456,7 +463,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.68.0";
+const APP_VERSION = "1.69.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2933,12 +2940,39 @@ function screenLocationDetail() {
         </div>
 
         <div class="detail-body" style="padding:16px 16px 14px 20px;">
-        <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
-        <div class="display" style="font-size:22px;font-weight:600;margin-top:3px;">${escapeHtml(l.name)}</div>
-        <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px;">${escapeHtml(locationPath(l))}</div>
-        ${l.notes ? `<div style="font-size:13.5px;color:var(--ink-soft);margin-top:10px;">${escapeHtml(l.notes)}</div>` : ""}
-        <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
-        <button class="btn-ghost" style="padding:10px 0 0 14px;font-size:12.5px;color:var(--terracotta);" onclick="openModal('removeLocation',{locationId:'${l.id}'})">Remove</button>
+        ${(() => {
+          // LOC-8. The panel was type, name, then the path — which for a
+          // top-level location is the name again — and two links, leaving most
+          // of it empty. What actually identifies a location is what is in it,
+          // and for an archive, when and where it was.
+          const kids = directChildLocations(l.id);
+          const allPlants = aggregatePlantCount(l.id);
+          const allPhotos = aggregatePhotoCount(l.id);
+          const period = archivePeriod(l);
+          const parent = l.parent_location_id ? locationById(l.parent_location_id) : null;
+          const stat = (n, one, many, colour) =>
+            `<div><div class="display" style="font-size:20px;font-weight:600;line-height:1;color:${colour || "var(--ink)"};">${n}</div>
+             <div style="font-size:11px;color:var(--ink-soft);letter-spacing:0.3px;text-transform:uppercase;margin-top:3px;">${n === 1 ? one : many}</div></div>`;
+          return `
+          <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}${period ? " · " + escapeHtml(period) : ""}</div>
+          <div class="display" style="font-size:22px;font-weight:600;margin-top:3px;">${escapeHtml(l.name)}</div>
+          ${parent ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px;">${escapeHtml(locationPath(parent))}</div>` : ""}
+
+          <div style="display:flex;gap:26px;margin-top:16px;flex-wrap:wrap;">
+            ${stat(allPlants, "plant", "plants")}
+            ${stat(allPhotos, "photo", "photos")}
+            ${kids.length ? stat(kids.length, locationTypeLabel(kids[0].type).toLowerCase(), nestedCountLabel(kids).replace(/^\d+\s*/, "")) : ""}
+          </div>
+          ${(allPlants || allPhotos) && kids.length ? `<div class="subtle" style="font-size:11px;margin-top:6px;">Includes everything nested inside</div>` : ""}
+
+          ${l.notes ? `<div style="font-size:13.5px;color:var(--ink-soft);margin-top:12px;">${escapeHtml(l.notes)}</div>` : ""}
+          ${!locationHoldsPlants(l) ? `<div class="subtle" style="font-size:11.5px;margin-top:10px;">Plants are not assigned directly here — they live in the containers inside.</div>` : ""}
+
+          <div style="margin-top:14px;">
+            <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
+            <button class="btn-ghost" style="padding:0 0 0 14px;font-size:12.5px;color:var(--terracotta);" onclick="openModal('removeLocation',{locationId:'${l.id}'})">Remove</button>
+          </div>`;
+        })()}
         </div>
         </div>
       </div>
@@ -2956,17 +2990,20 @@ function screenLocationDetail() {
               const count = aggregatePlantCount(c.id);
               const photoCount = aggregatePhotoCount(c.id);
               const grandchildren = directChildLocations(c.id);
+              // LOC-8. A picture is how she tells one bucket from another — 42
+              // of them share a naming scheme and nothing else. The cover
+              // borrows from a descendant when the child has no photo of its
+              // own, so a row of full buckets is never a row of grey boxes.
+              const cover = locationCoverPhoto(c);
               return `
-              <div class="tag-card" style="cursor:pointer;padding:12px 14px;" onclick="openLocation('${c.id}')">
-                <div class="row">
-                  <div>
-                    <div class="tag-id">${locationTypeLabel(c.type)}${c.code ? " · " + escapeHtml(c.code) : ""}</div>
-                    <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;margin-top:1px;">${escapeHtml(c.name)}</div>
-                  </div>
-                  <div style="text-align:right;">
-                    <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(count, "plant", "plants")} · ${countLabel(photoCount, "photo", "photos")}</div>
-                    ${grandchildren.length ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${nestedCountLabel(grandchildren)} →</div>` : ""}
-                  </div>
+              <div class="tag-card plant-list-card" style="cursor:pointer;padding:10px 12px;" onclick="openLocation('${c.id}')">
+                <div class="plant-list-thumb" style="width:56px;height:56px;flex-shrink:0;">
+                  ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+                </div>
+                <div style="flex:1;min-width:0;">
+                  <div class="tag-id">${locationTypeLabel(c.type)}${c.code ? " · " + escapeHtml(c.code) : ""}</div>
+                  <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;margin-top:1px;">${escapeHtml(c.name)}</div>
+                  <div class="mono" style="font-size:11px;color:var(--moss-dim);margin-top:3px;">${countLabel(count, "plant", "plants")} · ${countLabel(photoCount, "photo", "photos")}${grandchildren.length ? ` · <span style="color:var(--blue);">${nestedCountLabel(grandchildren)} →</span>` : ""}</div>
                 </div>
               </div>`;
             }).join("")}

@@ -227,6 +227,14 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.69.0
+
+**LOC-8 — the Location page reads as a place, not a form.** Schema: none.
+
+- **The feed goes multi-column** — 2 up at 700px, 3 at 1100px. CSS columns rather than grid, because photos render at their own aspect ratio and a grid would make every cell as tall as the tallest in its row.
+- **Child location cards carry a picture.** 42 buckets share a naming scheme and nothing else, so a name alone does not identify one. `locationCoverPhoto()` already borrowed from a descendant when a location had no photo of its own — the cards just never used it, which is the same gap LOC-5 closed on the Locations list.
+- **The header was type, name, and then the path — which for a top-level location is the name again** — plus two links, leaving two-thirds of the panel empty. It now carries **plants / photos / what's inside** as roll-up counts across the whole subtree, the archive's period and locality where set, and a line saying plants live in the containers inside when they are not assigned directly. The redundant path only appears when there actually is a parent.
+
 ### v1.68.0
 
 **LOCP-3 — Areas and Archives get a feed, not a filing queue.** Schema: none.

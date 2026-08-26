@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.60.0";
+const APP_VERSION = "1.61.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -440,6 +440,7 @@ const state = {
   backfill: null,
   reportView: null,
   timelineOldestFirst: false,
+  taxonPhotoLimit: 24,
   photosImport: null,
   resumableImport: null,
   attachPhotoLimit: 24,
@@ -448,6 +449,7 @@ const state = {
   gallerySelectMode: false,
   gallerySelected: new Set(),
   dupeSelected: new Set(),
+  assignSelected: new Set(),
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
@@ -1332,6 +1334,23 @@ function offspringOf(plantId, taxonId) {
 }
 // The taxon's own profile photo, else the newest photo from any of its
 // specimens. Once GAL-1 lands this becomes the favourited photos.
+// Every photo of every specimen of a taxon, newest first, each carrying which
+// specimen it belongs to. The species page previously showed only a cover, so
+// the one place you would naturally go to compare your plants of a kind — or to
+// spot a photo filed against the wrong one — showed nothing.
+function taxonPhotos(taxonId) {
+  const out = [];
+  const seen = new Set();
+  specimensOfTaxon(taxonId).forEach((sp) => {
+    plantPhotosOrdered(sp.id).forEach((p) => {
+      if (seen.has(p.id)) return; // a photo tagged onto two specimens counts once
+      seen.add(p.id);
+      out.push({ photo: p, specimen: sp });
+    });
+  });
+  return out.sort((a, b) => new Date(photoDate(b.photo)) - new Date(photoDate(a.photo)));
+}
+
 function taxonCoverPhoto(t) {
   if (!t) return null;
   if (t.primary_photo_id) {
@@ -1725,7 +1744,7 @@ function clearGalleryView() {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false };
   render();
 }
-function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; render(); }
+function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; state.taxonPhotoLimit = 24; render(); }
 function openLocation(id) { state.tab = "locationDetail"; state.currentLocationId = id; render(); }
 
 function plantPhotosOrdered(plantId) {
@@ -2178,6 +2197,37 @@ function screenTaxonDetail() {
       ${all.length === 0
         ? `<div class="empty" style="padding:28px 20px;"><div>No specimens of this plant yet.</div><div class="subtle">Add one and pick the pot or bucket it lives in.</div></div>`
         : `<div class="stack">${roots.map((sp) => specimenRow(sp, 0)).join("")}</div>`}
+
+      ${(() => {
+        const shots = taxonPhotos(t.id);
+        if (!shots.length) return "";
+        const limit = state.taxonPhotoLimit || 24;
+        const shown = shots.slice(0, limit);
+        return `
+        <div class="row" style="margin-top:26px;margin-bottom:8px;">
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photos</h3>
+          <span class="subtle">${countLabel(shots.length, "photo", "photos")} across ${countLabel(all.length, "specimen", "specimens")}</span>
+        </div>
+        <div class="card-grid">
+          ${shown.map(({ photo, specimen }) => {
+            const loc = photo.location_id ? locationById(photo.location_id) : null;
+            return `
+            <div class="tag-card" style="padding:0;overflow:hidden;">
+              <div class="card-media ratio-1x1" style="cursor:pointer;" onclick="openLightbox('${specimen.id}','${photo.id}')">${photoImg(photo.drive_file_id)}</div>
+              <div style="padding:9px 11px;">
+                <div class="tag-id">${fmtDate(photoDate(photo))}${photo.photo_type && photo.photo_type !== "general" ? " · " + escapeHtml(PHOTO_TYPE_LABELS[photo.photo_type] || photo.photo_type) : ""}</div>
+                <div class="mono" style="font-size:11px;color:var(--moss-dim);margin-top:2px;cursor:pointer;" onclick="openPlant('${specimen.id}')">${specimen.accession_number}</div>
+                <div style="font-size:11px;color:var(--ink-soft);">${loc ? escapeHtml(loc.name) : `<span class="value-blank">No location</span>`}</div>
+                <div style="display:flex;gap:8px;margin-top:6px;">
+                  <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;" onclick="openModal('movePhoto',{photoId:'${photo.id}',fromPlantId:'${specimen.id}'})">${icon("seedling")} Move</button>
+                  <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;" onclick="openModal('editPhoto',{photoId:'${photo.id}'})">${icon("edit")} Edit</button>
+                </div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>
+        ${shots.length > limit ? `<button class="btn btn-secondary btn-block" style="margin-top:12px;" onclick="state.taxonPhotoLimit=${limit + 24};render()">Show more — ${limit} of ${shots.length}</button>` : ""}`;
+      })()}
     </div>
   </div>`;
 }
@@ -2641,6 +2691,26 @@ function screenLocationDetail() {
         <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" onclick="openModal('linkPlantToLocation',{locationId:'${l.id}'})">+ Link existing plant</button>
         ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
           <div class="card-grid">${plants.map(plantRow).join("")}</div>`}` : ""}
+
+      ${(() => {
+        // The common case, not an edge one: a photo of a container gets filed
+        // to the container and never to the plant in it. 526 photos sit like
+        // this. Surfacing it where the answer is obvious — standing in the
+        // location, looking at what lives there — is the whole point.
+        const orphans = photosAtLocation(l.id).filter((p) => !p.plant_id);
+        if (!orphans.length) return "";
+        const here = plantsAtLocation(l.id);
+        return `
+        <div class="surface" style="padding:14px;margin-top:20px;border-color:var(--orange);">
+          <div class="row">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:14px;">${countLabel(orphans.length, "photo", "photos")} here with no plant</div>
+              <div class="subtle" style="font-size:12px;margin-top:2px;">${here.length ? `${countLabel(here.length, "specimen lives", "specimens live")} here` : "No specimens here yet — add one first, or attach these to a plant elsewhere"}</div>
+            </div>
+            <button class="btn btn-accent btn-sm" onclick="openModal('assignLocationPhotos',{locationId:'${l.id}'})">Assign</button>
+          </div>
+        </div>`;
+      })()}
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Location photos</h3>
@@ -4189,6 +4259,66 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "assignLocationPhotos") {
+    const l = locationById(data.locationId);
+    if (!l) return `<p>Not found.</p>`;
+    const orphans = photosAtLocation(l.id).filter((p) => !p.plant_id)
+      .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+    // Specimens here first — they are almost always the answer. Everything else
+    // is available below for a photo that turns out to show something moved.
+    const here = plantsAtLocation(l.id);
+    const elsewhere = state.plants.filter((p) => !here.some((h) => h.id === p.id))
+      .sort((a, b) => (a.accession_number || "").localeCompare(b.accession_number || ""));
+    const sel = state.assignSelected || new Set();
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Assign photos — ${escapeHtml(l.name)}</h3>
+      <p class="subtle" style="margin:0 0 12px;">Pick the photos, then the plant they show.</p>
+
+      <div class="row" style="margin-bottom:10px;">
+        <button class="btn btn-secondary btn-sm" onclick="toggleAssignAll(${JSON.stringify(orphans.map((p) => p.id))})">
+          ${orphans.length && orphans.every((p) => sel.has(p.id)) ? "Clear all" : `Select all ${orphans.length}`}
+        </button>
+        <span class="subtle">${sel.size} selected</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:34vh;overflow-y:auto;">
+        ${orphans.map((p) => {
+          const picked = sel.has(p.id);
+          return `
+          <button onclick="toggleAssignPhoto('${p.id}')" style="border:none;padding:0;background:none;cursor:pointer;position:relative;">
+            <div class="card-media ratio-1x1" style="border-radius:6px;${picked ? "outline:3px solid var(--moss);" : ""}">${photoImg(p.drive_file_id)}</div>
+            ${picked ? `<div class="select-check checked" style="top:5px;left:5px;z-index:2;">${icon("check")}</div>` : ""}
+            <div class="mono" style="font-size:9.5px;color:#8AA090;margin-top:3px;">${fmtDate(photoDate(p))}</div>
+          </button>`;
+        }).join("")}
+      </div>
+
+      <div class="section-label">Attach to</div>
+      ${here.length ? `
+        <div class="stack">
+          ${here.map((sp) => `
+            <button class="tag-card plant-list-card" style="width:100%;padding:9px 12px;border:none;text-align:left;cursor:pointer;${sel.size ? "" : "opacity:0.5;"}"
+                    onclick="assignPhotosToPlant('${sp.id}')" ${sel.size ? "" : "disabled"}>
+              <div class="plant-list-thumb" style="width:44px;height:44px;">
+                ${plantCoverPhoto(sp) ? photoImg(plantCoverPhoto(sp).drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div class="mono tag-id">${sp.accession_number}</div>
+                <div style="font-size:13px;">${escapeHtml(plantDisplayName(sp))}</div>
+              </div>
+            </button>`).join("")}
+        </div>` : `<p class="subtle" style="margin:0 0 8px;">No specimens are recorded here yet.</p>`}
+
+      <label style="margin-top:12px;">Or any other plant</label>
+      <select id="alp-other" ${sel.size ? "" : "disabled"} onchange="if(this.value) assignPhotosToPlant(this.value)">
+        <option value="">— Choose —</option>
+        ${elsewhere.map((p) => `<option value="${p.id}">${p.accession_number} — ${escapeHtml(plantDisplayName(p))}</option>`).join("")}
+      </select>
+
+      <button class="btn-ghost" style="margin-top:14px;" onclick="state.assignSelected=new Set();closeModal()">Done</button>`;
+  }
+
   if (type === "attachInboxPhoto") {
     const pl = state.plants.find((p) => p.id === data.plantId);
     const specimenLoc = pl && pl.location_id ? locationById(pl.location_id) : null;
@@ -4948,6 +5078,32 @@ async function deleteSelectedDuplicates() {
 // PHOTO-2. Attaches a waiting photo from the specimen side, the reverse of the
 // Inbox-first flow. Deliberately leaves the modal open — loadAll() re-renders
 // it with this photo gone from the list, so several can be added in a row.
+function toggleAssignPhoto(id) {
+  if (!state.assignSelected) state.assignSelected = new Set();
+  if (state.assignSelected.has(id)) state.assignSelected.delete(id);
+  else state.assignSelected.add(id);
+  render();
+}
+function toggleAssignAll(ids) {
+  const all = ids.length && ids.every((id) => state.assignSelected && state.assignSelected.has(id));
+  state.assignSelected = all ? new Set() : new Set(ids);
+  render();
+}
+
+// Sets plant_id only. The photos already carry the right location — that is how
+// they were found — so nothing else needs to change.
+async function assignPhotosToPlant(plantId) {
+  const ids = Array.from(state.assignSelected || []);
+  if (!ids.length) { toast("Pick some photos first", true); return; }
+  const plant = state.plants.find((p) => p.id === plantId);
+  try {
+    await restPatch("photos", `id=in.(${ids.join(",")})`, { plant_id: plantId });
+    toast(`${countLabel(ids.length, "photo", "photos")} attached to ${plant ? plant.accession_number : "plant"}`);
+    state.assignSelected = new Set();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function attachInboxPhotoToPlant(photoId, plantId) {
   const photo = state.photos.find((p) => p.id === photoId);
   const plant = state.plants.find((p) => p.id === plantId);

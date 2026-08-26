@@ -138,14 +138,6 @@ Proposed behaviour, mirroring `deletePlant()`:
   - **Delete**: the row should never have existed — a duplicate, an accident, or something created with an intention that changed. There is no history worth keeping, and leaving it archived just clutters the list forever.
   Offer both. Default the button to Archive when the location has any history or attachments, and to Delete only when it is genuinely empty.
 
-### TAXP-1 — Photos on the species page
-**Status:** ready · **Effort:** medium · **Depends on:** SPECIES-1 · **Touches:** `screenTaxonDetail`
-
-The species page shows only a cover photo. Every photo of every specimen of that plant is invisible there, so managing them means guessing which specimen holds which and visiting each in turn.
-
-Show all photos across the taxon's specimens, each labelled with the specimen and location it belongs to, with **Move** available inline. That makes "these three belong to the Bucket 07 one" a single screen rather than a hunt.
-
-Overlaps GAL-1: once favourites exist, the *cover* gallery is the favourited subset, while this is the full working view. Both are wanted — one for looking, one for sorting.
 
 ### LOCP-1 — Act on photos from the Location page
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `screenLocationDetail`
@@ -163,10 +155,6 @@ Not tagging other *locations* — a location is singular, holding multiple speci
 
 Standing at a location knowing the species, create a specimen there directly: pick an existing taxon (or create one) and the location is pre-filled. Today it means going to the species record and picking the location from a list of 147.
 
-### LOCP-4 — Prompt to assign a location's orphan photos to a new specimen
-**Status:** ready · **Effort:** medium · **Depends on:** LOCP-3
-
-When a specimen is created in a location that already holds photos with no plant, offer those photos for attachment straight away. Amanda's collection has **364 photos with a location but no plant**, so this is the common case, not an edge one.
 
 ### LOC-5 — Areas with sub-areas should show a thumbnail
 **Status:** ready · **Effort:** low · **Touches:** `locationCard`, `locationCoverPhoto`
@@ -357,6 +345,15 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 ---
 
 ## Completed
+
+### v1.61.0
+
+**LOCP-4 and TAXP-1 — closing the filing loop.** Schema: none.
+
+- **A location surfaces its own unfiled photos.** Open one holding photos with no plant and it says so, with **Assign**: multi-select the photos, then pick from the specimens that live there. This is the common case, not an edge one — **526** photos are filed to a container but not to the plant in it, because that is how photographing a bucket works. Answering it while standing in the location, looking at what lives there, is the whole point.
+- Assigning sets `plant_id` **only**. The photos already carry the right location — that is how they were found — so nothing else changes.
+- **The species page shows every photo across its specimens**, newest first, each labelled with its specimen and location, with **Move** and **Edit** inline. Previously it showed a cover and nothing else, so the one place you would naturally compare your plants of a kind, or spot a photo filed against the wrong specimen, showed nothing.
+- A photo tagged onto two specimens of the same taxon appears **once**, not twice.
 
 ### v1.60.0
 

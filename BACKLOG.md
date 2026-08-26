@@ -340,13 +340,7 @@ Layer 1 catches the common case and is independent of AI-1. Do not wait for the 
 - Manual toggle **and** AI suggestion. AI suggests only.
 - Feeds RPT-4 (What's in Bloom) and GAL-5 (Gallery In Bloom row).
 
-### RPT-1 — Dashboard summary tiles
-**Status:** ready · **Effort:** low · **Touches:** `screenReports`
-Merge the Home Dashboard concept into the Reports screen. Tiles for Plants, Locations, Photos, Inbox counts. This sub-item has no dependency and can ship ahead of the rest of Reports.
 
-### RPT-2 — Records needing attention
-**Status:** ready · **Effort:** low–medium
-Live counts for: empty locations, plants missing photos, plants missing identification, unassigned photos. Much of this logic already exists in `screenReports` — consolidate rather than duplicate.
 
 ### RPT-3 — Check-ins
 **Status:** blocked by AI-1 · **Effort:** medium
@@ -401,7 +395,20 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
-### v1.45.2 / v1.46.0
+### v1.47.0
+
+**Reports rebuilt as a drill-in list (RPT-1, RPT-2).** Schema: none · Touched `screenReports`, `filteredGalleryPhotos`, `state`, new `duplicatePlants` modal, new Reports CSS.
+
+Built from Amanda's mockup, and prompted by a real hole: **photos marked historical had become invisible.** Being marked historical removes a photo from the Inbox, but those photos had no plant and no location either — so they appeared in no screen at all.
+
+- **Stat tiles** — plants, locations, photos, inbox — with icons, on one cream card.
+- **Records needing attention**, seven categories as one-line rows with counts and chevrons, each drilling into its own list. Previously every list rendered expanded inline, so the screen was a wall of cards and the counts, which are the actual signal, were buried in it.
+- **Photos not fully filed** — no plant / no location / neither — routing into the Gallery, which already has the grid and lightbox. This is what makes archive-marked photos reachable.
+- New category surfaced by the taxa split: **specimens with no species**.
+- Possible duplicates moved into a modal rather than occupying the screen permanently.
+- Leaving the tab resets the drill-in, so Reports never reopens mid-list.
+
+### v1.46.0
 
 **EXIF capture dates were never being stored.** Edge Function fix + backfill.
 

@@ -268,6 +268,25 @@
   .field-row-label{font-size:12.5px;color:#8AA090;flex-shrink:0;}
   .field-row-value{font-size:13.5px;color:#C9D6CC;margin-left:auto;text-align:right;min-width:0;word-break:break-word;}
 
+  /* Reports: stat tiles and attention rows, both on cream. */
+  .stat-row{display:grid;grid-template-columns:repeat(4,1fr);}
+  .stat-cell{text-align:center;padding:14px 6px;border-right:1px solid rgba(37,41,37,0.12);}
+  .stat-cell:last-child{border-right:none;}
+  .stat-cell svg{width:20px;height:20px;color:var(--moss-dim);}
+  .stat-num{font-family:'Fraunces',serif;font-size:24px;font-weight:600;color:var(--ink);line-height:1.1;margin-top:4px;}
+  .stat-label{font-size:10px;letter-spacing:0.5px;text-transform:uppercase;color:var(--ink-soft);margin-top:2px;}
+  .attn-row{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;
+    border-bottom:1px solid rgba(37,41,37,0.12);padding:14px 16px;text-align:left;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .attn-row:last-child{border-bottom:none;}
+  .attn-row:active{background:rgba(36,62,54,0.06);}
+  .attn-title{font-size:14px;font-weight:600;}
+  .attn-sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .attn-count{font-family:'IBM Plex Mono',monospace;font-size:12px;min-width:26px;height:26px;border-radius:13px;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 7px;}
+  .attn-count.has{background:var(--terracotta);color:#3A1608;font-weight:700;}
+  .attn-count.clear{background:rgba(37,41,37,0.08);color:var(--ink-soft);}
+  .attn-row .action-chevron{width:15px;height:15px;opacity:0.35;flex-shrink:0;}
+
   /* Gallery browse rows. Horizontal scrollers rather than grids, so a row is
      a glance and a whole screen is a survey of the collection. */
   .gal-row{margin-bottom:26px;}
@@ -372,7 +391,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.46.0";
+const APP_VERSION = "1.47.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -405,11 +424,12 @@ const state = {
   taxa: [],
   listOptions: [],
   backfill: null,
+  reportView: null,
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
   tagLocationSearch: "",
-  galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "" },
+  galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "" },
   inboxSelectMode: false,
   inboxSelected: new Set(),
   lightboxResumePending: false,
@@ -1327,7 +1347,7 @@ function icon(name) {
 /* ============================================================
    ROUTER / NAV
    ============================================================ */
-function goTab(tab) { state.tab = tab; state.modal = null; render(); }
+function goTab(tab) { state.tab = tab; state.modal = null; state.reportView = null; render(); }
 function toggleInboxSelectMode() {
   state.inboxSelectMode = !state.inboxSelectMode;
   state.inboxSelected = new Set();
@@ -1389,8 +1409,13 @@ function showGalleryHighlight(plantType) {
   state.galleryFilters = { ...state.galleryFilters, highlight: plantType, album: "" };
   render();
 }
+function showGalleryNeeds(kind) {
+  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: kind };
+  state.tab = "gallery";
+  render();
+}
 function clearGalleryView() {
-  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "" };
+  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "" };
   render();
 }
 function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; render(); }
@@ -2229,110 +2254,161 @@ function findDuplicatePlantGroups() {
   return Object.values(groups).filter((g) => g.length > 1);
 }
 
+// Reports is a list of gaps, each drilled into rather than all expanded at
+// once. The previous version rendered every list inline, so the screen was a
+// wall of cards and the counts — the actual signal — were buried in it.
+function reportSections() {
+  const photosOf = (pl) => state.photos.filter((p) => p.plant_id === pl.id);
+  return [
+    { key: "emptyLocations", title: "Empty locations", sub: "No plants or photos",
+      items: state.locations.filter((l) => directChildLocations(l.id).length === 0 && photosAtLocation(l.id).length === 0 && plantsAtLocation(l.id).length === 0),
+      kind: "location" },
+    { key: "plantsNoPhotos", title: "Plants missing photos", sub: "At least one photo needed",
+      items: state.plants.filter((pl) => photosOf(pl).length === 0), kind: "plant" },
+    { key: "plantsUnidentified", title: "Plants missing identification", sub: "Needs a name or confirmation",
+      items: state.plants.filter((pl) => pl.identification_status === "unidentified"), kind: "plant" },
+    { key: "plantsNoTaxon", title: "Specimens with no species", sub: "Not linked to a species record",
+      items: state.plants.filter((pl) => !pl.taxa_id), kind: "plant" },
+    { key: "plantsNoLocation", title: "Plants with no location", sub: "Nowhere to find them",
+      items: state.plants.filter((pl) => allLocationsForPlant(pl).length === 0), kind: "plant" },
+    { key: "plantsAttention", title: "Plants needing attention", sub: "Watch or recovery",
+      items: state.plants.filter((pl) => pl.health_status === "watch" || pl.health_status === "recovery"), kind: "plant" },
+    { key: "locationsNoPlants", title: "Locations with photos but no plants", sub: "Photographed, never catalogued",
+      items: state.locations.filter((l) => photosAtLocation(l.id).length > 0 && plantsAtLocation(l.id).length === 0), kind: "location" },
+  ];
+}
+
 function screenReports() {
-  // Containers with photos attached but no plants recorded there yet
-  const locationsNeedingReview = state.locations.filter((l) => photosAtLocation(l.id).length > 0 && plantsAtLocation(l.id).length === 0);
-
-  // Plants with no location at all (primary or additional)
-  const plantsNoLocation = state.plants.filter((pl) => allLocationsForPlant(pl).length === 0);
-
-  // Plants with zero photos attached
-  const plantsNoPhotos = state.plants.filter((pl) => state.photos.filter((p) => p.plant_id === pl.id).length === 0);
-
-  // Never confirmed/identified
-  const plantsUnidentified = state.plants.filter((pl) => pl.identification_status === "unidentified");
-
-  // Health flagged
-  const plantsNeedingAttention = state.plants.filter((pl) => pl.health_status === "watch" || pl.health_status === "recovery");
-
-  // Completely empty leaf containers — no children, no photos, no plants
-  const emptyContainers = state.locations.filter((l) => directChildLocations(l.id).length === 0 && photosAtLocation(l.id).length === 0 && plantsAtLocation(l.id).length === 0);
-
-  // Possible duplicate plants — same location + same name
+  const sections = reportSections();
   const duplicateGroups = findDuplicatePlantGroups();
 
-  function reportSection(title, items, emptyText, renderItem) {
+  // Photo gaps route to the Gallery rather than an inline list — it already has
+  // the grid and the lightbox. A photo in none of plant, location or Inbox is
+  // invisible everywhere else, which is what happens to archive-marked photos.
+  const photoBuckets = [
+    { title: "Photos with no plant", sub: "Not attached to any specimen", needs: "no_plant",
+      count: state.photos.filter((p) => !p.plant_id).length },
+    { title: "Photos with no location", sub: "Nowhere on the map", needs: "no_location",
+      count: state.photos.filter((p) => !p.location_id).length },
+    { title: "Photos with neither", sub: "Reachable only from here", needs: "neither",
+      count: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
+  ];
+
+  const open = state.reportView ? sections.find((x) => x.key === state.reportView) : null;
+
+  if (open) {
+    const renderItem = open.kind === "location" ? reportLocationItem : reportPlantItem;
     return `
-      <div class="row" style="margin-top:22px;margin-bottom:10px;">
-        <h3 class="display" style="font-size:16px;font-weight:500;margin:0;">${title}</h3>
-        <span class="pill ${items.length ? "pill-terracotta" : "pill-moss"}">${items.length}</span>
+    <div class="screen">
+      <div class="container">
+        <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="state.reportView=null;render()">${icon("back")} Reports</button>
+        <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 2px;">${open.title}</h2>
+        <p class="subtle" style="margin-bottom:16px;">${open.sub} · ${countLabel(open.items.length, "record", "records")}</p>
+        ${open.items.length === 0
+          ? `<div class="empty"><div class="display">Nothing here</div><div>Everything in this category is in good shape.</div></div>`
+          : `<div class="card-grid">${open.items.map(renderItem).join("")}</div>`}
       </div>
-      ${items.length === 0 ? `<p class="subtle" style="margin:0;">${emptyText}</p>` : `<div class="card-grid">${items.map(renderItem).join("")}</div>`}`;
+    </div>`;
   }
 
-  function locationItem(l) {
-    const cover = locationCoverPhoto(l);
-    return `
-      <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openLocation('${l.id}')">
-        <div class="plant-list-thumb" style="width:60px;height:60px;">
-          ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
-        </div>
-        <div>
-        <div class="tag-id">${locationTypeLabel(l.type)}</div>
-        <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;">${escapeHtml(l.name)}</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);">${escapeHtml(locationPath(l))}</div>
-        </div>
-      </div>`;
-  }
-
-  function plantItem(pl) {
-    return `
-      <div class="tag-card" style="padding:10px 14px;cursor:pointer;" onclick="openPlant('${pl.id}')">
-        <div class="tag-id">${pl.accession_number}</div>
-        <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;font-style:${pl.botanical_name ? "italic" : "normal"};">${escapeHtml(plantDisplayName(pl))}</div>
-      </div>`;
-  }
+  const attentionTotal = sections.reduce((n, x) => n + x.items.length, 0) + duplicateGroups.length;
 
   return `
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Reports</h2>
-      <p class="subtle" style="margin-bottom:12px;">Gaps in your records worth cleaning up — tap any item to jump straight to it.</p>
-      <button class="btn btn-secondary btn-sm" style="margin-bottom:16px;" onclick="goTab('gallery')">${icon("photo")} Browse full photo gallery →</button>
+      <p class="subtle" style="margin-bottom:16px;">Track the health of your collection and keep it thriving.</p>
 
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:6px;">
-        ${[
-          ["Plants", state.plants.length],
-          ["Locations", state.locations.length],
-          ["Photos", state.photos.length],
-          ["Inbox", state.photos.filter((p) => !p.plant_id && !p.location_id && p.photo_type !== "historical").length],
-        ].map(([label, val]) => `
-          <div class="surface" style="padding:12px;text-align:center;">
-            <div class="display" style="font-size:22px;font-weight:600;">${val}</div>
-            <div class="subtle" style="font-size:11px;text-transform:uppercase;letter-spacing:0.3px;">${label}</div>
-          </div>`).join("")}
+      <div class="tag-card" style="padding:0;overflow:hidden;">
+        <div class="stat-row">
+          ${[
+            [icon("leaf"), state.plants.length, "Plants"],
+            [icon("pin"), state.locations.length, "Locations"],
+            [icon("camera"), state.photos.length, "Photos"],
+            [icon("inbox"), state.photos.filter((p) => !p.plant_id && !p.location_id && p.photo_type !== "historical").length, "Inbox"],
+          ].map(([ic, val, label]) => `
+            <div class="stat-cell">
+              ${ic}
+              <div class="stat-num">${val}</div>
+              <div class="stat-label">${label}</div>
+            </div>`).join("")}
+        </div>
       </div>
 
-      ${duplicateGroups.length > 0 ? `
-      <div class="row" style="margin-top:22px;margin-bottom:10px;">
-        <h3 class="display" style="font-size:16px;font-weight:500;margin:0;">Possible duplicate plants</h3>
-        <span class="pill pill-terracotta">${duplicateGroups.length}</span>
-      </div>
-      <div class="stack">
-        ${duplicateGroups.map((group) => `
-          <div class="surface" style="padding:14px;">
-            <p class="subtle" style="margin:0 0 10px;">Same name, same location — likely the same plant entered twice.</p>
-            ${group.map((pl) => `
-              <div class="row" style="margin-top:6px;">
-                <div style="cursor:pointer;" onclick="openPlant('${pl.id}')">
-                  <span class="mono" style="font-size:11px;opacity:0.7;">${pl.accession_number}</span>
-                  <span style="font-size:13.5px;margin-left:6px;">${escapeHtml(plantDisplayName(pl))}</span>
-                </div>
-                <div style="display:flex;gap:6px;">
-                  ${group.filter((other) => other.id !== pl.id).map((other) => `<button class="btn btn-secondary btn-sm" onclick="mergePlants('${pl.id}','${other.id}')" title="Keep ${pl.accession_number}, merge ${other.accession_number} into it">Keep this</button>`).join("")}
-                </div>
-              </div>`).join("")}
-          </div>`).join("")}
-      </div>` : ""}
+      <button class="btn btn-secondary btn-block" style="margin-top:14px;" onclick="goTab('gallery')">Browse full photo gallery →</button>
 
-      ${reportSection("Empty containers (no photos, no plants)", emptyContainers, "No completely empty containers.", locationItem)}
-      ${reportSection("Containers with photos but no plants recorded", locationsNeedingReview, "Every container with a photo has at least one plant recorded. Nice.", locationItem)}
-      ${reportSection("Plants with no location set", plantsNoLocation, "Every plant has a location.", plantItem)}
-      ${reportSection("Plants with no photos", plantsNoPhotos, "Every plant has at least one photo.", plantItem)}
-      ${reportSection("Unidentified plants", plantsUnidentified, "No unidentified plants remaining.", plantItem)}
-      ${reportSection("Plants flagged Watch or Recovery", plantsNeedingAttention, "No plants currently flagged for health concerns.", plantItem)}
+      <div class="row" style="margin-top:26px;margin-bottom:10px;">
+        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Records needing attention</h3>
+        <span class="attn-count ${attentionTotal ? "has" : "clear"}">${attentionTotal}</span>
+      </div>
+      <div class="tag-card" style="padding:0;overflow:hidden;">
+        ${sections.map((x) => `
+          <button class="attn-row" onclick="state.reportView='${x.key}';render()">
+            <div style="flex:1;min-width:0;">
+              <div class="attn-title">${x.title}</div>
+              <div class="attn-sub">${x.sub}</div>
+            </div>
+            <span class="attn-count ${x.items.length ? "has" : "clear"}">${x.items.length}</span>
+            <span class="action-chevron">${icon("chevronRight")}</span>
+          </button>`).join("")}
+        ${duplicateGroups.length ? `
+          <button class="attn-row" onclick="openModal('duplicatePlants')">
+            <div style="flex:1;min-width:0;">
+              <div class="attn-title">Possible duplicate plants</div>
+              <div class="attn-sub">Same name, same location</div>
+            </div>
+            <span class="attn-count has">${duplicateGroups.length}</span>
+            <span class="action-chevron">${icon("chevronRight")}</span>
+          </button>` : ""}
+      </div>
+
+      <div class="row" style="margin-top:26px;margin-bottom:10px;">
+        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photos not fully filed</h3>
+      </div>
+      <div class="tag-card" style="padding:0;overflow:hidden;">
+        ${photoBuckets.map((b) => `
+          <button class="attn-row" onclick="showGalleryNeeds('${b.needs}')">
+            <div style="flex:1;min-width:0;">
+              <div class="attn-title">${b.title}</div>
+              <div class="attn-sub">${b.sub}</div>
+            </div>
+            <span class="attn-count ${b.count ? "has" : "clear"}">${b.count}</span>
+            <span class="action-chevron">${icon("chevronRight")}</span>
+          </button>`).join("")}
+      </div>
     </div>
   </div>`;
+}
+
+function reportLocationItem(l) {
+  const cover = locationCoverPhoto(l);
+  return `
+    <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openLocation('${l.id}')">
+      <div class="plant-list-thumb" style="width:60px;height:60px;">
+        ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div class="tag-id">${locationTypeLabel(l.type)}</div>
+        <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;">${escapeHtml(l.name)}</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);">${escapeHtml(locationPath(l))}</div>
+      </div>
+    </div>`;
+}
+
+function reportPlantItem(pl) {
+  const cover = plantCoverPhoto(pl);
+  const loc = pl.location_id ? locationById(pl.location_id) : null;
+  return `
+    <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openPlant('${pl.id}')">
+      <div class="plant-list-thumb" style="width:60px;height:60px;">
+        ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div class="tag-id">${pl.accession_number}</div>
+        <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;font-style:${pl.botanical_name ? "italic" : "normal"};">${escapeHtml(plantDisplayName(pl))}</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);">${loc ? escapeHtml(locationPath(loc)) : "No location"}</div>
+      </div>
+    </div>`;
 }
 
 function filteredGalleryPhotos() {
@@ -2349,6 +2425,12 @@ function filteredGalleryPhotos() {
   }
   return state.photos.filter((p) => {
     if (albumIds && !albumIds.has(p.id)) return false;
+    // RPT-2 buckets. A photo with neither a plant nor a location and no
+    // historical marker is in the Inbox; marked historical it is in none of the
+    // Inbox, a location or a plant, so it was previously unreachable anywhere.
+    if (f.needs === "no_plant" && p.plant_id) return false;
+    if (f.needs === "no_location" && p.location_id) return false;
+    if (f.needs === "neither" && (p.plant_id || p.location_id)) return false;
     if (highlightIds && !highlightIds.has(p.id)) return false;
     if (f.photoType === "historical" && p.photo_type !== "historical") return false;
     if (f.photoType && f.photoType !== "historical" && p.photo_type !== f.photoType) return false;
@@ -2442,7 +2524,8 @@ function archivePeriod(l) {
 function screenGallery() {
   const f = state.galleryFilters;
   const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
-  const searching = !!(f.search || activeFilterCount || f.album || f.highlight);
+  const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs);
+  const NEEDS_LABELS = { no_plant: "No plant attached", no_location: "No location", neither: "No plant and no location" };
   const matches = filteredGalleryPhotos();
 
   const tile = (p) => `
@@ -2495,7 +2578,7 @@ function screenGallery() {
       ${searching ? `
         ${/* A search or a chosen row collapses to one flat result set. */""}
         <div class="row" style="margin-bottom:12px;">
-          <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : "Results"}</span>
+          <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : "Results"}</span>
           <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
         </div>
         ${matches.length === 0
@@ -3160,6 +3243,32 @@ function modalContent() {
             </button>`).join("")}
         </div>`}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "duplicatePlants") {
+    const groups = findDuplicatePlantGroups();
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Possible duplicate plants</h3>
+      <p class="subtle" style="margin:0 0 14px;">Same name in the same location — likely one plant entered twice. "Keep this" merges the others into it; photos, tags and history move across.</p>
+      ${groups.length === 0 ? `<p class="subtle">No duplicates found.</p>` : `
+        <div class="stack">
+          ${groups.map((group) => `
+            <div class="surface" style="padding:14px;">
+              ${group.map((pl) => `
+                <div class="row" style="margin-top:6px;">
+                  <div style="cursor:pointer;min-width:0;" onclick="closeModal();openPlant('${pl.id}')">
+                    <span class="mono" style="font-size:11px;opacity:0.7;">${pl.accession_number}</span>
+                    <span style="font-size:13.5px;margin-left:6px;">${escapeHtml(plantDisplayName(pl))}</span>
+                  </div>
+                  <div style="display:flex;gap:6px;flex-shrink:0;">
+                    ${group.filter((other) => other.id !== pl.id).map((other) => `
+                      <button class="btn btn-secondary btn-sm" onclick="mergePlants('${pl.id}','${other.id}')" title="Keep ${pl.accession_number}, merge ${other.accession_number} into it">Keep this</button>`).join("")}
+                  </div>
+                </div>`).join("")}
+            </div>`).join("")}
+        </div>`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
   }
 
   if (type === "editList") {

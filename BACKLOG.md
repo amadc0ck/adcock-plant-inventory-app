@@ -227,6 +227,18 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.79.1
+
+**Every "select all" was silently dead.** Schema: none.
+
+They rendered `onclick="selectAllInboxPhotos(["a","b"])"` — and the first double quote from `JSON.stringify` **closes the attribute**. The browser read `selectAllInboxPhotos([`, threw a syntax error, and the click did nothing. No console noise a user would see, no visible failure: the button just didn't work.
+
+Four call sites, all broken from the day each shipped — Inbox (v1.75.1), Location page (v1.72.0), Gallery (v1.72.0) and the assign-photos modal. The duplicate-photos "Select all extras" was never affected because it takes no arguments, which is why one of them appeared to work.
+
+Fixed by not putting data in the attribute at all: `selectAllGalleryPhotos('gallery')` takes a **scope name** and `visiblePhotoIds()` resolves the list at click time. That also removes a second, quieter problem — the array was baked in at render, so it could go stale against a filter changed since.
+
+The assign-photos modal takes a comma-joined string, which survives a double-quoted attribute.
+
 ### v1.79.0
 
 **Reports is retired. The work moved to where the work happens.** Schema: none.

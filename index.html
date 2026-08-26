@@ -512,7 +512,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.79.0";
+const APP_VERSION = "1.79.1";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2095,7 +2095,23 @@ function toggleInboxSelectMode() {
 // "matching" is everything behind the current filter, which at 2019 is 1,243
 // photos she cannot see. Conflating them would let one tap select a thousand
 // records without saying so.
-function selectAllInboxPhotos(ids) {
+// Scope name, not an array. Every one of these was rendering
+// onclick="fn(["a","b"])" — and the first double quote closed the attribute, so
+// the browser saw `fn([` and threw. Silently dead since the day each shipped.
+// The list is resolved here instead, which also cannot go stale between render
+// and click.
+function visiblePhotoIds(scope) {
+  if (scope === "inbox") {
+    const limit = state.inboxLimit || state.inboxPageSize || 20;
+    return inboxPhotos().slice(0, limit).map((p) => p.id);
+  }
+  if (scope === "gallery") return filteredGalleryPhotos().map((p) => p.id);
+  if (scope === "location") return photosAtLocation(state.currentLocationId).map((p) => p.id);
+  return [];
+}
+
+function selectAllInboxPhotos() {
+  const ids = visiblePhotoIds("inbox");
   const all = ids.length && ids.every((id) => state.inboxSelected.has(id));
   state.inboxSelected = all ? new Set() : new Set(ids);
   render();
@@ -2279,8 +2295,9 @@ function toggleGalleryPhotoSelected(id) {
   else state.gallerySelected.add(id);
   render();
 }
-function selectAllGalleryPhotos(ids) {
-  const all = ids.every((id) => state.gallerySelected.has(id));
+function selectAllGalleryPhotos(scope) {
+  const ids = visiblePhotoIds(scope);
+  const all = ids.length && ids.every((id) => state.gallerySelected.has(id));
   state.gallerySelected = all ? new Set() : new Set(ids);
   render();
 }
@@ -2542,7 +2559,7 @@ function screenInbox() {
         </div>
         ${selectMode ? `
           <div class="row" style="margin-bottom:10px;">
-            <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllInboxPhotos(${JSON.stringify(visible.map((p) => p.id))})">
+            <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllInboxPhotos()">
               ${visible.length && visible.every((p) => state.inboxSelected.has(p.id)) ? "Clear selection" : `Select all ${visible.length} shown`}
             </button>
             ${unassigned.length > visible.length ? `
@@ -3417,7 +3434,7 @@ function screenLocationDetail() {
            than reimplemented — one definition of what "selected" means. */""}
       ${state.gallerySelectMode && photos.length ? `
         <div class="row" style="margin-bottom:12px;">
-          <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllGalleryPhotos(${JSON.stringify(photos.map((p) => p.id))})">
+          <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllGalleryPhotos('location')">
             ${photos.every((p) => state.gallerySelected.has(p.id)) ? "Clear all" : `Select all ${photos.length}`}
           </button>
           <div style="display:flex;gap:8px;">
@@ -4054,7 +4071,7 @@ function screenGallery() {
                which is exactly when you need it. */""}
           ${state.gallerySelectMode ? `
             <div class="row" style="margin-bottom:12px;">
-              <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllGalleryPhotos(${JSON.stringify(matches.map((p) => p.id))})">
+              <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllGalleryPhotos('gallery')">
                 ${matches.length && matches.every((p) => state.gallerySelected.has(p.id)) ? "Clear all" : `Select all ${matches.length}`}
               </button>
               <span class="subtle" style="font-size:12px;">${state.gallerySelected.size} selected</span>
@@ -5196,7 +5213,7 @@ function modalContent() {
       <p class="subtle" style="margin:0 0 12px;">Pick the photos, then the plant they show.</p>
 
       <div class="row" style="margin-bottom:10px;">
-        <button class="btn btn-secondary btn-sm" onclick="toggleAssignAll(${JSON.stringify(orphans.map((p) => p.id))})">
+        <button class="btn btn-secondary btn-sm" onclick="toggleAssignAll('${orphans.map((p) => p.id).join(",")}')">
           ${orphans.length && orphans.every((p) => sel.has(p.id)) ? "Clear all" : `Select all ${orphans.length}`}
         </button>
         <span class="subtle">${sel.size} selected</span>
@@ -6174,7 +6191,10 @@ function toggleAssignPhoto(id) {
   else state.assignSelected.add(id);
   render();
 }
-function toggleAssignAll(ids) {
+function toggleAssignAll(idList) {
+  // Comma-joined uuids: safe inside a double-quoted attribute, unlike the JSON
+  // array this used to render.
+  const ids = String(idList || "").split(",").filter(Boolean);
   const all = ids.length && ids.every((id) => state.assignSelected && state.assignSelected.has(id));
   state.assignSelected = all ? new Set() : new Set(ids);
   render();

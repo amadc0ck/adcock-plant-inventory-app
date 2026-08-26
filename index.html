@@ -391,7 +391,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.48.0";
+const APP_VERSION = "1.49.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -426,6 +426,9 @@ const state = {
   backfill: null,
   reportView: null,
   photosImport: null,
+  attachPhotoLimit: 24,
+  backTo: null,
+  galleryView: "grid",
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
@@ -1348,7 +1351,7 @@ function icon(name) {
 /* ============================================================
    ROUTER / NAV
    ============================================================ */
-function goTab(tab) { state.tab = tab; state.modal = null; state.reportView = null; render(); }
+function goTab(tab) { state.tab = tab; state.modal = null; state.reportView = null; state.backTo = null; render(); }
 function toggleInboxSelectMode() {
   state.inboxSelectMode = !state.inboxSelectMode;
   state.inboxSelected = new Set();
@@ -1399,7 +1402,12 @@ async function bulkAttachToLocation(locationId) {
   state.inboxSelected = new Set();
   await loadAll();
 }
-function openModal(type, data = {}) { state.modal = { type, data }; render(); }
+function openModal(type, data = {}) {
+  // Paging resets per open, so the picker never starts mid-list.
+  if (type === "attachInboxPhoto") state.attachPhotoLimit = 24;
+  state.modal = { type, data };
+  render();
+}
 function closeModal() { state.modal = null; render(); }
 function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
 function showGalleryAlbum(locationId) {
@@ -1859,7 +1867,7 @@ function screenPlantDetail() {
   return `
   <div class="screen">
     <div class="container">
-      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${taxon ? `openTaxon('${taxon.id}')` : "goTab('plants')"}">${icon("back")} ${taxon ? escapeHtml(taxonDisplayName(taxon)) : "Plants"}</button>
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${state.backTo ? "goBackTo()" : taxon ? `openTaxon('${taxon.id}')` : "goTab('plants')"}">${icon("back")} ${state.backTo ? escapeHtml(state.backTo.label) : taxon ? escapeHtml(taxonDisplayName(taxon)) : "Plants"}</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
@@ -2126,7 +2134,7 @@ function screenLocationDetail() {
   return `
   <div class="screen">
     <div class="container">
-      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${l.parent_location_id ? `openLocation('${l.parent_location_id}')` : "goTab('locations')"}">${icon("back")} ${l.parent_location_id ? escapeHtml(locationById(l.parent_location_id).name) : "Locations"}</button>
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${state.backTo ? "goBackTo()" : l.parent_location_id ? `openLocation('${l.parent_location_id}')` : "goTab('locations')"}">${icon("back")} ${state.backTo ? escapeHtml(state.backTo.label) : l.parent_location_id ? escapeHtml(locationById(l.parent_location_id).name) : "Locations"}</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
@@ -2197,7 +2205,10 @@ function screenLocationDetail() {
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Location photos</h3>
-        <span class="subtle">${photos.length} total</span>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span class="subtle">${photos.length} total</span>
+          <button class="btn btn-secondary btn-sm" onclick="openModal('upload',{locationId:'${l.id}'})">+ Add photos</button>
+        </div>
       </div>
 
       ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : `
@@ -2381,10 +2392,26 @@ function screenReports() {
   </div>`;
 }
 
+// Opening a record from a report navigates away from Reports entirely, and the
+// tab resets to the top on return. Remember the origin so the detail screen can
+// offer a way back to the exact list.
+function openFromReport(kind, id, reportKey) {
+  state.backTo = { tab: "reports", reportView: reportKey || null, label: "Reports" };
+  if (kind === "plant") openPlant(id); else openLocation(id);
+}
+function goBackTo() {
+  const b = state.backTo;
+  state.backTo = null;
+  if (!b) { goTab("plants"); return; }
+  state.tab = b.tab;
+  state.reportView = b.reportView || null;
+  render();
+}
+
 function reportLocationItem(l) {
   const cover = locationCoverPhoto(l);
   return `
-    <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openLocation('${l.id}')">
+    <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openFromReport('location','${l.id}','${state.reportView || ""}')">
       <div class="plant-list-thumb" style="width:60px;height:60px;">
         ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
       </div>
@@ -2400,7 +2427,7 @@ function reportPlantItem(pl) {
   const cover = plantCoverPhoto(pl);
   const loc = pl.location_id ? locationById(pl.location_id) : null;
   return `
-    <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openPlant('${pl.id}')">
+    <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openFromReport('plant','${pl.id}','${state.reportView || ""}')">
       <div class="plant-list-thumb" style="width:60px;height:60px;">
         ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
       </div>
@@ -2544,6 +2571,26 @@ function screenGallery() {
       <div class="gal-scroll">${items.join("")}</div>
     </div>`;
 
+  // Compact rows fit roughly five times more on screen, which is the difference
+  // between browsing and hunting once a filter returns hundreds.
+  const listRows = (photos) => `
+    <div class="stack">
+      ${photos.map((p) => {
+        const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
+        const locs = allLocationsForPhoto(p);
+        return `
+        <div class="tag-card plant-list-card" style="padding:8px 12px;" onclick="openGalleryLightbox('${p.id}')">
+          <div class="plant-list-thumb" style="width:52px;height:52px;">${photoImg(p.drive_file_id)}</div>
+          <div style="flex:1;min-width:0;">
+            <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type && p.photo_type !== "general" ? " · " + escapeHtml(p.photo_type) : ""}</div>
+            ${plant ? `<div style="font-size:13px;font-style:italic;margin-top:1px;">${escapeHtml(plantDisplayName(plant))}</div>` : ""}
+            ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}</div>` : `<div class="value-blank" style="font-size:11px;margin-top:1px;">No location</div>`}
+          </div>
+          <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;flex-shrink:0;" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+        </div>`;
+      }).join("")}
+    </div>`;
+
   const grid = (photos) => `
     <div class="card-grid">
       ${photos.map((p) => {
@@ -2553,7 +2600,10 @@ function screenGallery() {
         <div class="tag-card" style="padding:0;overflow:hidden;cursor:pointer;" onclick="openGalleryLightbox('${p.id}')">
           <div class="card-media ratio-1x1">${photoImg(p.drive_file_id)}</div>
           <div style="padding:10px 12px;">
-            <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type === "historical" ? " · Archive" : ""}</div>
+            <div class="row">
+              <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type === "historical" ? " · Archive" : ""}</div>
+              <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+            </div>
             ${plant ? `<div style="font-size:12.5px;font-style:italic;margin-top:2px;">${escapeHtml(plantDisplayName(plant))}</div>` : ""}
             ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}${locs.length > 1 ? ` +${locs.length - 1}` : ""}</div>` : ""}
           </div>
@@ -2573,7 +2623,12 @@ function screenGallery() {
         <button class="btn btn-secondary btn-sm" onclick="openModal('galleryFilters')">
           Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
         </button>
-        ${searching ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="clearGalleryView()">Clear</button>` : ""}
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${searching ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="clearGalleryView()">Clear</button>` : ""}
+          <button class="btn btn-secondary btn-sm icon-btn" onclick="state.galleryView = state.galleryView === 'list' ? 'grid' : 'list';render()" title="Switch between large photos and compact rows">
+            ${state.galleryView === "list" ? icon("photo") + " Large" : icon("clipboard") + " Compact"}
+          </button>
+        </div>
       </div>
 
       ${searching ? `
@@ -2584,7 +2639,7 @@ function screenGallery() {
         </div>
         ${matches.length === 0
           ? `<div class="empty"><div class="display">No photos match</div><div>Try a different search or filter.</div></div>`
-          : grid(matches)}`
+          : state.galleryView === "list" ? listRows(matches) : grid(matches)}`
       : `
         ${scroller("Recently Added", galleryRecentlyAdded(20).map(tile))}
 
@@ -3483,7 +3538,9 @@ function modalContent() {
     const available = state.photos
       .filter((p) => !p.plant_id)
       .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
-    const CAP = 24;
+    // Was a hard cap of 24. Each tile is a Drive fetch, so it still pages
+    // rather than loading everything, but the rest is now reachable.
+    const CAP = state.attachPhotoLimit || 24;
     const shown = available.slice(0, CAP);
     return `
       <div class="modal-handle"></div>
@@ -3504,7 +3561,8 @@ function modalContent() {
             </button>`;
           }).join("")}
         </div>
-        ${available.length > CAP ? `<p class="subtle" style="margin-top:10px;">Showing the ${CAP} newest of ${available.length} unassigned photos.</p>` : ""}`}
+        ${available.length > CAP ? `
+          <button class="btn btn-secondary btn-block" style="margin-top:12px;" onclick="state.attachPhotoLimit=${CAP + 48};render()">Show more — ${CAP} of ${available.length}</button>` : available.length > 24 ? `<p class="subtle" style="margin-top:10px;">All ${available.length} shown.</p>` : ""}`}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
   }
 
@@ -3667,6 +3725,45 @@ function modalContent() {
       <div class="divider"></div>
       <button class="btn btn-secondary btn-block" onclick="openModal('photosPicker',${loc ? `{locationId:'${loc.id}'}` : "{}"})">${icon("photo")} Import from Google Photos</button>
       <div class="field-help">Pick from your Google Photos library. Capture dates come across automatically.</div>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "editPhoto") {
+    const ph = state.photos.find((x) => x.id === data.photoId);
+    if (!ph) return `<p>Not found.</p>`;
+    const plant = ph.plant_id ? state.plants.find((x) => x.id === ph.plant_id) : null;
+    // photo_type was effectively write-once: set at upload or by marking a
+    // photo historical, and never editable afterwards. Marking one historical
+    // also removes it from the Inbox, so a mistake here used to be permanent.
+    const TYPES = { general: "General", identification: "Identification", flower: "Flower", detail: "Detail", condition: "Condition", historical: "Historical / archive" };
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Edit photo</h3>
+      <p class="mono subtle" style="margin:0 0 12px;">${fmtDate(photoDate(ph))}</p>
+      <div class="card-media ratio-4x3" style="border-radius:8px;margin-bottom:14px;">${photoImg(ph.drive_file_id)}</div>
+      <form id="edit-photo-form">
+        <label>Type</label>
+        <select id="eph-type">
+          ${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${(ph.photo_type || "general") === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <div class="field-help">Historical marks a photo as collection history — it leaves the Inbox and needs no plant.</div>
+
+        <label>Location</label>
+        <select id="eph-location">${locationSelectOptions(ph.location_id || null)}</select>
+
+        <label>Plant</label>
+        <select id="eph-plant">
+          <option value="">— Not attached to a plant —</option>
+          ${state.plants.slice().sort((a, b) => (a.accession_number || "").localeCompare(b.accession_number || ""))
+            .map((pl) => `<option value="${pl.id}" ${ph.plant_id === pl.id ? "selected" : ""}>${pl.accession_number} — ${escapeHtml(plantDisplayName(pl))}</option>`).join("")}
+        </select>
+        ${plant ? `<div class="field-help">Clearing this returns the photo to the Inbox, unless it still has a location.</div>` : ""}
+
+        <label>Notes</label>
+        <textarea id="eph-notes" rows="2">${escapeHtml(ph.notes || "")}</textarea>
+
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Save</button>
+      </form>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
@@ -4737,6 +4834,24 @@ async function ensureTaxonForName(botanicalName, commonName) {
         closeModal();
         await loadAll();
         maybeResumeLightbox();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  const editPhotoForm = document.getElementById("edit-photo-form");
+  if (editPhotoForm) {
+    editPhotoForm.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await restPatch("photos", `id=eq.${state.modal.data.photoId}`, {
+          photo_type: document.getElementById("eph-type").value || "general",
+          location_id: document.getElementById("eph-location").value || null,
+          plant_id: document.getElementById("eph-plant").value || null,
+          notes: document.getElementById("eph-notes").value || null,
+        });
+        toast("Photo updated");
+        closeModal();
+        await loadAll();
       } catch (e) { toast(e.message, true); }
     };
   }

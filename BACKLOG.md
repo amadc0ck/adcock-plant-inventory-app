@@ -157,10 +157,6 @@ From a location's photos, without navigating away:
 
 Not tagging other *locations* — a location is singular, holding multiple specimens, so cross-tagging containers has no meaning. `photo_locations` stays unused for this.
 
-### LOCP-2 — Add location photos from existing sources
-**Status:** ready · **Effort:** low–medium · **Schema:** none · **Touches:** `screenLocationDetail`
-
-Add photos to a location from an identified plant's photos, from unattached location photos, or from the Inbox — mirroring what PHOTO-2 does for specimens.
 
 ### LOCP-3 — Create a specimen from the Location page
 **Status:** ready · **Effort:** low · **Depends on:** SPECIES-1 · **Touches:** `screenLocationDetail`
@@ -374,6 +370,16 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 ---
 
 ## Completed
+
+### v1.49.0
+
+**Five fixes from Amanda's first pass through the new screens.** Schema: none.
+
+- **"Add photos" no longer stops at 24.** The cap was a hedge against dozens of simultaneous Drive fetches; it now pages 48 at a time and resets per open, so the rest of the Inbox is reachable without loading it all at once.
+- **Back to Reports from a drill-in.** Opening a record from a report navigated away with no route back — the tab reset to the top. `state.backTo` remembers the exact list; the detail screen's own back button honours it, and pressing a nav tab abandons the trail.
+- **Gallery view toggle** — large cards or compact rows with thumbnails. Roughly five times more photos on screen, which matters once a filter returns hundreds.
+- **Photos are editable at all now (LOCP-partial).** `photo_type` was effectively write-once: set at upload, and marking one historical also removes it from the Inbox, so a mistake was permanent and invisible. The new `editPhoto` modal covers type, location, plant and notes, reachable from either Gallery view.
+- **Add photos from a Location page (LOCP-2).** Straight to that location — including Google Photos import, which files everything picked to it.
 
 ### v1.48.0
 

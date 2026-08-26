@@ -134,6 +134,15 @@ Proposed behaviour, mirroring `deletePlant()`:
   - **Delete**: the row should never have existed — a duplicate, an accident, or something created with an intention that changed. There is no history worth keeping, and leaving it archived just clutters the list forever.
   Offer both. Default the button to Archive when the location has any history or attachments, and to Delete only when it is genuinely empty.
 
+### TAXP-1 — Photos on the species page
+**Status:** ready · **Effort:** medium · **Depends on:** SPECIES-1 · **Touches:** `screenTaxonDetail`
+
+The species page shows only a cover photo. Every photo of every specimen of that plant is invisible there, so managing them means guessing which specimen holds which and visiting each in turn.
+
+Show all photos across the taxon's specimens, each labelled with the specimen and location it belongs to, with **Move** available inline. That makes "these three belong to the Bucket 07 one" a single screen rather than a hunt.
+
+Overlaps GAL-1: once favourites exist, the *cover* gallery is the favourited subset, while this is the full working view. Both are wanted — one for looking, one for sorting.
+
 ### LOCP-1 — Act on photos from the Location page
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `screenLocationDetail`
 
@@ -390,6 +399,18 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.42.0
+
+**Move a photo to another specimen.** Schema: none · Touched `screenPlantDetail` timeline, new `movePhoto` modal and `movePhotoToSpecimen()`.
+
+Reassigning a photo took four steps — detach, navigate away, find it again, re-attach. That is the *common* case right after SPECIES-2, since a plant record that stood for several physical plants leaves all its photos on one specimen.
+
+- **Move** on any owned timeline photo. Other specimens of the same species are listed first — a short, obviously-correct list — with every other plant underneath for a misidentified photo.
+- **The photo's own location is highlighted when it matches a candidate**, since that is the strongest available clue about which specimen it shows. Amanda's 0013 had photos across Bucket 07, In Ground and no-location while the specimen sat in Bucket 39.
+- A photo with no location inherits the target's; one that has a location keeps it. Same snapshot rule as attaching.
+
+Filed **TAXP-1** alongside: the species page still shows no photo list, which is where Amanda went looking first.
 
 ### v1.41.1 / v1.41.2
 

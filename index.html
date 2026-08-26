@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.41.3";
+const APP_VERSION = "1.42.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1870,7 +1870,8 @@ function screenPlantDetail() {
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
                   ${!isPrimary ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">${icon("photoStar")} Set as profile</button>` : ""}
                   ${isDirectAttachment
-                    ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="detachPhotoFromPlant('${p.id}')">${icon("link")} Detach</button>
+                    ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('movePhoto',{photoId:'${p.id}',fromPlantId:'${pl.id}'})">${icon("seedling")} Move</button>
+                       <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="detachPhotoFromPlant('${p.id}')">${icon("link")} Detach</button>
                        <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>`
                     : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="untagPlantFromPhoto('${p.id}','${pl.id}')">${icon("trash")} Remove tag</button>`}
                 </div>
@@ -2927,6 +2928,51 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "movePhoto") {
+    const from = state.plants.find((p) => p.id === data.fromPlantId);
+    const photo = state.photos.find((p) => p.id === data.photoId);
+    if (!from || !photo) return `<p>Not found.</p>`;
+    // Siblings first: photos almost always move between specimens of the same
+    // species, and that list is short and obviously correct. Everything else
+    // is available underneath for the rarer case of a misidentified photo.
+    const siblings = from.taxa_id
+      ? specimensOfTaxon(from.taxa_id).filter((p) => p.id !== from.id)
+      : [];
+    const others = state.plants
+      .filter((p) => p.id !== from.id && !siblings.some((s2) => s2.id === p.id))
+      .sort((a, b) => (a.accession_number || "").localeCompare(b.accession_number || ""));
+    const photoLoc = photo.location_id ? locationById(photo.location_id) : null;
+    const row = (sp) => {
+      const loc = sp.location_id ? locationById(sp.location_id) : null;
+      // The photo's own location is the strongest clue about which specimen it
+      // shows, so call the match out rather than making her cross-reference.
+      const match = loc && photo.location_id === sp.location_id;
+      return `
+        <button onclick="movePhotoToSpecimen('${photo.id}','${sp.id}')" class="tag-card plant-list-card" style="width:100%;padding:10px 12px;border:none;text-align:left;cursor:pointer;${match ? "outline:2px solid var(--moss);" : ""}">
+          <div class="plant-list-thumb" style="width:48px;height:48px;">
+            ${plantCoverPhoto(sp) ? photoImg(plantCoverPhoto(sp).drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div class="mono tag-id">${sp.accession_number}</div>
+            <div style="font-size:13px;color:var(--ink);margin-top:2px;">${loc ? escapeHtml(locationPath(loc)) : `<span class="value-blank">No location</span>`}</div>
+            ${match ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:2px;">Same location as this photo</div>` : ""}
+          </div>
+        </button>`;
+    };
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Move photo to another specimen</h3>
+      <p class="subtle" style="margin:0 0 14px;">Currently on ${from.accession_number}${photoLoc ? ` · photo taken at ${escapeHtml(photoLoc.name)}` : " · photo has no location"}.</p>
+      ${siblings.length ? `
+        <div class="section-label" style="margin-top:0;">Other specimens of this species</div>
+        <div class="stack">${siblings.map(row).join("")}</div>` : `
+        <p class="subtle">This is the only specimen of its species.</p>`}
+      ${others.length ? `
+        <div class="section-label">Every other plant</div>
+        <div class="stack" style="max-height:34vh;overflow-y:auto;">${others.map(row).join("")}</div>` : ""}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "attachInboxPhoto") {
     const pl = state.plants.find((p) => p.id === data.plantId);
     const specimenLoc = pl && pl.location_id ? locationById(pl.location_id) : null;
@@ -3454,6 +3500,25 @@ async function setTaxonPhoto(taxonId, photoId) {
   try {
     await restPatch("taxa", `id=eq.${taxonId}`, { primary_photo_id: photoId, updated_at: new Date().toISOString() });
     toast("Species photo set");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// Detach-and-attach in one step. The four-step version — detach, navigate,
+// find it again, re-attach — is the common case when a plant record that stood
+// for several physical plants gets split into real specimens.
+async function movePhotoToSpecimen(photoId, toPlantId) {
+  const photo = state.photos.find((p) => p.id === photoId);
+  const target = state.plants.find((p) => p.id === toPlantId);
+  if (!photo || !target) return;
+  try {
+    const body = { plant_id: toPlantId };
+    // Same snapshot rule as attaching: fill a missing location from the target,
+    // never overwrite one the photo already carries.
+    if (!photo.location_id && target.location_id) body.location_id = target.location_id;
+    await restPatch("photos", `id=eq.${photoId}`, body);
+    toast(`Moved to ${target.accession_number}`);
     closeModal();
     await loadAll();
   } catch (e) { toast(e.message, true); }

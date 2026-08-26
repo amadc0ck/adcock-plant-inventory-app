@@ -47,7 +47,11 @@ Physical containers and spaces. Self-referencing hierarchy (Front Yard → Wall 
 
 - `id` uuid PK
 - `name` text
-- `type` text, nullable — area / row / slot / container / indoor / hospital / work_area / other. Not DB-enforced; standardized through the app's dropdown.
+- `type` text, nullable — **area / row / container / hospital / work_area / other** (v1.43.0). Not DB-enforced; standardized through the app's dropdown. **Areas nest freely** — Front Yard › The Wall › Below Wall are all areas — and every area is a Garden Album. `slot` folded into `container`; they were the same thing. `pot` / `bed` / `greenhouse` / `hanging` / `indoor` went unused, since a container's name carries that detail ("Bucket 39", "Black Pedestal Pot 1").
+- `holds_plants` boolean, nullable — whether the Location page **offers** plant affordances. Seeded from real data rather than type: containers, the hospital and the work area yes, and among areas only In Ground, which genuinely holds plants directly. **It never hides plants that exist** — a wrongly flagged location would otherwise make its own plants invisible on their own page. Existing plants always render, with a hint that they probably want a container.
+- `gallery_row` text, default `none` — `albums` / `archives` / `none`. Areas default to `albums`; the hospital and work area stay `none`. Somewhere the collection used to live (an old flat or office) is a **location** with `gallery_row = 'archives'`, which is why GAL-4 needs no schema of its own.
+- `archived` boolean, default false — hide from pickers; the repotted container of LOC-4. **Deliberately separate from `gallery_row`**, so a retired bucket never appears as a former home of the collection.
+- `active_from` / `active_to` date, `locality` text, all nullable — used only by archive locations, for "2018–2020 · SF, CA".
 - `parent_location_id` uuid FK → locations.id — enables the tree
 - `sort_order` int, nullable — physical-order display, not alphabetical
 - `code` text, nullable — e.g. `W-T-14`

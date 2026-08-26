@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.42.0";
+const APP_VERSION = "1.43.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -980,16 +980,33 @@ function locationOptionList() {
   return out;
 }
 
+// LOC-6. Areas nest freely — Front Yard > The Wall > Below Wall are all areas,
+// and every one is a Garden Album. `slot` folded into `container` (they were the
+// same thing); pot/bed/greenhouse/hanging/indoor went unused, since a container's
+// name carries that detail instead ("Bucket 39", "Black Pedestal Pot 1").
+const LOCATION_TYPE_LABELS = { area: "Area", row: "Row", container: "Container", hospital: "Hospital", work_area: "Work Area", other: "Other" };
+const GALLERY_ROW_LABELS = { none: "Not shown in the Gallery", albums: "Garden Albums", archives: "From the Archives" };
+
+// Whether the Location page offers plant affordances. It deliberately never
+// hides plants that exist — a wrongly flagged location would otherwise make its
+// own plants invisible. Existing plants always render; the flag governs only the
+// empty state and the add-specimen action.
+function locationHoldsPlants(l) {
+  if (!l) return false;
+  if (l.holds_plants === true) return true;
+  if (l.holds_plants === false) return false;
+  return ["container", "hospital", "work_area"].includes(l.type);
+}
+
 function locationTypeLabel(t) {
-  const map = { area: "Area", row: "Row", slot: "Slot", container: "Container", indoor: "Indoor", hospital: "Hospital", work_area: "Work Area", other: "Other", pot: "Pot", bed: "Bed", greenhouse: "Greenhouse", hanging: "Hanging" };
-  return map[t] || t || "Location";
+  return LOCATION_TYPE_LABELS[t] || t || "Location";
 }
 
 // Phrasing for the "N inside" indicator. It describes the children's type, not
 // the parent's — "6 rows inside" under Wall Collection, never "6 areas inside".
 // Mixed child types, or types with no natural plural (Indoor, Hanging, Other),
 // fall back to the generic word.
-const CHILD_TYPE_PLURALS = { area: ["area", "areas"], row: ["row", "rows"], slot: ["slot", "slots"], container: ["container", "containers"], pot: ["pot", "pots"], bed: ["bed", "beds"], greenhouse: ["greenhouse", "greenhouses"], work_area: ["work area", "work areas"], hospital: ["hospital", "hospitals"] };
+const CHILD_TYPE_PLURALS = { area: ["area", "areas"], row: ["row", "rows"], container: ["container", "containers"], hospital: ["hospital", "hospitals"], work_area: ["work area", "work areas"] };
 // ============================================================
 // TAXA (SPECIES-1). A taxon is the kind of plant — whatever the most specific
 // level known: a species, a cultivar, or a bare genus. Specimens are `plants`
@@ -2019,13 +2036,21 @@ function screenLocationDetail() {
           </div>`;
       })()}
 
-      <div class="row" style="margin-top:24px;margin-bottom:12px;">
-        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Plants here</h3>
-        <span class="subtle">${plants.length} total</span>
-      </div>
-      <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" onclick="openModal('linkPlantToLocation',{locationId:'${l.id}'})">+ Link existing plant</button>
-      ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
-        <div class="card-grid">${plants.map(plantRow).join("")}</div>`}
+      ${/* LOC-6. An area like The Wall holds no plants of its own — its photos
+           are views of the whole area — so the plants block is hidden there
+           rather than showing a permanent, correct zero. But plants that DO
+           exist always render, whatever the flag says: a mis-set flag must
+           never be able to hide a plant from its own location page. */""}
+      ${(locationHoldsPlants(l) || plants.length) ? `
+        <div class="row" style="margin-top:24px;margin-bottom:12px;">
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Plants here</h3>
+          <span class="subtle">${plants.length} total</span>
+        </div>
+        ${!locationHoldsPlants(l) && plants.length ? `
+          <p class="subtle" style="margin:-6px 0 12px;">This ${locationTypeLabel(l.type).toLowerCase()} isn't set up to hold plants directly — ${countLabel(plants.length, "specimen", "specimens")} assigned here probably belong in a container inside it.</p>` : ""}
+        <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" onclick="openModal('linkPlantToLocation',{locationId:'${l.id}'})">+ Link existing plant</button>
+        ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
+          <div class="card-grid">${plants.map(plantRow).join("")}</div>`}` : ""}
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Location photos</h3>
@@ -2670,14 +2695,7 @@ function modalContent() {
         <label>Type</label>
         <select id="nl-type">
           <option value="">— Unspecified —</option>
-          <option value="area">Area</option>
-          <option value="row">Row</option>
-          <option value="slot">Slot</option>
-          <option value="container">Container</option>
-          <option value="indoor">Indoor</option>
-          <option value="hospital">Hospital</option>
-          <option value="work_area">Work Area</option>
-          <option value="other">Other</option>
+          ${Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
         </select>
         <label>Parent location</label>
         <select id="nl-parent">${locationSelectOptions(null)}</select>
@@ -3087,9 +3105,20 @@ function modalContent() {
         <label>Type</label>
         <select id="el-type">
           <option value="">— Unspecified —</option>
-          ${["area","row","slot","container","indoor","hospital","work_area","other"].map((t) =>
-            `<option value="${t}" ${l.type === t ? "selected" : ""}>${locationTypeLabel(t)}</option>`).join("")}
+          ${Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) =>
+            `<option value="${k}" ${l.type === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
+        <div class="checkbox-row">
+          <input type="checkbox" id="el-holdsplants" ${locationHoldsPlants(l) ? "checked" : ""} />
+          <label for="el-holdsplants">Plants are assigned directly to this location</label>
+        </div>
+        <div class="field-help">On for buckets, pots and In Ground. Off for areas like The Wall, whose photos are views of the whole area. Plants already here stay visible either way.</div>
+        <label>Show in the Gallery as</label>
+        <select id="el-galleryrow">
+          ${Object.entries(GALLERY_ROW_LABELS).map(([k, v]) =>
+            `<option value="${k}" ${(l.gallery_row || "none") === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <div class="field-help">Areas become Garden Albums. Somewhere the collection used to live — an old flat or office — becomes an Archive.</div>
         <label>Parent location</label>
         <select id="el-parent">
           <option value="">— None (top-level) —</option>
@@ -4102,6 +4131,8 @@ async function ensureTaxonForName(botanicalName, commonName) {
         const body = {
           name: document.getElementById("el-name").value,
           type: document.getElementById("el-type").value || null,
+          holds_plants: document.getElementById("el-holdsplants").checked,
+          gallery_row: document.getElementById("el-galleryrow").value || "none",
           parent_location_id: document.getElementById("el-parent").value || null,
           sort_order: sortVal === "" ? null : Number(sortVal),
           code: document.getElementById("el-code").value || null,

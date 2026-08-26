@@ -367,8 +367,8 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 **Re-scope against PD-2.** `plants.plant_type` now holds cactus / agave / aloe / euphorbia / sedum / crassula / echeveria / sempervivum / aeonium, which **is** plant-level category tagging. The open question shrinks to whether GAL-2 additionally needs *photo-level* tags. If not, GAL-2 needs no junction table at all — it becomes a Gallery filter reading `plant_type`. Do not build a second source of truth for the same fact.
 
 ### GAL-3 — Garden Albums
-**Status:** ready · **Effort:** medium
-Manually curated groupings: The Wall, Potted Collection, Front Yard.
+**Status:** ready · **Effort:** low · **Depends on:** LOC-6 (done)
+**Not a curation system — an album is an area.** Every location with `gallery_row = 'albums'` is an album; its photos are everything in its subtree. The Wall, Below Wall and Front Yard fall straight out of the hierarchy. Re-scoped from medium after LOC-6.
 
 ### GAL-4 — From the Archives
 **Status:** ready · **Effort:** medium · **Schema:** archive-grouping fields
@@ -397,6 +397,17 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.43.0
+
+**LOC-6 — Location types reworked, plus gallery and plant-holding flags.** Schema: yes · Touched `locationTypeLabel`, both type dropdowns, `screenLocationDetail`, `editLocation`.
+
+- **Types cut from eleven to six**: area · row · container · hospital · work_area · other. `slot` folded into `container` — 92 rows, one `update`. Areas nest freely, and every area is a Garden Album.
+- **`holds_plants`** governs whether a Location page offers plants at all. An area like The Wall shows no plants block instead of a permanent, correct zero. **It never hides plants that exist** — Front Yard, Indoor and Wall Collection each still hold one placeholder plant, and those render with a hint rather than vanishing. A mis-set flag can cause noise, never data loss.
+- **`gallery_row`** — albums / archives / none, set per location. This is what keeps Plant Hospital out of the Gallery and puts Meraki Office in Archives.
+- Kept **`archived` separate from `gallery_row`** so a repotted bucket never surfaces as a former home of the collection. Two unrelated senses of the word.
+
+**Collapses two backlog items:** GAL-3 stops being a curation system (an album is an area) and GAL-4 loses its separate schema entirely (archives are locations). Both drop from medium to low.
 
 ### v1.42.0
 

@@ -69,11 +69,17 @@ The **kind** of plant — whatever the most specific level is known: a species, 
 - `native_range`, `hardy_to`, `light_conditions`, `water_needs`
 - `primary_photo_id` — any specimen's photo
 
-**Display name precedence is `botanical_name` first, composed parts second.** Backwards from the eventual intent, and deliberate: the structured parts are barely populated in the real data (family 3/27, genus 5/27, species 3/27), so composing would render "Aeonium" where the free text says "Aeonium arboreum 'Zwartkop'". Composition requires **both** genus and epithet, since partial parts produce a worse name than none. This flips once names are normalized into parts.
+**Display name precedence is composed parts first, `botanical_name` second** (v1.65.0, NAME-1). Reversed from v1.41.0, which preferred the free text only because the parts were barely populated (family 3/27, genus 5/27, species 3/27). NAME-1 filled all 33 taxa, so composition is now the better name and the only form that can be marked up per part. Composition needs **genus plus either an epithet or a cultivar** — genus alone loses to the free text, since a partial name is worse than none.
+
+Two shapes the composition must handle, both present in the real data:
+- **`is_hybrid` carries the `×`.** The sign exists only in the free text, so composing *Parodia* × *erubescens* from parts silently yields "Parodia erubescens" unless the flag puts it back. One record, and it would have looked fine.
+- **A cultivar of hybrid origin has no epithet.** *Echeveria* 'Purple Perle' is genus + cultivar; requiring an epithet would send it to the fallback and lose the per-part markup. Its parentage — *E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina' — had been sitting in `botanical_name`, which is where the name belongs, not the pedigree.
+
+**`taxonDisplayHtml()` / `plantDisplayHtml()` return markup**: genus and epithet italic, hybrid sign and cultivar upright — correct botanically and impossible with one free-text string. Callers must **not** wrap them in `escapeHtml()`; the parts are escaped inside. The plain-text functions stay for `<option>` labels, `title` attributes and CSV, and each call site picks one deliberately.
 
 **Cultivar is stored bare**, without quotes; the display layer adds them.
 
-**Phase 1 copied, did not move.** `plants` still carries every species column and new specimens copy them down, so nothing breaks mid-migration. Phase 3 drops them and `taxa` becomes the single source.
+**Phase 3 shipped v1.65.0.** Nothing in the app reads or writes a species column on `plants` any more — `plantDisplayName()` resolves through `taxa_id`, and the four paths that copied species data down onto the specimen are gone. The columns themselves still exist: the drop is a separate step, recorded in BACKLOG under v1.65.0 and deliberately held back so the app can be exercised against the still-present data first. A backup precedes it; there is no migration tool and it is irreversible.
 
 ### `plants`
 One row per individual accessioned specimen.

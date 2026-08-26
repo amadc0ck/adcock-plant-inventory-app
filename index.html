@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.53.2";
+const APP_VERSION = "1.54.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4102,13 +4102,13 @@ function modalContent() {
         <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Importing</h3>
         <p class="subtle" style="margin:0 0 8px;">Downloading from Google Photos and filing into your collection.</p>
         <div class="mono" style="font-size:13px;">${st.done} of ${st.total}${st.failed ? ` · ${st.failed} failed` : ""}</div>
-        ${st.skippedTotal ? `<p class="subtle" style="margin:8px 0 0;font-size:11.5px;">${st.selected} selected, ${st.total} importable — ${skippedReason(st.skipped)}.</p>` : ""}
+        ${(st.skippedTotal || st.alreadyIn) ? `<p class="subtle" style="margin:8px 0 0;font-size:11.5px;">${st.selected} selected, ${st.total} new${st.alreadyIn ? ` · ${st.alreadyIn} already imported` : ""}${st.skippedTotal ? ` · ${skippedReason(st.skipped)}` : ""}.</p>` : ""}
         <button class="btn-ghost" style="margin-top:14px;" onclick="cancelPhotosImport()">Stop</button>`;
     }
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Done</h3>
-      <p class="subtle" style="margin:0 0 14px;">${st.done} imported${st.failed ? `, ${st.failed} failed` : ""}${st.skippedTotal ? `, ${skippedReason(st.skipped)}` : ""}. They're in the Inbox${data.locationId ? " and filed to this location" : ""}.</p>
+      <p class="subtle" style="margin:0 0 14px;">${st.done} imported${st.alreadyIn ? `, ${st.alreadyIn} already in your collection` : ""}${st.failed ? `, ${st.failed} failed` : ""}${st.skippedTotal ? `, ${skippedReason(st.skipped)}` : ""}. They're in the Inbox${data.locationId ? " and filed to this location" : ""}.</p>
       <button class="btn btn-primary btn-block" onclick="cancelPhotosImport()">Close</button>`;
   }
 
@@ -4778,12 +4778,31 @@ async function importPickedPhotos(items, meta) {
     render();
     return;
   }
+  // Anything already imported is dropped here rather than re-downloaded and
+  // re-uploaded into a second copy. Picker media item ids are stable across
+  // sessions, so an id already on a photo row means this exact item is in.
+  //
+  // Only protects items imported since v1.54.0 — earlier ones were brought in
+  // before the id was recorded, and cannot be matched this way. The
+  // capture-time duplicate report still covers those.
+  const known = new Set(state.photos.map((p) => p.google_photos_id).filter(Boolean));
+  const fresh = items.filter((it) => !it.id || !known.has(it.id));
+  const alreadyIn = items.length - fresh.length;
+
+  if (!fresh.length) {
+    toast(`Nothing new — ${countLabel(alreadyIn, "photo", "photos")} already imported`);
+    state.photosImport = null;
+    render();
+    return;
+  }
+
   Object.assign(st, {
-    phase: "importing", total: items.length, done: 0, failed: 0, queue: items,
-    skipped, skippedTotal, selected: (meta && meta.selected) || items.length,
+    phase: "importing", total: fresh.length, done: 0, failed: 0, queue: fresh,
+    skipped, skippedTotal, alreadyIn,
+    selected: (meta && meta.selected) || items.length,
   });
   render();
-  await runPhotosImportQueue(items);
+  await runPhotosImportQueue(fresh);
 }
 
 async function runPhotosImportQueue(items) {
@@ -4797,13 +4816,17 @@ async function runPhotosImportQueue(items) {
   for (const item of items) {
     if (st.cancel) break;
     try {
-      await photosPickerCall("import", {
+      const res = await photosPickerCall("import", {
         baseUrl: item.baseUrl,
         filename: item.filename,
         createTime: item.createTime,
+        mediaItemId: item.id || null,
         locationId: st.locationId || null,
       });
-      st.done++;
+      // The unique index caught one the client-side check missed — two runs
+      // overlapping, say. Counted as skipped rather than imported or failed.
+      if (res && res.duplicate) st.alreadyIn = (st.alreadyIn || 0) + 1;
+      else st.done++;
     } catch (e) {
       st.failed++;
       if (e.expired) {

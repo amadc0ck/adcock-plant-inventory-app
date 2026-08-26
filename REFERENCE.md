@@ -120,6 +120,7 @@ One row per individual accessioned specimen.
 - `is_primary` boolean — **legacy, effectively unused.** Superseded by `plants.primary_photo_id` / `locations.primary_photo_id`
 - `photo_type` text, default `general` — general / identification / flower / detail / condition / **historical** (§10)
 - `notes` text, nullable — editable directly from the Inbox before assigning
+- `google_photos_id` text, nullable, unique where set (v1.54.0) — the Picker media item id for photos imported from Google Photos. Stable across picking sessions, so it is what lets a later import skip items already brought in instead of creating second copies. **Only set from v1.54.0 onward**; anything imported before that has null and cannot be matched this way — the capture-time duplicate report covers those.
 
 A photo with **both** `plant_id` and `location_id` null is in the Inbox. It leaves the Inbox once either is set, or once `photo_type = 'historical'`.
 

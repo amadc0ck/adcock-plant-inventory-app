@@ -371,6 +371,23 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.54.0
+
+**Google Photos import skips what it already has.** Schema: yes, `photos.google_photos_id` + partial unique index.
+
+Nothing prevented re-importing; duplicates were only detectable afterwards. At 2000-photo selections, overlapping picks are easy and expensive — each duplicate costs a Photos download and a Drive upload before anyone notices.
+
+- The Picker media item id is **stable across sessions**, so recording it identifies an item exactly rather than heuristically.
+- Already-imported items are dropped **before downloading**, and reported: *"1000 selected, 400 new, 600 already imported."* Re-picking an identical set does nothing at all rather than silently doubling it.
+- A partial unique index backstops the client-side check. A `23505` violation returns `duplicate: true` rather than an error — it is nothing to do, not a failure.
+- **Only covers imports from v1.54.0 onward.** Earlier ones have no id recorded and cannot be matched this way; the capture-time duplicate report still covers those.
+
+```sql
+alter table photos add column if not exists google_photos_id text;
+create unique index if not exists photos_google_photos_id_key
+  on photos (google_photos_id) where google_photos_id is not null;
+```
+
 ### v1.53.2
 
 **Google Photos import now says what it skipped.** Schema: none · `photos-picker` redeployed.

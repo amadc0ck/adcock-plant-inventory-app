@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.43.1";
+const APP_VERSION = "1.44.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -379,6 +379,7 @@ const state = {
   photoLocations: [],
   careNotes: [],
   taxa: [],
+  listOptions: [],
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
@@ -804,7 +805,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions] = await Promise.all([
       restGet("photos", "?select=*&order=uploaded_at.desc"),
       restGet("plants", "?select=*&order=accession_number.asc"),
       restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -815,6 +816,9 @@ async function loadAll() {
       restGet("photo_locations", "?select=*"),
       restGet("care_notes", "?select=*&order=noted_on.desc,created_at.desc"),
       restGet("taxa", "?select=*&order=botanical_name.asc"),
+      // Resilient on purpose: if list_options does not exist yet the app falls
+      // back to the built-in vocabularies rather than failing to load at all.
+      restGet("list_options", "?select=*&order=list_name.asc,sort_order.asc").catch(() => null),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -826,6 +830,7 @@ async function loadAll() {
     state.photoLocations = photoLocations;
     state.careNotes = careNotes;
     state.taxa = taxa;
+    state.listOptions = listOptions || [];
   } catch (e) {
     toast(e.message, true);
   }
@@ -984,6 +989,47 @@ function locationOptionList() {
 // and every one is a Garden Album. `slot` folded into `container` (they were the
 // same thing); pot/bed/greenhouse/hanging/indoor went unused, since a container's
 // name carries that detail instead ("Bucket 39", "Black Pedestal Pot 1").
+// ADM-1. Editable vocabularies. The built-in maps below stay as seed data and
+// as the fallback when list_options is empty or absent, so the app keeps working
+// whether or not the table exists.
+//
+// Only lists that are PURE VOCABULARY are editable. `status`, `health_status`,
+// `identification_status`, `collection_category` and `origin` are deliberately
+// excluded: code branches on their exact values (needsAttention, the Plants
+// filter bar, locationHoldsPlants), so a renamed or removed value would break
+// logic rather than just a label. Location `type` is excluded for the same
+// reason — locationHoldsPlants() tests it directly.
+const EDITABLE_LISTS = {
+  plant_type: "Plant type",
+  growth_habit: "Growth habit",
+  bloom_season: "Bloom season",
+  water_needs: "Water needs",
+  light_conditions: "Light needs",
+};
+
+// Values are immutable once created — they are stored on every plant that uses
+// them. Only the label, the order and whether it is offered can change, which
+// removes the orphaning problem entirely. Retiring a value hides it from
+// dropdowns while records still using it keep displaying it.
+function listOptionsFor(listName) {
+  const rows = state.listOptions.filter((o) => o.list_name === listName);
+  if (!rows.length) return { ...(BUILTIN_LISTS[listName] || {}) };
+  const out = {};
+  rows.slice().sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || String(a.label).localeCompare(String(b.label)))
+      .forEach((o) => { out[o.value] = o.label; });
+  return out;
+}
+// For dropdowns: retired values are not offered, but one already set on the
+// record stays selectable so saving cannot silently change it.
+function listChoicesFor(listName, currentValue) {
+  const rows = state.listOptions.filter((o) => o.list_name === listName);
+  if (!rows.length) return listOptionsFor(listName);
+  const out = {};
+  rows.slice().sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || String(a.label).localeCompare(String(b.label)))
+      .forEach((o) => { if (o.active !== false || o.value === currentValue) out[o.value] = o.label; });
+  return out;
+}
+
 const LOCATION_TYPE_LABELS = { area: "Area", row: "Row", container: "Container", hospital: "Hospital", work_area: "Work Area", other: "Other" };
 const GALLERY_ROW_LABELS = { none: "Not shown in the Gallery", albums: "Garden Albums", archives: "From the Archives" };
 
@@ -1157,6 +1203,18 @@ const BLOOM_SEASON_LABELS = { spring: "Spring", early_summer: "Early summer", su
 // Native or introduced relative to the garden's own region. Distinct from
 // `native_range`, which holds where the plant is from ("Central Mexico").
 const ORIGIN_LABELS = { native: "Native", introduced: "Introduced", unknown: "Unknown" };
+
+// Seed data and fallback for ADM-1. light_conditions had no map — its values
+// lived inline in two modals — so it gets one here.
+const LIGHT_CONDITION_LABELS = { direct: "Direct", indirect: "Indirect", partial: "Partial", full: "Full", shade: "Shade", morning: "Morning", afternoon: "Afternoon", all_day: "All day" };
+const WATER_NEEDS_LABELS = { low: "Low", moderate: "Moderate", high: "High" };
+const BUILTIN_LISTS = {
+  plant_type: PLANT_TYPE_LABELS,
+  growth_habit: GROWTH_HABIT_LABELS,
+  bloom_season: BLOOM_SEASON_LABELS,
+  water_needs: WATER_NEEDS_LABELS,
+  light_conditions: LIGHT_CONDITION_LABELS,
+};
 
 /* ============================================================
    UI HELPERS
@@ -1474,7 +1532,7 @@ function taxonCard(t) {
         ${cover ? photoImg(cover.drive_file_id) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
       </div>
       <div style="flex:1;min-width:0;">
-        <div class="tag-id">${escapeHtml(PLANT_TYPE_LABELS[t.plant_type] || t.plant_type || "Unclassified")}</div>
+        <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}</div>
         <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-top:2px;font-style:${t.botanical_name || t.genus ? "italic" : "normal"};line-height:1.25;">${escapeHtml(taxonDisplayName(t))}</div>
         ${secondary ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(secondary)}</div>` : ""}
         <div class="row" style="margin-top:8px;">
@@ -1572,7 +1630,7 @@ function screenTaxonDetail() {
             </div>
           </div>
           <div class="detail-body">
-            <div class="tag-id">${escapeHtml(PLANT_TYPE_LABELS[t.plant_type] || t.plant_type || "Unclassified")}${t.family ? " · " + escapeHtml(t.family) : ""}</div>
+            <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}${t.family ? " · " + escapeHtml(t.family) : ""}</div>
             <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;font-style:${t.botanical_name || t.genus ? "italic" : "normal"};line-height:1.2;">${escapeHtml(taxonDisplayName(t))}</div>
             ${taxonSecondaryName(t) ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(taxonSecondaryName(t))}</div>` : ""}
             ${t.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(t.description)}</div>` : ""}
@@ -1593,10 +1651,10 @@ function screenTaxonDetail() {
       <div class="section-grid">
         <div class="section-card">
           <h4>Details</h4>
-          ${fieldRow("leaf", "Type", PLANT_TYPE_LABELS[t.plant_type] || t.plant_type)}
-          ${fieldRow("seedling", "Growth habit", GROWTH_HABIT_LABELS[t.growth_habit] || t.growth_habit)}
+          ${fieldRow("leaf", "Type", listOptionsFor("plant_type")[t.plant_type] || t.plant_type)}
+          ${fieldRow("seedling", "Growth habit", listOptionsFor("growth_habit")[t.growth_habit] || t.growth_habit)}
           ${fieldRow("map", "Mature size", t.mature_size)}
-          ${fieldRow("plant2", "Bloom season", BLOOM_SEASON_LABELS[t.bloom_season] || t.bloom_season)}
+          ${fieldRow("plant2", "Bloom season", listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season)}
           ${fieldRow("pin", "Origin", ORIGIN_LABELS[t.origin] || t.origin)}
         </div>
         <div class="section-card">
@@ -1789,7 +1847,7 @@ function screenPlantDetail() {
           <h4>Species</h4>
           ${taxon ? `
             ${fieldRow("leaf", "Kind", taxonDisplayName(taxon))}
-            ${fieldRow("clipboard", "Type", PLANT_TYPE_LABELS[taxon.plant_type] || taxon.plant_type)}
+            ${fieldRow("clipboard", "Type", listOptionsFor("plant_type")[taxon.plant_type] || taxon.plant_type)}
             ${fieldRow("droplets", "Water", taxon.water_needs ? taxon.water_needs.charAt(0).toUpperCase() + taxon.water_needs.slice(1) : null)}
             ${fieldRow("temperature", "Hardy to", taxon.hardy_to)}
             <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openTaxon('${taxon.id}')">View full species record →</button>`
@@ -2301,6 +2359,26 @@ function screenSettings() {
           If uploads start failing, come back here and tap Reconnect — takes about 10 seconds.
         </p>
       </div>
+      <div class="divider"></div>
+      <div class="surface" style="padding:16px;">
+        <div style="font-weight:600;font-size:14.5px;">Dropdown lists</div>
+        <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
+          Add and rename the options offered when editing a species. Values are permanent once created — only the label and the order change — so nothing already recorded can be orphaned.
+        </p>
+        ${state.listOptions.length === 0 ? `<p class="subtle" style="margin:0 0 12px;">Using the built-in lists. They become editable once the <span class="mono">list_options</span> table exists.</p>` : ""}
+        <div class="stack">
+          ${Object.entries(EDITABLE_LISTS).map(([key, label]) => {
+            const opts = listOptionsFor(key);
+            const retired = state.listOptions.filter((o) => o.list_name === key && o.active === false).length;
+            return `
+            <button class="action-row" style="border:1px solid var(--line);border-radius:8px;color:var(--cream);" onclick="openModal('editList',{listName:'${key}'})">
+              <span class="action-label">${label}<span class="subtle" style="display:block;font-size:11.5px;">${countLabel(Object.keys(opts).length, "option", "options")}${retired ? ` · ${retired} retired` : ""}</span></span>
+              <span class="action-chevron">${icon("chevronRight")}</span>
+            </button>`;
+          }).join("")}
+        </div>
+      </div>
+
       <div class="divider"></div>
       <div class="surface" style="padding:16px;">
         <div style="font-weight:600;font-size:14.5px;">Signed in as</div>
@@ -2849,6 +2927,50 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "editList") {
+    const key = data.listName;
+    const title = EDITABLE_LISTS[key] || key;
+    const seeded = state.listOptions.some((o) => o.list_name === key);
+    const rows = seeded
+      ? state.listOptions.filter((o) => o.list_name === key)
+          .slice().sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || String(a.label).localeCompare(String(b.label)))
+      : Object.entries(BUILTIN_LISTS[key] || {}).map(([value, label], i) => ({ id: null, value, label, sort_order: i, active: true }));
+    // Count of records already using each value, so retiring one is an informed
+    // decision rather than a blind toggle.
+    const usage = (value) => key === "light_conditions"
+      ? state.taxa.filter((t) => (t.light_conditions || []).includes(value)).length
+      : state.taxa.filter((t) => t[key] === value).length;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">${escapeHtml(title)}</h3>
+      <p class="subtle" style="margin:0 0 14px;">Retiring an option hides it from dropdowns. Anything already using it keeps showing it.</p>
+      ${!seeded ? `<p class="subtle" style="margin:0 0 12px;">These are the built-in defaults. Saving any change copies the whole list into the database, after which it is yours to edit.</p>` : ""}
+      <div class="stack">
+        ${rows.map((o) => {
+          const used = usage(o.value);
+          return `
+          <div class="surface" style="padding:10px 12px;${o.active === false ? "opacity:0.55;" : ""}">
+            <div class="row">
+              <div style="flex:1;min-width:0;">
+                <input value="${escapeHtml(o.label)}" data-list-label="${escapeHtml(o.value)}" style="margin:0;" />
+                <div class="mono subtle" style="font-size:10.5px;margin-top:3px;">${escapeHtml(o.value)}${used ? ` · used by ${countLabel(used, "species", "species")}` : " · unused"}</div>
+              </div>
+              <button class="btn-ghost" style="padding:0 0 0 10px;font-size:12px;color:${o.active === false ? "var(--moss)" : "var(--terracotta)"};flex-shrink:0;"
+                onclick="toggleListOption('${key}','${escapeHtml(o.value)}',${o.active === false})">${o.active === false ? "Restore" : "Retire"}</button>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+
+      <div class="section-label">Add an option</div>
+      <input id="lo-new-label" placeholder="e.g. Dracaena" />
+      <div class="field-help">The stored value is generated from the label and never changes afterwards.</div>
+      <button class="btn btn-secondary btn-block" style="margin-top:10px;" onclick="addListOption('${key}')">Add</button>
+
+      <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="saveListLabels('${key}')">Save labels</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Done</button>`;
+  }
+
   if (type === "editTaxon") {
     const t = taxonById(data.taxonId);
     if (!t) return `<p>Not found.</p>`;
@@ -2886,19 +3008,19 @@ function modalContent() {
         <label>Type</label>
         <select id="et-planttype">
           <option value="">— Not recorded —</option>
-          ${Object.entries(PLANT_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${t.plant_type === k ? "selected" : ""}>${v}</option>`).join("")}
+          ${Object.entries(listChoicesFor("plant_type", t.plant_type)).map(([k, v]) => `<option value="${k}" ${t.plant_type === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Growth habit</label>
         <select id="et-growthhabit">
           <option value="">— Not recorded —</option>
-          ${Object.entries(GROWTH_HABIT_LABELS).map(([k, v]) => `<option value="${k}" ${t.growth_habit === k ? "selected" : ""}>${v}</option>`).join("")}
+          ${Object.entries(listChoicesFor("growth_habit", t.growth_habit)).map(([k, v]) => `<option value="${k}" ${t.growth_habit === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Mature size</label>
         <input id="et-maturesize" placeholder="e.g. 3&ndash;4 ft tall &times; 5 ft wide" value="${escapeHtml(t.mature_size || "")}" />
         <label>Bloom season</label>
         <select id="et-bloomseason">
           <option value="">— Not recorded —</option>
-          ${Object.entries(BLOOM_SEASON_LABELS).map(([k, v]) => `<option value="${k}" ${t.bloom_season === k ? "selected" : ""}>${v}</option>`).join("")}
+          ${Object.entries(listChoicesFor("bloom_season", t.bloom_season)).map(([k, v]) => `<option value="${k}" ${t.bloom_season === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Origin</label>
         <select id="et-origin">
@@ -2912,18 +3034,16 @@ function modalContent() {
         <input id="et-hardy" placeholder="e.g. Zone 9 or 20&deg;F" value="${escapeHtml(t.hardy_to || "")}" />
         <label>Light needs</label>
         <div class="wrap-gap" style="margin-top:2px;">
-          ${["direct","indirect","partial","full","shade","morning","afternoon","all_day"].map((opt) => `
+          ${Object.entries(listOptionsFor("light_conditions")).map(([k, v]) => `
             <label class="checkbox-row" style="margin-top:6px;background:var(--bg);padding:6px 10px 6px 8px;border-radius:20px;width:auto;">
-              <input type="checkbox" class="et-light-checkbox" value="${opt}" ${(t.light_conditions || []).includes(opt) ? "checked" : ""} />
-              <span style="text-transform:capitalize;font-size:13px;">${opt.replace("_", " ")}</span>
+              <input type="checkbox" class="et-light-checkbox" value="${k}" ${(t.light_conditions || []).includes(k) ? "checked" : ""} />
+              <span style="font-size:13px;">${v}</span>
             </label>`).join("")}
         </div>
         <label>Water needs</label>
         <select id="et-water">
           <option value="">— Unspecified —</option>
-          <option value="low" ${t.water_needs === "low" ? "selected" : ""}>Low</option>
-          <option value="moderate" ${t.water_needs === "moderate" ? "selected" : ""}>Moderate</option>
-          <option value="high" ${t.water_needs === "high" ? "selected" : ""}>High</option>
+          ${Object.entries(listChoicesFor("water_needs", t.water_needs)).map(([k, v]) => `<option value="${k}" ${t.water_needs === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
 
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Save changes</button>
@@ -3556,6 +3676,88 @@ async function attachInboxPhotoToPlant(photoId, plantId) {
 // Note it does NOT clear location_id: per REFERENCE section 3 a photo is only
 // back in the Inbox once BOTH plant_id and location_id are null, so a photo
 // with a location stays filed under that location. The toast says which.
+// ADM-1 mutations.
+// The built-in lists are the starting point, so the first edit to any list
+// copies it into the database wholesale. Editing one option must not silently
+// discard the other seven.
+async function seedListIfNeeded(listName) {
+  if (state.listOptions.some((o) => o.list_name === listName)) return;
+  const builtin = BUILTIN_LISTS[listName] || {};
+  const rows = Object.entries(builtin).map(([value, label], i) => ({
+    list_name: listName, value, label, sort_order: i, active: true,
+  }));
+  if (rows.length) await restPost("list_options", rows);
+}
+
+// Values are derived from the label once and then frozen, because every plant
+// storing this value would otherwise be orphaned by a rename.
+function slugifyListValue(label) {
+  return String(label).trim().toLowerCase()
+    .replace(/['\u2018\u2019"]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+async function addListOption(listName) {
+  const input = document.getElementById("lo-new-label");
+  const label = input.value.trim();
+  if (!label) { toast("Give it a name first", true); return; }
+  const value = slugifyListValue(label);
+  if (!value) { toast("That name has no usable letters or numbers", true); return; }
+  try {
+    await seedListIfNeeded(listName);
+    await loadAll();
+    const clash = state.listOptions.find((o) => o.list_name === listName && o.value === value);
+    if (clash) {
+      // Restoring beats creating a duplicate value that nothing could tell apart.
+      if (clash.active === false) {
+        await restPatch("list_options", `id=eq.${clash.id}`, { active: true, label });
+        toast(`Restored ${label}`);
+      } else {
+        toast(`${clash.label} already exists`, true);
+        return;
+      }
+    } else {
+      const max = state.listOptions.filter((o) => o.list_name === listName)
+        .reduce((n, o) => Math.max(n, o.sort_order ?? 0), 0);
+      await restPost("list_options", { list_name: listName, value, label, sort_order: max + 1, active: true });
+      toast(`Added ${label}`);
+    }
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function toggleListOption(listName, value, restore) {
+  try {
+    await seedListIfNeeded(listName);
+    await loadAll();
+    const row = state.listOptions.find((o) => o.list_name === listName && o.value === value);
+    if (!row) { toast("Option not found", true); return; }
+    await restPatch("list_options", `id=eq.${row.id}`, { active: !!restore });
+    toast(restore ? "Restored" : "Retired — still shown on records already using it");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function saveListLabels(listName) {
+  const inputs = Array.from(document.querySelectorAll("[data-list-label]"));
+  try {
+    await seedListIfNeeded(listName);
+    await loadAll();
+    let changed = 0;
+    for (const el of inputs) {
+      const value = el.getAttribute("data-list-label");
+      const label = el.value.trim();
+      const row = state.listOptions.find((o) => o.list_name === listName && o.value === value);
+      if (!row || !label || row.label === label) continue;
+      await restPatch("list_options", `id=eq.${row.id}`, { label });
+      changed++;
+    }
+    toast(changed ? `Saved ${countLabel(changed, "label", "labels")}` : "Nothing changed");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function setTaxonPhoto(taxonId, photoId) {
   try {
     await restPatch("taxa", `id=eq.${taxonId}`, { primary_photo_id: photoId, updated_at: new Date().toISOString() });

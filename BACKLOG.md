@@ -260,19 +260,6 @@ One-line change: route it through `countLabel()`. Deliberately deferred out of L
 
 ---
 
-### ADM-1 — Editable dropdown lists in Settings
-**Status:** ready · **Effort:** medium · **Schema:** yes (new table) · **Touches:** `screenSettings`, `loadAll`, every screen reading a `*_LABELS` map
-
-Amanda manages dropdown option lists herself, from an admin area in Settings, instead of asking for a code change.
-
-Today the vocabularies live in JS constants inside `index.html` (`PLANT_TYPE_LABELS`, `GROWTH_HABIT_LABELS`, `BLOOM_SEASON_LABELS`, `ORIGIN_LABELS`, and older ones like `STATUS_LABELS`). Editing one means editing the file and shipping a version.
-
-Proposed: a `list_options` table — `list_name`, `value`, `label`, `sort_order`, `active` — loaded in `loadAll` and cached in `state`, with the existing constants kept as seed data and fallback. One table serves every list.
-
-Decide before building:
-- **What happens to records already using a value that is renamed or deleted.** Retiring via `active = false` (still displays on existing records, no longer offered in the dropdown) is safer than a hard delete, which silently orphans data.
-- **Which lists are eligible.** `plant_type`, `growth_habit`, `bloom_season` are pure vocabulary and safe. `origin`, `status`, `health_status` and `identification_status` have **code branching on their exact values** (`status !== "active"`, `health_status === "watch"`, the Plants filter bar) — making those editable breaks logic. Either exclude them or separate "label is editable" from "value set is editable".
-- Whether `value` stays immutable once created, with only `label` editable. That would remove most of the orphaning risk in one stroke.
 
 ### ADM-2 — `plant_location_history` is missing from the backup
 **Status:** ready · **Effort:** trivial · **Touches:** `exportFullBackup`, `handleImportBackup`
@@ -397,6 +384,38 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.44.0
+
+**ADM-1 — Editable dropdown lists in Settings.** Schema: yes, new `list_options` table · Touched `state`, `loadAll`, `screenSettings`, new `editList` modal and four mutations.
+
+Prompted by hitting the too-short-list problem three times in one day — five untypeable plants, then Dracaena and Haworthiopsis.
+
+- **Settings → Dropdown lists** manages plant type, growth habit, bloom season, water needs and light needs. Each shows its option count and how many species use each value.
+- **Values are immutable once created; only labels, order and availability change.** A value is stored on every record using it, so renaming one would orphan them all. Labels are free to change.
+- **Retiring hides an option from dropdowns without touching records that use it** — and a record's current value stays selectable so saving cannot silently change it.
+- **Loading is resilient.** If `list_options` does not exist the app falls back to the built-in vocabularies instead of failing to load. Shipping code ahead of its SQL broke the app twice today; this one degrades instead.
+- **The first edit to a list copies the whole built-in list into the database**, so editing one option cannot silently discard the other seven.
+- Adding a value that matches a retired one **restores it** rather than creating an indistinguishable duplicate.
+
+**Deliberately not editable:** `status`, `health_status`, `identification_status`, `collection_category`, `origin`, and location `type`. Code branches on their exact values — `needsAttention`, the Plants filter bar, `locationHoldsPlants` — so a renamed or removed value would break logic, not just a label.
+
+```sql
+create table if not exists list_options (
+  id         uuid primary key default gen_random_uuid(),
+  list_name  text not null,
+  value      text not null,
+  label      text not null,
+  sort_order int  not null default 0,
+  active     boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (list_name, value)
+);
+alter table list_options enable row level security;
+drop policy if exists "list_options_all_authenticated" on list_options;
+create policy "list_options_all_authenticated"
+  on list_options for all to authenticated using (true) with check (true);
+```
 
 ### v1.43.1
 

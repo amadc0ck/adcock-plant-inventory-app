@@ -488,7 +488,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.77.1";
+const APP_VERSION = "1.77.2";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2133,6 +2133,13 @@ function openModal(type, data = {}) {
   state.pickerSearch = ""; state.pickerTaxon = ""; state.pickerLocation = "";
   locPickerReset();
   if (type === "galleryBatch") { state.batchPlant = ""; state.batchPickerOpen = false; }
+  // The attach modal has told the user since v1.67.0 that it is "showing plants
+  // in Bucket 80" — but the reset three lines up cleared the filter every time,
+  // so it listed all 58. The copy was right about the intent and wrong about
+  // the behaviour.
+  if (type === "attach" && data.locationId && locationHoldsPlants(locationById(data.locationId))) {
+    state.pickerLocation = data.locationId;
+  }
   if (type === "editPhoto") {
     const ph = state.photos.find((x) => x.id === data.photoId);
     state.editPhotoPlant = ph ? (ph.plant_id || "") : "";
@@ -4212,11 +4219,16 @@ function modalContent() {
     // at two scopes, which is a filter, not two buttons. Opened from a
     // location it starts narrowed to that location and she can widen it.
     const here = data.locationId ? locationById(data.locationId) : null;
+    // Reads the live filter rather than the opening intent, so widening it does
+    // not leave the sentence asserting something that stopped being true.
+    const narrowed = here && state.pickerLocation === here.id;
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach to a plant</h3>
-      <p class="subtle" style="margin:0 0 14px;">${here
-        ? `Showing plants in <strong>${escapeHtml(here.name)}</strong> — switch the location filter to reach any plant in the collection.`
+      <p class="subtle" style="margin:0 0 14px;">${narrowed
+        ? `Showing the plants in <strong>${escapeHtml(here.name)}</strong> — widen the location filter to reach any plant in the collection.`
+        : here
+        ? `Showing every plant. Set the location filter back to <strong>${escapeHtml(here.name)}</strong> to see just what is here.`
         : "This photo becomes that plant's, and appears on its timeline."}</p>
       ${plantPicker(`attachPhotoToPlant('${data.photoId}','{id}')`, {
         onNew: `openModal('newPlantFromPhoto',{photoId:'${data.photoId}'${data.locationId ? `, locationId:'${data.locationId}'` : ""}})`,
@@ -7159,7 +7171,7 @@ function renderLightbox() {
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px;">
       ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifying ? "disabled" : ""} onclick="event.stopPropagation();identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : ""}
       ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifyingClaude ? "disabled" : ""} onclick="event.stopPropagation();identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : "Ask Claude"}</button>` : ""}
-      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attach',{photoId:'${p.id}'})">Attach to plant</button>
+      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attach',{photoId:'${p.id}'${p.location_id ? `, locationId:'${p.location_id}'` : ""}})">Attach to plant</button>
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Add Location</button>
       <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
       <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>

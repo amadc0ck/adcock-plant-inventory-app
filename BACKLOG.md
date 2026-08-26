@@ -227,6 +227,18 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.77.2
+
+**"Showing plants in Bucket 80" was showing all 58.** Schema: none.
+
+v1.67.0 merged "Add to plant here" and "Attach to any plant" into one picker opened pre-narrowed to the location — and wrote the copy saying so. But `openModal()` clears the picker filters on every open, three lines above where the location would have been applied, so the filter was wiped every time. The modal has been asserting a behaviour it never had.
+
+The pre-filter is set after the reset now, and only when the location actually holds plants — an Area or Archive still opens on the whole collection, because nothing is assigned directly to one.
+
+**The sentence reads the live filter rather than the opening intent.** Widening the location dropdown used to leave it claiming a narrowing that had stopped being true; it now switches to telling you how to get back to it.
+
+Also: the lightbox's Attach passes the photo's own location, so it behaves like the Location page and the edit form rather than being the one entry point that ignores context.
+
 ### v1.77.1
 
 **A reference photo for the filtered species.** Schema: none.

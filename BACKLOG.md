@@ -371,6 +371,16 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.52.2
+
+**Scroll position survives a re-render.** Schema: none · Touched `render()`.
+
+Selecting one duplicate jumped back to the top of the list, so working through a long set meant re-scrolling after every tap. Same root cause as the search-focus bug in v1.38.2 — `render()` rebuilds `#app.innerHTML`, and scroll dies with the DOM. Focus was fixed then; scroll was not.
+
+Restoring it unconditionally would be wrong, since navigating to a new screen **should** start at the top. So scroll is only restored when the render is the **same view** as the last one — keyed on tab, record id, `reportView` and modal type. Anything else counts as navigation.
+
+Covers page scroll and modal scroll, so it fixes every selection surface at once: duplicates, Gallery multi-select, Inbox bulk select.
+
 ### v1.52.1
 
 **The Google Photos tab closes itself after picking.** Schema: none.

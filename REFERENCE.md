@@ -285,7 +285,9 @@ One system (`state.lightbox = { mode, photoId, plantId?/locationId? }`) covering
 ## 11. Frontend Structure
 
 - **Single file:** `index.html`. CSS in a `<style>` block, all JS inline.
-- **Rendering:** `render()` rebuilds `#app.innerHTML` from scratch on every state change. **This destroys any focused input**, so live-search fields lose focus and caret position mid-typing; `captureFocus()` / `restoreFocus()` in `render()` save and restore them by element id (v1.38.2). Any new input that triggers a re-render while focused needs a stable `id` to participate. `debouncedRender()` (150ms) batches rapid updates — necessary once Inbox counts reached the hundreds, since each async thumbnail load used to trigger its own full rebuild.
+- **Rendering:** `render()` rebuilds `#app.innerHTML` from scratch on every state change. **This destroys any focused input and the scroll position**, so live-search fields lose focus and caret position mid-typing; `captureFocus()` / `restoreFocus()` in `render()` save and restore them by element id (v1.38.2). Any new input that triggers a re-render while focused needs a stable `id` to participate.
+
+Scroll is preserved the same way (v1.52.2), for both the page and the modal — but **only when the render is the same view as the last one**, keyed on tab + record id + `reportView` + modal type. Restoring it unconditionally would be wrong: navigating to a new screen should start at the top. Anything that changes the view key is treated as navigation. Without this, toggling one checkbox in a long list threw the user back to the top of it. `debouncedRender()` (150ms) batches rapid updates — necessary once Inbox counts reached the hundreds, since each async thumbnail load used to trigger its own full rebuild.
 - **State:** one global `state` object. Session persists in `localStorage` with access-token refresh before each data load (`ensureFreshSession()`).
 - **Screens:** Login, Inbox, Plants, PlantDetail, Locations, LocationDetail, Gallery, Reports (doubles as dashboard), Settings.
 - **Modals:** single `state.modal = {type, data}` rendered through one `modalContent()` switch. ~20 modal types.

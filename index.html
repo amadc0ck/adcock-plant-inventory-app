@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.52.1";
+const APP_VERSION = "1.52.2";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4928,6 +4928,40 @@ function configGate() {
 // app.innerHTML wholesale — so the field being typed into is destroyed and
 // rebuilt each character, dropping focus and the caret. Capture both before
 // the rebuild and restore them after, keyed on the element's id.
+// Scroll dies with the DOM on every render, the same way focus does. Toggling
+// one checkbox in a long list therefore threw you back to the top.
+//
+// Restoring unconditionally would be wrong — navigating to a new screen SHOULD
+// start at the top. So scroll is only restored when this render is the same
+// view as the last one: same tab, same record, same modal. A view key captures
+// that; anything else is treated as navigation.
+let lastRenderKey = "";
+
+function currentViewKey() {
+  return [
+    state.tab,
+    state.currentPlantId,
+    state.currentLocationId,
+    state.currentTaxonId,
+    state.reportView,
+    state.modal ? state.modal.type : "",
+  ].join("|");
+}
+
+function captureScroll() {
+  const modal = document.querySelector(".modal");
+  return { page: window.scrollY || 0, modal: modal ? modal.scrollTop : 0 };
+}
+
+function restoreScroll(snap) {
+  if (!snap) return;
+  if (snap.page) window.scrollTo(0, snap.page);
+  if (snap.modal) {
+    const modal = document.querySelector(".modal");
+    if (modal) modal.scrollTop = snap.modal;
+  }
+}
+
 function captureFocus() {
   const el = document.activeElement;
   if (!el || !el.id) return null;
@@ -4947,6 +4981,8 @@ function restoreFocus(snap) {
 function render() {
   const app = document.getElementById("app");
   const focusSnapshot = captureFocus();
+  const scrollSnapshot = captureScroll();
+  const sameView = currentViewKey() === lastRenderKey;
 
   if (state.configKey === "REPLACE_WITH_YOUR_PUBLISHABLE_KEY" || !state.configKey) {
     app.innerHTML = configGate();
@@ -5008,6 +5044,8 @@ function render() {
   document.body.classList.toggle("has-task-banner", !!taskBanner());
   wireModalForms();
   restoreFocus(focusSnapshot);
+  if (sameView) restoreScroll(scrollSnapshot);
+  lastRenderKey = currentViewKey();
 }
 
 function renderLightbox() {

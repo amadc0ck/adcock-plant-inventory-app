@@ -376,6 +376,18 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.58.0
+
+**A 1950-photo import could never have finished.** Schema: none.
+
+The first large run reported *299 imported, 286 failed*, having attempted only 635 of 1950. The arithmetic explains it: ~4 seconds per photo, sequential, against `baseUrl`s that die **60 minutes** after picking. 1950 × 4s is over two hours. It hit the wall and stopped on expired links. Any selection over roughly 800 was impossible.
+
+- **Three concurrent workers**, ~3× throughput, which brings 1950 inside the window. Strictly sequential was an overcorrection against rate limiting.
+- **Rate-limit backoff**: a 429 doubles a shared delay up to 30s rather than each worker racing on independently.
+- **Failures are tallied by cause** — timed out, links expired, rate limited, database not migrated — instead of a bare count. "286 failed" told neither of us anything.
+- The done screen reports **what was never attempted** and why the run stopped.
+- **Dedupe ids now transfer to the surviving duplicate.** The newly-imported copy carries `google_photos_id`; the copy worth keeping is usually the older, already-filed one, which has none. Deleting the new one destroyed the only record that the item had ever been imported, so the next pick would re-import it forever. Amanda hit exactly this: 279 duplicates deleted, taking their ids with them.
+
 ### v1.57.0
 
 **The Inbox becomes a triage tool.** Schema: none.

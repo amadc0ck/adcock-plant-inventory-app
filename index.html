@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.57.0";
+const APP_VERSION = "1.58.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4249,7 +4249,19 @@ function modalContent() {
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Done</h3>
-      <p class="subtle" style="margin:0 0 14px;">${st.done} imported${st.alreadyIn ? `, ${st.alreadyIn} already in your collection` : ""}${st.failed ? `, ${st.failed} failed` : ""}${st.skippedTotal ? `, ${skippedReason(st.skipped)}` : ""}. They're in the Inbox${data.locationId ? " and filed to this location" : ""}.</p>
+      <p class="subtle" style="margin:0 0 10px;">${st.done} imported${st.alreadyIn ? `, ${st.alreadyIn} already in your collection` : ""}${st.failed ? `, ${st.failed} failed` : ""}${st.skippedTotal ? `, ${skippedReason(st.skipped)}` : ""}. They're in the Inbox${data.locationId ? " and filed to this location" : ""}.</p>
+      ${st.failReasons && Object.keys(st.failReasons).length ? `
+        <div class="surface" style="padding:10px 12px;margin-bottom:12px;">
+          <div class="subtle" style="font-size:11.5px;margin-bottom:4px;">Why they failed</div>
+          ${Object.entries(st.failReasons).sort((a, b) => b[1] - a[1])
+            .map(([reason, n]) => `<div class="mono" style="font-size:11.5px;">${n} · ${escapeHtml(reason)}</div>`).join("")}
+        </div>` : ""}
+      ${(() => {
+        const attempted = st.done + st.failed + (st.alreadyIn || 0);
+        const untouched = st.total - attempted;
+        if (untouched <= 0) return "";
+        return `<p class="subtle" style="margin:0 0 12px;">${countLabel(untouched, "photo", "photos")} were never attempted${st.stoppedEarly ? ` — the run stopped because ${st.stoppedEarly}` : ""}. Pick them again: anything already imported is skipped automatically.</p>`;
+      })()}
       <button class="btn btn-primary btn-block" onclick="cancelPhotosImport()">Close</button>`;
   }
 
@@ -4628,12 +4640,43 @@ function selectDuplicateExtras() {
   render();
 }
 
+// Deleting a duplicate can destroy the only record that a Google Photos item
+// was ever imported. The newly-imported copy is the one carrying
+// google_photos_id, while the copy worth keeping is usually the older, already
+// filed one — which has none. Delete the new one and the next pick re-imports
+// it, forever.
+//
+// So the id moves to the survivor before the delete. Amanda hit this the hard
+// way: 279 duplicates from a re-picked selection, deleted, taking their
+// dedupe ids with them.
+async function carryOverGooglePhotosIds(deletingIds) {
+  const deleting = new Set(deletingIds);
+  const patches = [];
+  findDuplicatePhotoGroups().forEach((group) => {
+    const survivors = group.filter((p) => !deleting.has(p.id));
+    if (!survivors.length) return; // whole group going: nothing to carry to
+    const keeper = survivors.find((p) => !p.google_photos_id);
+    if (!keeper) return;           // survivor already has one
+    const donor = group.find((p) => deleting.has(p.id) && p.google_photos_id);
+    if (!donor) return;
+    patches.push([keeper.id, donor.google_photos_id]);
+  });
+  for (const [id, gid] of patches) {
+    // Best-effort: the unique index can reject it if another row already holds
+    // that id, which is harmless — dedupe still works through that other row.
+    try { await restPatch("photos", `id=eq.${id}`, { google_photos_id: gid }); } catch (e) {}
+  }
+  return patches.length;
+}
+
 async function deleteSelectedDuplicates() {
   const ids = Array.from(state.dupeSelected);
   if (!ids.length) { toast("Nothing selected", true); return; }
   if (!confirm(`Delete ${ids.length} photo${ids.length === 1 ? "" : "s"}? The records go, the files stay in your Google Drive folder.`)) return;
   try {
+    const carried = await carryOverGooglePhotosIds(ids);
     await deletePhotosByIds(ids);
+    if (carried) toast(`Kept the Google Photos link on ${countLabel(carried, "photo", "photos")} so they are not re-imported`);
     toast(`Deleted ${countLabel(ids.length, "photo", "photos")}`);
     state.dupeSelected = new Set();
     await loadAll();
@@ -4791,7 +4834,10 @@ function savePhotosImport() {
   const st = state.photosImport;
   try {
     if (!st || st.phase !== "importing" || !st.queue) { localStorage.removeItem(PHOTOS_IMPORT_KEY); return; }
-    const remaining = st.queue.slice(st.done);
+    // With parallel workers `done` is no longer a clean cursor into the queue,
+    // so the remainder is whatever has not been accounted for either way.
+    const settled = st.done + st.failed + (st.alreadyIn || 0);
+    const remaining = st.queue.slice(Math.max(0, settled));
     if (!remaining.length) { localStorage.removeItem(PHOTOS_IMPORT_KEY); return; }
     localStorage.setItem(PHOTOS_IMPORT_KEY, JSON.stringify({
       savedAt: Date.now(),
@@ -5020,11 +5066,24 @@ async function runPhotosImportQueue(items) {
   if (!st) return;
   savePhotosImport();
 
-  // Sequential on purpose: each import is a Google Photos download plus a Drive
-  // upload, and baseUrls are only valid for 60 minutes — hammering them risks
-  // rate limiting mid-run and losing the window.
-  for (const item of items) {
-    if (st.cancel) break;
+  // Was strictly sequential to avoid rate limiting, which overcorrected: at
+  // ~4s per photo a 1950-photo selection needs over two hours, while baseUrls
+  // die after 60 minutes. The run could not finish, and stopped on expired
+  // links having attempted a third of the queue.
+  //
+  // Three at a time is ~3x the throughput and still gentle; a 429 backs the
+  // whole run off rather than each worker racing independently.
+  const CONCURRENCY = 3;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length && !st.cancel && !st.stoppedEarly) {
+      const item = items[cursor++];
+      await importOne(item, st);
+    }
+  };
+
+  async function importOne(item, st) {
+    if (st.cancel || st.stoppedEarly) return;
     try {
       const res = await photosPickerCall("import", {
         baseUrl: item.baseUrl,
@@ -5042,17 +5101,37 @@ async function runPhotosImportQueue(items) {
     } catch (e) {
       st.failed++;
       st.lastProgressAt = Date.now();
-      // Kept so the banner can say what went wrong rather than only that
-      // something did.
       st.lastError = e.timedOut ? "last one timed out" : (e.message || "failed");
+      // A bare count of failures is useless — "286 failed" says nothing about
+      // whether to retry, wait, or fix something. Tally by cause instead.
+      const reason = e.timedOut ? "timed out"
+        : e.expired ? "links expired"
+        : /rate|429|quota/i.test(e.message || "") ? "rate limited"
+        : /schema cache|column/i.test(e.message || "") ? "database not migrated"
+        : (e.message || "unknown").slice(0, 60);
+      st.failReasons = st.failReasons || {};
+      st.failReasons[reason] = (st.failReasons[reason] || 0) + 1;
+
+      // Transient failures deserve a pause rather than burning through the
+      // whole queue at speed. Google rate-limits both the Photos download and
+      // the Drive upload, and hammering them turns a slow run into a failed one.
+      if (reason === "rate limited") {
+        st.backoffMs = Math.min((st.backoffMs || 1000) * 2, 30000);
+        await new Promise((r) => setTimeout(r, st.backoffMs));
+      }
       if (e.expired) {
-        toast("Google Photos links expired — reselect the remaining photos", true);
-        break;
+        // Sets the flag rather than breaking: every worker checks it, so one
+        // expired link stops the whole run instead of only this worker.
+        st.stoppedEarly = "links expired";
+        toast("Google Photos links expired — reselect the rest, already-imported ones will be skipped", true);
+        return;
       }
     }
     savePhotosImport();
     refreshImportProgress();
   }
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
   clearPhotosImportSave();
   stopImportHeartbeat();
   st.phase = "done";

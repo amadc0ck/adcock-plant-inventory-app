@@ -227,6 +227,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.77.1
+
+**A reference photo for the filtered species.** Schema: none.
+
+Choosing "Aeonium arboreum" from a dropdown of 33 botanical names is a guess until you can see one. The picker now shows a tinted card above the results whenever a species filter is on: cover photo, the composed name in proper italics, common name, and how many specimens are recorded.
+
+It stays visible when the filter returns **no** plants, which is exactly when it matters — that is the moment before **Another *Aeonium arboreum*** creates a specimen under a species that may be the wrong one, and every species fact follows from that choice.
+
+The cover comes from `taxonCoverPhoto()`, so a hearted photo wins — the same gesture that promotes a shot to represent its taxon in the Gallery. A species with no photo anywhere gets the placeholder and says "no photo yet" rather than showing an empty frame.
+
 ### v1.77.0
 
 **Location gets the same treatment as Plant.** Schema: none.

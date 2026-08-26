@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.41.2";
+const APP_VERSION = "1.41.3";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2599,8 +2599,15 @@ function modalContent() {
              would write to columns nothing reads any more. Edit the species
              record from the specimen's Species card instead. */""}
         <div class="section-label">Species</div>
-        <p class="subtle" style="margin:0 0 8px;">Description, type, growth habit, bloom season, origin and care all belong to the species and apply to every specimen of it.</p>
-        ${pl.taxa_id ? `<button type="button" class="btn btn-secondary btn-block" onclick="closeModal();openModal('editTaxon',{taxonId:'${pl.taxa_id}'})">Edit species record</button>` : `<p class="subtle" style="margin:0;">This specimen is not linked to a species yet.</p>`}
+        <label>This specimen is a</label>
+        <select id="ep-taxon">
+          <option value="">— Not linked —</option>
+          ${[...state.taxa].sort((a, b) => taxonDisplayName(a).localeCompare(taxonDisplayName(b)))
+            .map((t) => `<option value="${t.id}" ${pl.taxa_id === t.id ? "selected" : ""}>${escapeHtml(taxonDisplayName(t))}</option>`).join("")}
+          <option value="__new__">+ Create a new species from the botanical name above</option>
+        </select>
+        <div class="field-help">Description, type, growth habit, bloom season, origin and care live on the species and apply to every specimen of it.</div>
+        ${pl.taxa_id ? `<button type="button" class="btn btn-secondary btn-block" style="margin-top:10px;" onclick="closeModal();openModal('editTaxon',{taxonId:'${pl.taxa_id}'})">Edit species record</button>` : ""}
 
         <div class="section-label">Collection</div>
         <label>Category</label>
@@ -3958,8 +3965,15 @@ async function ensureTaxonForName(botanicalName, commonName) {
           notes: document.getElementById("ep-notes").value || null,
           updated_at: new Date().toISOString(),
         };
+        // Linking an existing specimen to a species. Without this an orphaned
+        // specimen could never be linked at all — create and propagate resolved
+        // a taxon but edit did not.
+        const taxonChoice = document.getElementById("ep-taxon").value;
+        body.taxa_id = taxonChoice === "__new__"
+          ? await ensureTaxonForName(body.botanical_name, body.common_name)
+          : (taxonChoice || null);
         await restPatch("plants", `id=eq.${state.modal.data.plantId}`, body);
-        toast("Saved");
+        toast(body.taxa_id ? "Saved" : "Saved — not linked to a species");
         closeModal();
         await loadAll();
       } catch (e) { toast(e.message, true); }

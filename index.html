@@ -268,6 +268,30 @@
   .field-row-label{font-size:12.5px;color:#8AA090;flex-shrink:0;}
   .field-row-value{font-size:13.5px;color:#C9D6CC;margin-left:auto;text-align:right;min-width:0;word-break:break-word;}
 
+  /* Gallery browse rows. Horizontal scrollers rather than grids, so a row is
+     a glance and a whole screen is a survey of the collection. */
+  .gal-row{margin-bottom:26px;}
+  .gal-row-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px;}
+  .gal-row-head h3{font-family:'Fraunces',serif;font-size:17px;font-weight:500;margin:0;}
+  .gal-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity;}
+  .gal-scroll > *{scroll-snap-align:start;flex-shrink:0;}
+  .gal-tile{width:132px;cursor:pointer;border:none;padding:0;background:none;text-align:left;}
+  .gal-tile .card-media{border-radius:8px;}
+  .gal-tile-cap{font-size:11px;color:#8AA090;margin-top:5px;font-family:'IBM Plex Mono',monospace;}
+  /* Album and archive cards: image with the title burned into the bottom. */
+  .gal-card{width:230px;border-radius:10px;overflow:hidden;position:relative;cursor:pointer;border:none;padding:0;background:var(--parchment-dim);text-align:left;}
+  .gal-card .card-media{border-radius:0;}
+  .gal-card-label{position:absolute;left:0;right:0;bottom:0;padding:26px 14px 12px;color:var(--parchment);
+    background:linear-gradient(to top, rgba(20,32,26,0.88), rgba(20,32,26,0));}
+  .gal-card-title{font-family:'Fraunces',serif;font-size:16px;font-weight:600;line-height:1.2;}
+  .gal-card-meta{font-size:11.5px;opacity:0.85;margin-top:3px;}
+  /* Highlights are smaller and lead with the icon, since the grouping is the
+     point rather than any one photo. */
+  .gal-chip{width:124px;border-radius:10px;overflow:hidden;position:relative;cursor:pointer;border:none;padding:0;background:var(--parchment-dim);text-align:left;}
+  .gal-chip-icon{position:absolute;top:8px;left:8px;width:26px;height:26px;border-radius:50%;background:rgba(20,32,26,0.7);
+    display:flex;align-items:center;justify-content:center;color:var(--parchment);}
+  .gal-chip-icon svg{width:15px;height:15px;}
+
   /* Photo timeline: one column per location, photos descending inside it. */
   .timeline-cols{display:flex;gap:14px;overflow-x:auto;padding-bottom:6px;align-items:flex-start;}
   .timeline-col{flex:0 0 260px;min-width:0;}
@@ -348,7 +372,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.44.0";
+const APP_VERSION = "1.45.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -384,7 +408,7 @@ const state = {
   taxaSearch: "",
   inboxLimit: 20,
   tagLocationSearch: "",
-  galleryFilters: { locationId: "", photoType: "", search: "" },
+  galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "" },
   inboxSelectMode: false,
   inboxSelected: new Set(),
   lightboxResumePending: false,
@@ -1334,6 +1358,18 @@ async function bulkAttachToLocation(locationId) {
 function openModal(type, data = {}) { state.modal = { type, data }; render(); }
 function closeModal() { state.modal = null; render(); }
 function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
+function showGalleryAlbum(locationId) {
+  state.galleryFilters = { ...state.galleryFilters, album: locationId, highlight: "" };
+  render();
+}
+function showGalleryHighlight(plantType) {
+  state.galleryFilters = { ...state.galleryFilters, highlight: plantType, album: "" };
+  render();
+}
+function clearGalleryView() {
+  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "" };
+  render();
+}
 function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; render(); }
 function openLocation(id) { state.tab = "locationDetail"; state.currentLocationId = id; render(); }
 
@@ -2279,7 +2315,18 @@ function screenReports() {
 function filteredGalleryPhotos() {
   const f = state.galleryFilters;
   const q = (f.search || "").toLowerCase();
+  // An album is a location subtree; a highlight is a taxon plant_type. Both
+  // resolve to a photo id set once rather than per-photo.
+  const albumIds = f.album ? new Set(photosInLocationTree(f.album).map((p) => p.id)) : null;
+  let highlightIds = null;
+  if (f.highlight) {
+    const taxonType = new Map(state.taxa.map((t) => [t.id, t.plant_type]));
+    const plantIds = new Set(state.plants.filter((p) => taxonType.get(p.taxa_id) === f.highlight).map((p) => p.id));
+    highlightIds = new Set(state.photos.filter((p) => p.plant_id && plantIds.has(p.plant_id)).map((p) => p.id));
+  }
   return state.photos.filter((p) => {
+    if (albumIds && !albumIds.has(p.id)) return false;
+    if (highlightIds && !highlightIds.has(p.id)) return false;
     if (f.photoType === "historical" && p.photo_type !== "historical") return false;
     if (f.photoType && f.photoType !== "historical" && p.photo_type !== f.photoType) return false;
     if (f.locationId) {
@@ -2297,45 +2344,191 @@ function filteredGalleryPhotos() {
   }).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
 }
 
+// ============================================================
+// GALLERY (GAL-1..4). Every row is a query over data that already exists —
+// no curation tables. Albums and archives are locations carrying a
+// `gallery_row`; highlights are taxon plant_type groupings.
+// ============================================================
+
+// Everything in a location's subtree, deduped: a photo tagged onto both a
+// parent and a child is still one photo.
+function photosInLocationTree(locationId) {
+  const ids = new Set([locationId, ...descendantLocationIds(locationId)]);
+  const seen = new Set();
+  const out = [];
+  ids.forEach((id) => {
+    photosAtLocation(id).forEach((p) => { if (!seen.has(p.id)) { seen.add(p.id); out.push(p); } });
+  });
+  return out.sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+}
+
+function galleryLocationRows(row) {
+  return state.locations
+    .filter((l) => (l.gallery_row || "none") === row)
+    .map((l) => ({ location: l, photos: photosInLocationTree(l.id) }))
+    .filter((g) => g.photos.length)
+    .sort((a, b) => b.photos.length - a.photos.length);
+}
+
+// A photo belongs to a highlight through its plant's taxon, so the grouping
+// follows the taxa split rather than duplicating it. `cactus` genuinely earns
+// this — it rolls up eight genera.
+function galleryHighlights() {
+  const taxonType = new Map(state.taxa.map((t) => [t.id, t.plant_type]));
+  const plantType = new Map(state.plants.map((p) => [p.id, taxonType.get(p.taxa_id)]));
+  const groups = new Map();
+  state.photos.forEach((p) => {
+    if (!p.plant_id) return;
+    const type = plantType.get(p.plant_id);
+    if (!type) return;
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type).push(p);
+  });
+  const labels = listOptionsFor("plant_type");
+  return Array.from(groups.entries())
+    .map(([type, photos]) => ({
+      type,
+      label: labels[type] || type,
+      photos: photos.sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a))),
+    }))
+    .sort((a, b) => b.photos.length - a.photos.length);
+}
+
+function galleryRecentlyAdded(limit) {
+  return state.photos.slice()
+    .sort((a, b) => new Date(b.uploaded_at || 0) - new Date(a.uploaded_at || 0))
+    .slice(0, limit || 20);
+}
+
+// Taken in the last 30 days, by real capture date where EXIF gave us one.
+function galleryRecentlyPhotographed(limit) {
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  return state.photos
+    .filter((p) => new Date(photoDate(p)).getTime() >= cutoff)
+    .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)))
+    .slice(0, limit || 20);
+}
+
+function archivePeriod(l) {
+  const year = (d) => (d ? String(d).slice(0, 4) : "");
+  const from = year(l.active_from), to = year(l.active_to);
+  const span = from && to ? (from === to ? from : `${from}–${to}`) : (from || to || "");
+  return [span, l.locality].filter(Boolean).join(" · ");
+}
+
 function screenGallery() {
   const f = state.galleryFilters;
+  const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
+  const searching = !!(f.search || activeFilterCount || f.album || f.highlight);
   const matches = filteredGalleryPhotos();
 
-  const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
+  const tile = (p) => `
+    <button class="gal-tile" onclick="openGalleryLightbox('${p.id}')">
+      <div class="card-media ratio-1x1">${photoImg(p.drive_file_id)}</div>
+      <div class="gal-tile-cap">${fmtDate(photoDate(p))}</div>
+    </button>`;
+
+  const scroller = (title, items, seeAll) => !items.length ? "" : `
+    <div class="gal-row">
+      <div class="gal-row-head">
+        <h3>${title}</h3>
+        ${seeAll ? `<button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--orange);" onclick="${seeAll}">See all →</button>` : ""}
+      </div>
+      <div class="gal-scroll">${items.join("")}</div>
+    </div>`;
+
+  const grid = (photos) => `
+    <div class="card-grid">
+      ${photos.map((p) => {
+        const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
+        const locs = allLocationsForPhoto(p);
+        return `
+        <div class="tag-card" style="padding:0;overflow:hidden;cursor:pointer;" onclick="openGalleryLightbox('${p.id}')">
+          <div class="card-media ratio-1x1">${photoImg(p.drive_file_id)}</div>
+          <div style="padding:10px 12px;">
+            <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type === "historical" ? " · Archive" : ""}</div>
+            ${plant ? `<div style="font-size:12.5px;font-style:italic;margin-top:2px;">${escapeHtml(plantDisplayName(plant))}</div>` : ""}
+            ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}${locs.length > 1 ? ` +${locs.length - 1}` : ""}</div>` : ""}
+          </div>
+        </div>`;
+      }).join("")}
+    </div>`;
 
   return `
   <div class="screen">
     <div class="container">
       <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('reports')">${icon("back")} Reports</button>
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Gallery</h2>
-      <p class="subtle" style="margin-bottom:16px;">Every photo in the collection — filter by location, type, or search.</p>
+      <p class="subtle" style="margin-bottom:16px;">${countLabel(state.photos.length, "photograph", "photographs")} documenting the collection.</p>
 
       <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" id="search-gallery" oninput="state.galleryFilters.search=this.value;render()" />
       <div class="row" style="margin-bottom:16px;">
         <button class="btn btn-secondary btn-sm" onclick="openModal('galleryFilters')">
           Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
         </button>
-        <span class="subtle">${matches.length} photo${matches.length === 1 ? "" : "s"}</span>
+        ${searching ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="clearGalleryView()">Clear</button>` : ""}
       </div>
 
-      ${matches.length === 0 ? `<div class="empty"><div class="display">No photos match</div><div>Try different filters or search.</div></div>` : `
-        <div class="card-grid">
-          ${matches.map((p) => {
-            const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
-            const locs = allLocationsForPhoto(p);
-            return `
-            <div class="tag-card" style="padding:0;overflow:hidden;cursor:pointer;" onclick="openGalleryLightbox('${p.id}')">
-              <div style="width:100%;aspect-ratio:1;background:var(--parchment-dim);">
-                ${photoImg(p.drive_file_id)}
+      ${searching ? `
+        ${/* A search or a chosen row collapses to one flat result set. */""}
+        <div class="row" style="margin-bottom:12px;">
+          <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : "Results"}</span>
+          <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
+        </div>
+        ${matches.length === 0
+          ? `<div class="empty"><div class="display">No photos match</div><div>Try a different search or filter.</div></div>`
+          : grid(matches)}`
+      : `
+        ${scroller("Recently Added", galleryRecentlyAdded(20).map(tile))}
+
+        ${(() => {
+          const albums = galleryLocationRows("albums");
+          if (!albums.length) return "";
+          return scroller("Garden Albums", albums.map((a) => `
+            <button class="gal-card" onclick="showGalleryAlbum('${a.location.id}')">
+              <div class="card-media ratio-4x3">${photoImg(a.photos[0].drive_file_id)}</div>
+              <div class="gal-card-label">
+                <div class="gal-card-title">${escapeHtml(a.location.name)}</div>
+                <div class="gal-card-meta">${countLabel(a.photos.length, "photo", "photos")}</div>
               </div>
-              <div style="padding:10px 12px;">
-                <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type === "historical" ? " · Archive" : ""}</div>
-                ${plant ? `<div style="font-size:12.5px;font-style:italic;margin-top:2px;">${escapeHtml(plantDisplayName(plant))}</div>` : ""}
-                ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}${locs.length > 1 ? ` +${locs.length - 1}` : ""}</div>` : ""}
+            </button>`));
+        })()}
+
+        ${(() => {
+          const highlights = galleryHighlights();
+          if (!highlights.length) return "";
+          return scroller("Collection Highlights", highlights.map((h) => `
+            <button class="gal-chip" onclick="showGalleryHighlight('${h.type}')">
+              <div class="card-media ratio-1x1">${photoImg(h.photos[0].drive_file_id)}</div>
+              <div class="gal-chip-icon">${icon("leaf")}</div>
+              <div class="gal-card-label">
+                <div class="gal-card-title" style="font-size:13.5px;">${escapeHtml(h.label)}</div>
+                <div class="gal-card-meta">${h.photos.length}</div>
               </div>
-            </div>`;
-          }).join("")}
-        </div>`}
+            </button>`));
+        })()}
+
+        ${(() => {
+          const archives = galleryLocationRows("archives");
+          if (!archives.length) return "";
+          return scroller("From the Archives", archives.map((a) => `
+            <button class="gal-card" onclick="showGalleryAlbum('${a.location.id}')">
+              <div class="card-media ratio-4x3">${photoImg(a.photos[0].drive_file_id)}</div>
+              <div class="gal-card-label">
+                <div class="gal-card-title">${escapeHtml(a.location.name)}</div>
+                <div class="gal-card-meta">${escapeHtml(archivePeriod(a.location))}${archivePeriod(a.location) ? " · " : ""}${countLabel(a.photos.length, "photo", "photos")}</div>
+              </div>
+            </button>`));
+        })()}
+
+        ${(() => {
+          const recent = galleryRecentlyPhotographed(20);
+          if (!recent.length) return "";
+          return `
+            ${scroller("Recently Photographed", recent.map(tile))}
+            <p class="subtle" style="margin:-20px 0 26px;">Photos taken in the last 30 days.</p>`;
+        })()}
+      `}
     </div>
   </div>`;
 }

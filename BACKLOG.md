@@ -347,19 +347,17 @@ Heart icon, manual per-photo toggle, filter row in Gallery.
 
 **Second consumer: SPECIES-1.** A taxon's photo gallery is the favorited photos across all of its specimens, so `is_favorite` is not just a Gallery filter — it is how a specimen photo gets promoted to represent the taxon. Icon supplied: `heartStar`, already defined in `icon()` since v1.38.0.
 
-### GAL-2 — Collection Highlights
+### GAL-2 — Collection Highlights (per-photo tagging only)
+**Status:** ready · **Effort:** low
+**Plant-level grouping shipped in v1.45.0** — the Highlights row derives from `taxa.plant_type`, so Cacti rolls up eight genera with no junction table. What remains is only the open question of whether *photo-level* tags are additionally wanted: tagging one photo as a highlight independently of its plant. If not, this item is done.
+
+### GAL-2 (original scope)
 **Status:** ready · **Effort:** medium · **Schema:** category-tagging junction table
 Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, Succulents. Decide photo-level vs. plant-level tagging before building — the two produce different Gallery behavior.
 
 **Re-scope against PD-2.** `plants.plant_type` now holds cactus / agave / aloe / euphorbia / sedum / crassula / echeveria / sempervivum / aeonium, which **is** plant-level category tagging. The open question shrinks to whether GAL-2 additionally needs *photo-level* tags. If not, GAL-2 needs no junction table at all — it becomes a Gallery filter reading `plant_type`. Do not build a second source of truth for the same fact.
 
-### GAL-3 — Garden Albums
-**Status:** ready · **Effort:** low · **Depends on:** LOC-6 (done)
-**Not a curation system — an album is an area.** Every location with `gallery_row = 'albums'` is an album; its photos are everything in its subtree. The Wall, Below Wall and Front Yard fall straight out of the hierarchy. Re-scoped from medium after LOC-6.
 
-### GAL-4 — From the Archives
-**Status:** ready · **Effort:** medium · **Schema:** archive-grouping fields
-Group `photo_type = 'historical'` photos by former collection location and date range. These former locations are **archival labels, not rows in `locations`** — they need their own small schema addition.
 
 ### GAL-5 — In Bloom row
 **Status:** blocked by BLOOM-1 and OPEN-2
@@ -384,6 +382,20 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.45.0
+
+**The Gallery rebuild — GAL-3, GAL-4 and the plant-level half of GAL-2.** Schema: none · Touched `screenGallery`, `filteredGalleryPhotos`, `state.galleryFilters`, new gallery CSS and six data helpers.
+
+Built from Amanda's mockup. **Every row is a query over data that already exists** — no curation tables anywhere, which is what LOC-6 made possible.
+
+- **Garden Albums** = locations with `gallery_row = 'albums'`, showing everything in their subtree. Front Yard includes photos from Bucket 39 four levels down. Deduped, so a photo tagged onto a parent and a child counts once.
+- **From the Archives** = locations with `gallery_row = 'archives'`, captioned from `active_from` / `active_to` / `locality` — "2018–2020 · SF, CA". A single-year span collapses to one year; missing dates fall back to locality alone.
+- **Collection Highlights** derive from `taxa.plant_type`, so the grouping follows the taxa split instead of duplicating it. Untyped taxa and unattached photos are simply absent rather than forming a junk group.
+- **Recently Added** sorts by upload; **Recently Photographed** uses `photoDate()` and a real 30-day window, so EXIF capture dates win over upload dates.
+- Tapping any album or highlight collapses the screen to that filtered set; search and filters do the same. One Clear returns to browsing.
+
+**In Bloom is the only row not built** — it needs BLOOM-1, which needs AI-1.
 
 ### v1.44.0
 

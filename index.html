@@ -488,7 +488,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.75.0";
+const APP_VERSION = "1.75.1";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1998,6 +1998,22 @@ function toggleInboxSelectMode() {
   state.inboxSelected = new Set();
   render();
 }
+// Two scopes, deliberately distinct. "Shown" is the page she is looking at;
+// "matching" is everything behind the current filter, which at 2019 is 1,243
+// photos she cannot see. Conflating them would let one tap select a thousand
+// records without saying so.
+function selectAllInboxPhotos(ids) {
+  const all = ids.length && ids.every((id) => state.inboxSelected.has(id));
+  state.inboxSelected = all ? new Set() : new Set(ids);
+  render();
+}
+function selectAllMatchingInbox() {
+  const ids = inboxPhotos().map((p) => p.id);
+  if (ids.length > 250 && !confirm(`Select all ${ids.length} photos matching this filter?`)) return;
+  state.inboxSelected = new Set(ids);
+  render();
+}
+
 function toggleInboxPhotoSelected(photoId) {
   if (state.inboxSelected.has(photoId)) state.inboxSelected.delete(photoId);
   else state.inboxSelected.add(photoId);
@@ -2414,6 +2430,17 @@ function screenInbox() {
             ${state.inboxView === "compact" ? icon("photo") + " Full" : icon("clipboard") + " Compact"}
           </button>
         </div>
+        ${selectMode ? `
+          <div class="row" style="margin-bottom:10px;">
+            <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllInboxPhotos(${JSON.stringify(visible.map((p) => p.id))})">
+              ${visible.length && visible.every((p) => state.inboxSelected.has(p.id)) ? "Clear selection" : `Select all ${visible.length} shown`}
+            </button>
+            ${unassigned.length > visible.length ? `
+              <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="selectAllMatchingInbox()">
+                Select all ${unassigned.length} matching
+              </button>` : ""}
+            <span class="subtle" style="font-size:12px;">${state.inboxSelected.size} selected</span>
+          </div>` : ""}
         <div class="row" style="margin-bottom:12px;">
           <span class="subtle">${filtered ? `${unassigned.length} of ${total}` : countLabel(total, "photo", "photos")} waiting</span>
           <span class="subtle" style="display:flex;align-items:center;gap:6px;">

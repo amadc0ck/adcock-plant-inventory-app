@@ -227,6 +227,17 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.75.1
+
+**Select all in the Inbox.** Schema: none.
+
+Select mode had no way to select more than one photo at a time, while the Gallery and the Location page both did. Two buttons, deliberately distinct:
+
+- **Select all N shown** — the page in front of you, toggling off on a second press.
+- **Select all N matching** — everything behind the current filter, which at *2019* is 1,243 photos she cannot see. Conflating the two would let one tap select a thousand records without saying so, and past 250 it confirms first.
+
+They sit in the sticky controls beside the running count, so they stay reachable while the bulk bar holds the actions at the bottom.
+
 ### v1.75.0
 
 **Create a specimen from inside the plant picker.** Schema: none.

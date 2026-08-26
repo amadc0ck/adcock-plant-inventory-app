@@ -85,7 +85,7 @@ Supersedes the plant-level half of GAL-2. AI-1 and AI-2 should be designed again
 ### SPECIES-2 — Split multi-location plants into one specimen per location
 **Status:** splitting **done by hand** 2026-08-25 · cleanup pending · **Effort:** medium–high · **Schema:** yes, retires `plant_locations` for specimens · **Depends on:** SPECIES-1 · **Touches:** `plants`, `plant_locations`, `photos`, `care_notes`, `screenPlantDetail`, `allLocationsForPlant`, `mergePlants`
 
-**Done manually rather than by migration.** Amanda created every missing specimen through the UI, which avoided the automated-split judgement calls entirely. All that remains is deleting 0014's redundant `plant_locations` row and the phase-3 column drop.
+**Done manually rather than by migration.** Amanda created every missing specimen through the UI, which avoided the automated-split judgement calls entirely. 0014's redundant `plant_locations` row was deleted by hand 2026-08-26. **All that remains is the phase-3 column drop**, which is now tracked under SPECIES-1 phase 3 rather than here.
 
 **"Every plant + location combo is a specimen"** (Amanda, 2026-08-25). A specimen is one physical individual and a physical individual is in exactly one place, so a plant row listing three locations is really up to three plants.
 
@@ -225,12 +225,10 @@ Plant check-ins support **both** staleness (days since last photo, via `photoDat
 ## Gallery rebuild — largest net-new area
 
 
-### GAL-2 (original scope)
-**Status:** ready · **Effort:** medium · **Schema:** category-tagging junction table
-Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, Succulents. Decide photo-level vs. plant-level tagging before building — the two produce different Gallery behavior.
+### GAL-2 (original scope) — **closed 2026-08-26, not built**
+**Status:** done (closed as unnecessary)
 
-**Re-scope against PD-2.** `plants.plant_type` now holds cactus / agave / aloe / euphorbia / sedum / crassula / echeveria / sempervivum / aeonium, which **is** plant-level category tagging. The open question shrinks to whether GAL-2 additionally needs *photo-level* tags. If not, GAL-2 needs no junction table at all — it becomes a Gallery filter reading `plant_type`. Do not build a second source of truth for the same fact.
-
+Resolved without a junction table. `taxa.plant_type` already **is** plant-level category tagging, so the Gallery filters on it; and v1.62.0 made **favourites** the highlight mechanism, which covers the per-photo half of the intent with one gesture instead of a tagging vocabulary. Building the category junction table would have been a second source of truth for a fact `plant_type` already holds.
 
 ---
 

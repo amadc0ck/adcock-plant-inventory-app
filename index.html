@@ -440,7 +440,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.64.0";
+const APP_VERSION = "1.65.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -704,12 +704,18 @@ function exportPlantsCsv() {
     "native_range", "hardy_to", "light_requirements", "water_needs", "notes"];
   const rows = state.plants.map((pl) => {
     const loc = locationById(pl.location_id);
+    // Species columns come off the taxon. The headers are unchanged so an
+    // existing spreadsheet still lines up, but the values are now read from
+    // the single source rather than the specimen's stale copy.
+    const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+    const tv = (k) => (t && t[k] != null ? t[k] : "");
     return [
-      pl.accession_number, pl.botanical_name, pl.common_name, pl.cultivar, pl.family, pl.genus, pl.species,
-      pl.description, pl.plant_type, pl.growth_habit, pl.mature_size, pl.bloom_season, pl.origin,
+      pl.accession_number, taxonDisplayName(t) === "Unknown" ? "" : taxonDisplayName(t),
+      tv("common_name"), tv("cultivar"), tv("family"), tv("genus"), tv("species_epithet"),
+      tv("description"), tv("plant_type"), tv("growth_habit"), tv("mature_size"), tv("bloom_season"), tv("origin"),
       pl.identification_status, pl.collection_category, pl.original_collection, pl.status, pl.health_status,
       loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
-      pl.native_range, pl.hardy_to, (pl.light_conditions || []).join("; "), pl.water_needs, pl.notes,
+      tv("native_range"), tv("hardy_to"), (t && t.light_conditions || []).join("; "), tv("water_needs"), pl.notes,
     ].map(csvEscape).join(",");
   });
   const csv = [headers.join(","), ...rows].join("\r\n");
@@ -1111,7 +1117,7 @@ function plantPickerName(pl) {
   // Inverse of plantDisplayName's precedence: common first, because that is
   // what she can read at a glance.
   const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
-  const common = pl.common_name || (t && t.common_name);
+  const common = t && t.common_name;
   const botanical = plantDisplayName(pl);
   return { primary: common || botanical, secondary: common ? botanical : "" };
 }
@@ -1126,7 +1132,7 @@ function plantPickerMatches(opts) {
       if (state.pickerLocation && p.location_id !== state.pickerLocation) return false;
       if (!q) return true;
       const t = p.taxa_id ? taxonById(p.taxa_id) : null;
-      const hay = [p.accession_number, p.common_name, p.botanical_name,
+      const hay = [plantSearchText(p),
                    t && t.common_name, t && t.botanical_name]
         .filter(Boolean).join(" ").toLowerCase();
       return hay.includes(q);
@@ -1187,10 +1193,32 @@ function clearPlantPicker() {
   render();
 }
 
+// SPECIES-1 phase 3. A specimen has no name of its own — the taxon does. This
+// used to read pl.botanical_name, which was the keystone holding every species
+// column on `plants` alive. taxa_id is nullable on purpose (an unidentified
+// plant stays first-class), so the no-taxon path is real, not defensive.
 function plantDisplayName(pl) {
-  if (pl.botanical_name) return pl.botanical_name;
-  if (pl.common_name) return pl.common_name;
+  if (!pl) return "Unidentified Plant";
+  const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+  if (t) return taxonDisplayName(t);
   return "Unidentified Plant";
+}
+// Every search box over specimens used its own inline list of fields, and each
+// one still read the species columns off `plants`. One helper so they cannot
+// drift apart again.
+function plantSearchText(pl) {
+  if (!pl) return "";
+  const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+  return [pl.accession_number, plantDisplayName(pl),
+          t && t.common_name, t && t.botanical_name, t && t.genus,
+          t && t.family, t && t.cultivar, t && t.working_label]
+    .filter(Boolean).join(" ").toLowerCase();
+}
+function plantDisplayHtml(pl) {
+  if (!pl) return "Unidentified Plant";
+  const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+  if (t) return taxonDisplayHtml(t);
+  return escapeHtml(plantDisplayName(pl));
 }
 
 function locationById(id) {
@@ -1465,19 +1493,57 @@ function cultivarLabel(raw) {
   if (!raw) return "";
   const v = String(raw).trim();
   if (!v) return "";
-  // Anything already carrying a quote is rendered verbatim. Stripping the outer
-  // pair is wrong for values that are really full names with an embedded
-  // cultivar ("Echeveria 'Purple Perle'") — it leaves them unbalanced.
-  if (/['\u2018\u2019"]/.test(v)) return v;
-  return `'${v}'`;
+  // NAME-1 normalized the column to bare cultivar epithets, so anything still
+  // carrying quotes is stray punctuation rather than a full embedded name.
+  // Strip whatever quoting arrived and apply exactly one pair.
+  const bare = v.replace(/^['\u2018\u2019"]+|['\u2018\u2019"]+$/g, "").trim();
+  return bare ? `'${bare}'` : "";
+}
+
+// NAME-1. Composed from parts first, free text second — the reverse of v1.41.0,
+// which preferred botanical_name only because the parts were barely populated
+// (genus 5/27, epithet 3/27). All 33 taxa are filled now, so composition is the
+// better name and the only one that can be marked up per part.
+//
+// Two things this must not get wrong:
+//   - The hybrid sign lives ONLY in the free text. `Parodia × erubescens`
+//     composes from parts as "Parodia erubescens" unless is_hybrid puts the ×
+//     back, which is the one record that would have silently lost information.
+//   - A cultivar of hybrid origin has no epithet at all — Echeveria
+//     'Purple Perle' is genus + cultivar. Requiring an epithet would send it to
+//     the fallback and lose the markup, so genus + cultivar composes too.
+function taxonNameParts(t) {
+  if (!t) return null;
+  const genus = (t.genus || "").trim();
+  const epithet = (t.species_epithet || "").trim();
+  const cultivar = (t.cultivar || "").trim();
+  if (!genus || (!epithet && !cultivar)) return null; // not enough to beat the free text
+  return { genus, epithet, cultivar, hybrid: !!t.is_hybrid };
 }
 
 function taxonDisplayName(t) {
   if (!t) return "Unknown";
+  const p = taxonNameParts(t);
+  if (p) {
+    const sci = p.epithet ? `${p.genus} ${p.hybrid ? "\u00D7 " : ""}${p.epithet}` : p.genus;
+    return p.cultivar ? `${sci} ${cultivarLabel(p.cultivar)}` : sci;
+  }
   if (t.botanical_name && t.botanical_name.trim()) return t.botanical_name.trim();
-  const composed = (t.genus && t.species_epithet) ? `${t.genus} ${t.species_epithet}` : "";
-  const withCultivar = composed && t.cultivar ? `${composed} ${cultivarLabel(t.cultivar)}` : composed;
-  return withCultivar || t.working_label || "Unnamed taxon";
+  return t.working_label || "Unnamed taxon";
+}
+
+// Marked-up form. Genus and epithet italic, the hybrid sign and the cultivar
+// upright — a single free-text string can never be styled correctly, which is
+// half of why NAME-1 exists. Returns HTML, so callers must NOT wrap it in
+// escapeHtml(); the parts are escaped here. The plain function above stays for
+// <option> labels, title attributes and CSV, where markup cannot go.
+function taxonDisplayHtml(t) {
+  const p = taxonNameParts(t);
+  if (!p) return escapeHtml(taxonDisplayName(t));
+  let html = `<i>${escapeHtml(p.genus)}</i>`;
+  if (p.epithet) html += `${p.hybrid ? " \u00D7" : ""} <i>${escapeHtml(p.epithet)}</i>`;
+  if (p.cultivar) html += ` ${escapeHtml(cultivarLabel(p.cultivar))}`;
+  return html;
 }
 function taxonSecondaryName(t) {
   if (!t) return "";
@@ -2232,7 +2298,7 @@ function taxonCard(t) {
       </div>
       <div style="flex:1;min-width:0;">
         <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}</div>
-        <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-top:2px;font-style:${t.botanical_name || t.genus ? "italic" : "normal"};line-height:1.25;">${escapeHtml(taxonDisplayName(t))}</div>
+        <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-top:2px;line-height:1.25;">${taxonDisplayHtml(t)}</div>
         ${secondary ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(secondary)}</div>` : ""}
         <div class="row" style="margin-top:8px;">
           <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(specimens.length, "specimen", "specimens")}</div>
@@ -2330,7 +2396,7 @@ function screenTaxonDetail() {
           </div>
           <div class="detail-body">
             <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}${t.family ? " · " + escapeHtml(t.family) : ""}</div>
-            <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;font-style:${t.botanical_name || t.genus ? "italic" : "normal"};line-height:1.2;">${escapeHtml(taxonDisplayName(t))}</div>
+            <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;line-height:1.2;">${taxonDisplayHtml(t)}</div>
             ${taxonSecondaryName(t) ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(taxonSecondaryName(t))}</div>` : ""}
             ${t.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(t.description)}</div>` : ""}
             <div style="margin-top:12px;font-size:13px;color:var(--ink);">
@@ -2423,8 +2489,7 @@ function screenPlants() {
   const f = state.plantFilters;
   const list = state.plants.filter((pl) => {
     if (q) {
-      const hay = [pl.accession_number, pl.common_name, pl.botanical_name, pl.cultivar].filter(Boolean).join(" ").toLowerCase();
-      if (!hay.includes(q)) return false;
+      if (!plantSearchText(pl).includes(q)) return false;
     }
     if (f.category && pl.collection_category !== f.category) return false;
     if (f.status && pl.status !== f.status) return false;
@@ -2474,8 +2539,11 @@ function plantRow(pl) {
     </div>
     <div style="flex:1;min-width:0;">
       <div class="tag-id">${pl.accession_number}</div>
-      <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin-top:2px;font-style:${pl.botanical_name ? "italic" : "normal"};line-height:1.25;">${escapeHtml(plantDisplayName(pl))}</div>
-      ${pl.botanical_name && pl.common_name ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(pl.common_name)}</div>` : ""}
+      <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin-top:2px;line-height:1.25;">${plantDisplayHtml(pl)}</div>
+      ${(() => {
+        const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+        return t && t.common_name ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(t.common_name)}</div>` : "";
+      })()}
       <div class="wrap-gap" style="margin-top:7px;">
         ${pl.collection_category === "historical" ? `<span class="pill-solid pill-solid-outline">Historical</span>` : ""}
         ${pl.original_collection ? `<span class="pill-solid pill-solid-pink">Original</span>` : ""}
@@ -2522,10 +2590,14 @@ function screenPlantDetail() {
 
         <div class="detail-body">
           <div class="tag-id">${pl.accession_number}</div>
-          <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;font-style:${pl.botanical_name ? "italic" : "normal"};line-height:1.2;">${escapeHtml(plantDisplayName(pl))}</div>
-          ${pl.botanical_name && pl.common_name ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(pl.common_name)}</div>` : ""}
-          ${pl.cultivar ? `<div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">${escapeHtml(cultivarLabel(pl.cultivar))}</div>` : ""}
-          ${pl.family || pl.genus ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;letter-spacing:0.2px;">${[pl.family, pl.genus].filter(Boolean).join(" · ")}</div>` : ""}
+          <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;line-height:1.2;">${plantDisplayHtml(pl)}</div>
+          ${(() => {
+            const common = taxon && taxon.common_name;
+            const lineage = taxon ? [taxon.family, taxon.genus].filter(Boolean).join(" · ") : "";
+            return `
+            ${common ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(common)}</div>` : ""}
+            ${lineage ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;letter-spacing:0.2px;">${escapeHtml(lineage)}</div>` : ""}`;
+          })()}
 
           <div class="wrap-gap" style="margin-top:13px;">
             <span class="pill-solid ${pl.status === "active" ? "pill-solid-moss" : "pill-solid-terracotta"}">${STATUS_LABELS[pl.status]}</span>
@@ -2557,7 +2629,7 @@ function screenPlantDetail() {
                  the species record. */""}
             ${allLocationsForPlant(pl).length > 1 ? `<div class="subtle" style="margin-top:6px;font-size:11.5px;">More than one location — each should be its own specimen. Add them from the species record.</div>` : ""}
           </div>
-          ${pl.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(pl.description)}</div>` : ""}
+          ${taxon && taxon.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(taxon.description)}</div>` : ""}
         </div>
 
         <div class="detail-actions">
@@ -2960,7 +3032,9 @@ function screenLocationDetail() {
 function findDuplicatePlantGroups() {
   const groups = {};
   state.plants.forEach((pl) => {
-    const nameKey = (pl.botanical_name || pl.common_name || "").trim().toLowerCase();
+    // Keyed on the taxon now: two specimens of the same kind in one place are
+    // the duplicate worth flagging, and that is exactly what taxa_id says.
+    const nameKey = (pl.taxa_id || plantDisplayName(pl)).toString().trim().toLowerCase();
     if (!nameKey) return;
     const key = `${pl.location_id || "none"}|${nameKey}`;
     (groups[key] = groups[key] || []).push(pl);
@@ -3207,7 +3281,7 @@ function reportPlantItem(pl) {
       </div>
       <div style="flex:1;min-width:0;">
         <div class="tag-id">${pl.accession_number}</div>
-        <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;font-style:${pl.botanical_name ? "italic" : "normal"};">${escapeHtml(plantDisplayName(pl))}</div>
+        <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;">${plantDisplayHtml(pl)}</div>
         <div style="font-size:11.5px;color:var(--ink-soft);">${loc ? escapeHtml(locationPath(loc)) : "No location"}</div>
       </div>
     </div>`;
@@ -3257,7 +3331,7 @@ function filteredGalleryPhotos() {
     }
     if (q) {
       const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
-      const hay = [p.notes, plant ? plantDisplayName(plant) : "", plant ? plant.accession_number : "", ...allLocationsForPhoto(p).map((l) => l.name)].filter(Boolean).join(" ").toLowerCase();
+      const hay = [p.notes, plant ? plantSearchText(plant) : "", ...allLocationsForPhoto(p).map((l) => l.name)].filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -3372,7 +3446,7 @@ function screenGallery() {
           <div class="plant-list-thumb" style="width:52px;height:52px;">${photoImg(p)}</div>
           <div style="flex:1;min-width:0;">
             <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type && p.photo_type !== "general" ? " · " + escapeHtml(PHOTO_TYPE_LABELS[p.photo_type] || p.photo_type) : ""}</div>
-            ${plant ? `<div style="font-size:13px;font-style:italic;margin-top:1px;">${escapeHtml(plantDisplayName(plant))}</div>` : ""}
+            ${plant ? `<div style="font-size:13px;margin-top:1px;">${plantDisplayHtml(plant)}</div>` : ""}
             ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}</div>` : `<div class="value-blank" style="font-size:11px;margin-top:1px;">No location</div>`}
           </div>
           <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;flex-shrink:0;" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
@@ -3395,7 +3469,7 @@ function screenGallery() {
               <div class="tag-id">${fmtDate(photoDate(p))}${isArchivePhoto(p) ? " · Archive" : ""}</div>
               <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
             </div>
-            ${plant ? `<div style="font-size:12.5px;font-style:italic;margin-top:2px;">${escapeHtml(plantDisplayName(plant))}</div>` : ""}
+            ${plant ? `<div style="font-size:12.5px;margin-top:2px;">${plantDisplayHtml(plant)}</div>` : ""}
             ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}${locs.length > 1 ? ` +${locs.length - 1}` : ""}</div>` : ""}
           </div>
         </div>`;
@@ -3928,19 +4002,12 @@ function modalContent() {
       <p class="mono subtle" style="margin:0 0 14px;">${pl.accession_number} · permanent, cannot be changed</p>
       <form id="edit-plant-form">
 
-        <div class="section-label">Identity</div>
-        <label>Botanical name</label>
-        <input id="ep-botanical" value="${escapeHtml(pl.botanical_name || "")}" />
-        <label>Common name</label>
-        <input id="ep-common" value="${escapeHtml(pl.common_name || "")}" />
-        <label>Cultivar</label>
-        <input id="ep-cultivar" value="${escapeHtml(pl.cultivar || "")}" />
-        <label>Family</label>
-        <input id="ep-family" placeholder="e.g. Cactaceae" value="${escapeHtml(pl.family || "")}" />
-        <label>Genus</label>
-        <input id="ep-genus" placeholder="e.g. Cephalocereus" value="${escapeHtml(pl.genus || "")}" />
-        <label>Species</label>
-        <input id="ep-species" placeholder="e.g. senilis" value="${escapeHtml(pl.species || "")}" />
+        ${/* SPECIES-1 phase 3. The name belongs to the taxon, not this
+             individual — editing it here wrote to specimen columns that
+             shadowed the real record and drifted from it. Identification
+             status and notes stay: they are facts about THIS plant. */""}
+        <div class="section-label">Identification</div>
+        <div class="field-help" style="margin:0 0 10px;">Whether <em>this</em> plant has been identified. The name itself belongs to the species — set it under Species below.</div>
         <label>Identification status</label>
         <select id="ep-idstatus">
           ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${pl.identification_status === k ? "selected" : ""}>${v}</option>`).join("")}
@@ -3957,9 +4024,8 @@ function modalContent() {
           <option value="">— Not linked —</option>
           ${[...state.taxa].sort((a, b) => taxonDisplayName(a).localeCompare(taxonDisplayName(b)))
             .map((t) => `<option value="${t.id}" ${pl.taxa_id === t.id ? "selected" : ""}>${escapeHtml(taxonDisplayName(t))}</option>`).join("")}
-          <option value="__new__">+ Create a new species from the botanical name above</option>
         </select>
-        <div class="field-help">Description, type, growth habit, bloom season, origin and care live on the species and apply to every specimen of it.</div>
+        <div class="field-help">Name, description, type, growth habit, bloom season, origin and care all live on the species and apply to every specimen of it. Create a new species from the Plants tab.</div>
         ${pl.taxa_id ? `<button type="button" class="btn btn-secondary btn-block" style="margin-top:10px;" onclick="closeModal();openModal('editTaxon',{taxonId:'${pl.taxa_id}'})">Edit species record</button>` : ""}
 
         <div class="section-label">Collection</div>
@@ -4109,7 +4175,7 @@ function modalContent() {
   if (type === "linkPlantToLocation") {
     const existingIds = plantsAtLocation(data.locationId).map((p) => p.id);
     const q = (state.attachSearch || "").toLowerCase();
-    const candidates = state.plants.filter((p) => !existingIds.includes(p.id) && (!q || [p.accession_number, p.common_name, p.botanical_name].filter(Boolean).join(" ").toLowerCase().includes(q)));
+    const candidates = state.plants.filter((p) => !existingIds.includes(p.id) && (!q || plantSearchText(p).includes(q)));
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Link existing plant</h3>
@@ -4700,10 +4766,9 @@ function modalContent() {
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Propagate plant</h3>
       <p class="subtle" style="margin:0 0 14px;">From <strong>${parent.accession_number}</strong> — ${escapeHtml(plantDisplayName(parent))}. Gets its own new accession number.</p>
       <form id="propagate-plant-form">
-        <label>Botanical name</label>
-        <input id="pp-botanical" value="${escapeHtml(parent.botanical_name || "")}" />
-        <label>Common name</label>
-        <input id="pp-common" value="${escapeHtml(parent.common_name || "")}" />
+        ${/* No name fields. An offset is the same kind of plant as its mother
+             by definition, so it inherits her taxon; asking again only created
+             a chance to disagree with it. */""}
         <label>How many offsets?</label>
         <input type="number" id="pp-count" value="1" min="1" max="25" />
         <div class="field-help">Each becomes its own specimen with its own accession number, all sharing this parent and location. Taking five cuttings should not mean filling this in five times.</div>
@@ -4776,7 +4841,7 @@ function modalContent() {
     const photo = state.photos.find((p) => p.id === data.photoId);
     const taggedIds = new Set(state.photoPlants.filter((pp) => pp.photo_id === data.photoId).map((pp) => pp.plant_id));
     const q = (state.tagSearch || "").toLowerCase();
-    const candidates = state.plants.filter((p) => p.id !== photo.plant_id && (!q || [p.accession_number, p.common_name, p.botanical_name].filter(Boolean).join(" ").toLowerCase().includes(q)));
+    const candidates = state.plants.filter((p) => p.id !== photo.plant_id && (!q || plantSearchText(p).includes(q)));
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Tag plants in this photo</h3>
@@ -6499,17 +6564,34 @@ function wireModalForms() {
 // with the same botanical name, otherwise make a new one. A specimen with no
 // name at all keeps taxa_id null on purpose and surfaces in the Unidentified
 // group on the taxa list instead.
-async function ensureTaxonForName(botanicalName, commonName) {
+// SPECIES-1 phase 3. Every species fact entered anywhere in the app lands here
+// and goes onto the taxon. `parts` carries cultivar/family/genus/epithet from
+// the New Plant form, which used to write them onto the specimen instead.
+//
+// A common name with no botanical name still deserves a taxon — three plants
+// can obviously be the same kind before anyone knows what that kind is, which
+// is what working_label is for. Returning null there would strand the specimen.
+async function ensureTaxonForName(botanicalName, commonName, parts) {
   const name = (botanicalName || "").trim();
-  if (!name) return null;
-  const existing = state.taxa.find(
-    (t) => (t.botanical_name || "").trim().toLowerCase() === name.toLowerCase()
+  const common = (commonName || "").trim();
+  if (!name && !common) return null;
+  const key = (name || common).toLowerCase();
+  const existing = state.taxa.find((t) =>
+    (name && (t.botanical_name || "").trim().toLowerCase() === key) ||
+    (!name && (t.working_label || t.common_name || "").trim().toLowerCase() === key)
   );
   if (existing) return existing.id;
-  const [created] = await restPost("taxa", {
-    botanical_name: name,
-    common_name: (commonName || "").trim() || null,
-  });
+  const body = {
+    botanical_name: name || null,
+    common_name: common || null,
+    working_label: name ? null : common,
+  };
+  if (parts) {
+    ["cultivar", "family", "genus", "species_epithet"].forEach((k) => {
+      if (parts[k]) body[k] = parts[k];
+    });
+  }
+  const [created] = await restPost("taxa", body);
   return created ? created.id : null;
 }
 
@@ -6518,9 +6600,9 @@ async function ensureTaxonForName(botanicalName, commonName) {
     newPlantForm.onsubmit = async (e) => {
       e.preventDefault();
       try {
+        const botanical = document.getElementById("np-botanical").value || null;
+        const common = document.getElementById("np-common").value || null;
         const body = {
-          botanical_name: document.getElementById("np-botanical").value || null,
-          common_name: document.getElementById("np-common").value || null,
           identification_status: document.getElementById("np-idstatus").value,
           location_id: document.getElementById("np-location").value || null,
           collection_category: document.getElementById("np-category").value,
@@ -6531,16 +6613,19 @@ async function ensureTaxonForName(botanicalName, commonName) {
         // a collapsed form submits exactly as it did before.
         const opt = (id) => { const el = document.getElementById(id); return el && el.value ? el.value : null; };
         Object.assign(body, {
-          cultivar: opt("np-cultivar"),
-          family: opt("np-family"),
-          genus: opt("np-genus"),
-          species: opt("np-species"),
           date_acquired: opt("np-dateacquired"),
           acquisition_source_type: opt("np-acqtype"),
           acquisition_source_name: opt("np-acqname"),
           health_status: opt("np-health") || "healthy",
         });
-        body.taxa_id = await ensureTaxonForName(body.botanical_name, body.common_name);
+        // The name and its parts describe the KIND of plant, so they create or
+        // find the taxon rather than being copied onto this individual.
+        body.taxa_id = await ensureTaxonForName(botanical, common, {
+          cultivar: opt("np-cultivar"),
+          family: opt("np-family"),
+          genus: opt("np-genus"),
+          species_epithet: opt("np-species"),
+        });
         const [newPlant] = await restPost("plants", body);
         if (state.modal.type === "newPlantFromPhoto") {
           const sourcePhoto = state.photos.find((p) => p.id === state.modal.data.photoId);
@@ -6650,8 +6735,6 @@ async function ensureTaxonForName(botanicalName, commonName) {
           identification_status: taxaId ? "confirmed" : "unidentified",
           collection_category: "current",
           status: "active",
-          botanical_name: t ? t.botanical_name : null,
-          common_name: t ? t.common_name : null,
         });
         toast(`Created ${created ? created.accession_number : "specimen"}`);
         closeModal();
@@ -6680,15 +6763,6 @@ async function ensureTaxonForName(botanicalName, commonName) {
           identification_status: "confirmed",
           collection_category: "current",
           status: "active",
-          // Copied onto the specimen only while plants still carries these
-          // columns. SPECIES-1 phase 3 drops them and the taxon becomes the
-          // single source. Copying keeps the old screens working meanwhile.
-          botanical_name: t ? t.botanical_name : null,
-          common_name: t ? t.common_name : null,
-          cultivar: t ? t.cultivar : null,
-          family: t ? t.family : null,
-          genus: t ? t.genus : null,
-          species: t ? t.species_epithet : null,
         };
         await restPost("plants", body);
         toast("Specimen added");
@@ -6704,12 +6778,6 @@ async function ensureTaxonForName(botanicalName, commonName) {
       e.preventDefault();
       try {
         const body = {
-          botanical_name: document.getElementById("ep-botanical").value || null,
-          common_name: document.getElementById("ep-common").value || null,
-          cultivar: document.getElementById("ep-cultivar").value || null,
-          family: document.getElementById("ep-family").value || null,
-          genus: document.getElementById("ep-genus").value || null,
-          species: document.getElementById("ep-species").value || null,
           identification_status: document.getElementById("ep-idstatus").value,
           identification_notes: document.getElementById("ep-idnotes").value || null,
           collection_category: document.getElementById("ep-category").value,
@@ -6728,10 +6796,7 @@ async function ensureTaxonForName(botanicalName, commonName) {
         // Linking an existing specimen to a species. Without this an orphaned
         // specimen could never be linked at all — create and propagate resolved
         // a taxon but edit did not.
-        const taxonChoice = document.getElementById("ep-taxon").value;
-        body.taxa_id = taxonChoice === "__new__"
-          ? await ensureTaxonForName(body.botanical_name, body.common_name)
-          : (taxonChoice || null);
+        body.taxa_id = document.getElementById("ep-taxon").value || null;
         await restPatch("plants", `id=eq.${state.modal.data.plantId}`, body);
         toast(body.taxa_id ? "Saved" : "Saved — not linked to a species");
         closeModal();
@@ -6771,20 +6836,13 @@ async function ensureTaxonForName(botanicalName, commonName) {
       try {
         const parent = state.plants.find((p) => p.id === state.modal.data.parentId);
         const body = {
-          botanical_name: document.getElementById("pp-botanical").value || null,
-          common_name: document.getElementById("pp-common").value || null,
-          family: parent.family || null,
-          genus: parent.genus || null,
-          species: parent.species || null,
+          taxa_id: parent.taxa_id || null,
           location_id: document.getElementById("pp-location").value || null,
           notes: document.getElementById("pp-notes").value || null,
           parent_plant_id: state.modal.data.parentId,
           acquisition_source_type: "propagation",
           acquisition_source_name: `Propagated from ${parent.accession_number}`,
         };
-        // An offset is the same taxon as its mother by definition. Fall back to
-        // a name lookup only if the parent predates the taxa split.
-        body.taxa_id = parent.taxa_id || await ensureTaxonForName(body.botanical_name, body.common_name);
         const count = Math.min(25, Math.max(1, parseInt(document.getElementById("pp-count").value, 10) || 1));
         // One insert of N rows: the accession trigger numbers each in turn.
         const created = await restPost("plants", Array.from({ length: count }, () => ({ ...body })));

@@ -10,6 +10,7 @@ Item IDs are permanent. Never renumber.
 ## Observed 2026-08-25 — triaged from Amanda's session notes
 
 ### SPECIES-1 — Split taxa from specimens (epic)
+**Phase 3 code pass shipped v1.65.0. The column drop is the only step left — see the block in the v1.65.0 entry below.**
 **Status:** phases 1–2 **done** (v1.41.0–v1.41.3) · phase 3 pending · **Effort:** high · **Schema:** yes, new table + FK · **Touches:** nearly every screen
 
 `plants` is one row per accessioned specimen, so **every species-level fact is copied onto every specimen of that species** and nothing keeps the copies in sync. Four offsets of one plant store the same mature size four times.
@@ -125,20 +126,6 @@ From a location's photos, without navigating away:
 Not tagging other *locations* — a location is singular, holding multiple specimens, so cross-tagging containers has no meaning. `photo_locations` stays unused for this.
 
 
-### NAME-1 — Normalize botanical names into structured parts
-**Status:** ready · **Effort:** low–medium · **Schema:** none · **Depends on:** SPECIES-1
-
-`taxa` has `genus` / `species_epithet` / `cultivar` / `is_hybrid`, but they are barely populated — **family 3/27, genus 5/27, species 3/27, cultivar 3/27**. So `taxonDisplayName()` prefers the free-text `botanical_name`, which is backwards from the intent.
-
-The free text is also inconsistent in ways that will break parsing:
-- **Mixed quote characters** — 'Zwartkop' and 'Metallica' use curly `\u2019`, 'Hamaji Silver' and 'fuzzy navel' use straight `'`. Two characters meaning one thing breaks matching and dedup.
-- **Lowercase cultivar** — 'fuzzy navel' should be 'Fuzzy Navel'; cultivar epithets are capitalized.
-- **Two hybrid notations** — *Parodia* × *erubescens* uses a proper `×`, the Echeveria cross uses a plain `x`.
-- **Unquoted trailing descriptor** — "Austrocylindropuntia subulata monstrose": either cultivar 'Monstrose' or forma *monstrosa*.
-
-Fill the parts for all 27 taxa, then flip `taxonDisplayName()` to prefer composed names. Cheap at 27 rows and annoying at 200. Once done, italics can be applied correctly per-part (genus and epithet italic, cultivar upright in quotes), which a single free-text string can never do.
-
-
 ### PD-4 — Health status needs an urgent tier
 **Status:** ready · **Effort:** low · **Schema:** none (text column) · **Touches:** `HEALTH_LABELS`, `plantRow`, `screenReports`
 
@@ -250,6 +237,44 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 ---
 
 ## Completed
+
+### v1.65.0
+
+**NAME-1 and SPECIES-1 phase 3, together.** Schema: none yet — the column drop is below, deliberately unrun.
+
+- **Composed names, free text as fallback.** `taxonDisplayName()` builds from `genus` / `species_epithet` / `cultivar`, reversing v1.41.0's precedence now that all 33 taxa are filled. Two shapes it must not get wrong: **the hybrid sign lives only in the free text**, so `Parodia × erubescens` would have composed as "Parodia erubescens" without reading `is_hybrid`; and **a cultivar of hybrid origin has no epithet at all**, so `Echeveria 'Purple Perle'` composes from genus + cultivar rather than falling back.
+- **Per-part italics.** New `taxonDisplayHtml()` / `plantDisplayHtml()` emit `<i>Genus</i> <i>epithet</i> 'Cultivar'` — genus and epithet italic, hybrid sign and cultivar upright, which is correct botanically and impossible with one free-text string. The plain functions stay for `<option>` labels, `title` attributes and CSV, where markup cannot go.
+- **`plantDisplayName()` reads through the taxon.** This was the keystone: it read `pl.botanical_name`, and every other specimen-level species read hung off it. A specimen has no name of its own.
+- **The copy-down writes are gone.** Creating a specimen from a taxon, from a location, editing one, and propagating one all used to copy the species columns down onto `plants`. Propagation no longer asks for a name at all — an offset is the same kind as its mother by definition, and asking twice only created a chance to disagree.
+- **The New Plant form's species fields create the taxon** instead of writing to the specimen, and `ensureTaxonForName()` now carries the structured parts. A **common name with no botanical name** creates a `working_label` taxon rather than returning null, which used to strand the specimen.
+- **`editPlant` lost its six species inputs.** Editing a name there wrote to specimen columns that shadowed the real record and drifted from it. The Species select below already does the linking; the "+ create from the botanical name above" option went with the field it referenced.
+- **One `plantSearchText()`** replaces four inline field lists that had each drifted, and duplicate detection keys on `taxa_id` rather than a name string.
+- **CSV export resolves species columns from the taxon.** Headers unchanged so an existing spreadsheet still lines up.
+
+**The drop — run only after the app has been used and looks right.** It is irreversible and there is no migration tool; take a JSON backup from Settings first.
+
+```sql
+alter table plants
+  drop column if exists botanical_name,
+  drop column if exists common_name,
+  drop column if exists cultivar,
+  drop column if exists family,
+  drop column if exists genus,
+  drop column if exists species,
+  drop column if exists plant_type,
+  drop column if exists growth_habit,
+  drop column if exists mature_size,
+  drop column if exists bloom_season,
+  drop column if exists origin,
+  drop column if exists native_range,
+  drop column if exists hardy_to,
+  drop column if exists light_conditions,
+  drop column if exists water_needs,
+  drop column if exists description;
+notify pgrst, 'reload schema';
+```
+
+Closes **SPECIES-2**, whose only outstanding step was this drop.
 
 ### v1.64.0
 

@@ -227,6 +227,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.71.0
+
+**Create a species and specimen from a Gallery tile.** Schema: none.
+
+Working "Needs a plant" usually ends in *this is a plant I have not recorded yet*, which is a species **and** a specimen. `newPlantFromPhoto` already creates both and attaches the photo — there was just no way into it from the Gallery, so the answer meant a trip through the Plants tab and back. A **+** now sits beside the magnifier on any photo with no plant.
+
+The photo's own location is pre-filled **only when that location actually holds plants** — pre-filling an Area or an Archive would record a specimen living in a former home. The modal still offers the picker either way.
+
+The modal's blurb also said the accession number is generated and everything else is optional, which read as though it created only a specimen. It now says the botanical name creates or finds the species and this plant becomes a specimen of it.
+
 ### v1.70.1
 
 **Identify from the Gallery grid.** Schema: none.

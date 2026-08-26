@@ -466,7 +466,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.70.1";
+const APP_VERSION = "1.71.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3615,6 +3615,7 @@ function screenGallery() {
           </div>
           <div style="display:flex;gap:10px;flex-shrink:0;">
             ${identifyBtn(p, "12px")}
+            ${newPlantBtn(p, "12px")}
             <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" title="Edit this photo" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
           </div>
         </div>`;
@@ -3636,6 +3637,21 @@ function screenGallery() {
             onclick="event.stopPropagation();identifyPhoto('${p.id}')">${busy ? '<span class="spinner"></span>' : icon("search")}</button>`;
   };
 
+  // Working "Needs a plant" often ends in "this is a plant I have not recorded
+  // yet" — which is a species AND a specimen. newPlantFromPhoto creates both
+  // and attaches the photo, so the answer is one tap from the tile that raised
+  // the question rather than a trip through the Plants tab.
+  //
+  // The photo's own location is offered as the default only when that location
+  // actually holds plants: pre-filling an Area or an Archive would record a
+  // specimen living in a former home.
+  const newPlantBtn = (p, size) => {
+    if (p.plant_id) return "";
+    const here = photoAwaitsPlant(p) ? `, locationId:'${p.location_id}'` : "";
+    return `<button class="btn-ghost icon-btn" style="padding:0;font-size:${size};" title="Create a new plant from this photo"
+            onclick="event.stopPropagation();openModal('newPlantFromPhoto',{photoId:'${p.id}'${here}})">${icon("plus")}</button>`;
+  };
+
   const grid = (photos) => `
     <div class="card-grid">
       ${photos.map((p) => {
@@ -3651,6 +3667,7 @@ function screenGallery() {
               <div class="tag-id">${fmtDate(photoDate(p))}${isArchivePhoto(p) ? " · Archive" : ""}</div>
               <div style="display:flex;gap:10px;flex-shrink:0;">
                 ${identifyBtn(p, "12px")}
+                ${newPlantBtn(p, "12px")}
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" title="Edit this photo" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
               </div>
             </div>
@@ -4110,7 +4127,7 @@ function modalContent() {
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">New plant</h3>
-      <p class="subtle" style="margin:0 0 14px;">Accession number is generated automatically. Everything below is optional except location can be set later too.</p>
+      <p class="subtle" style="margin:0 0 14px;">Accession number is generated automatically. The botanical name creates or finds the <strong>species</strong>; this plant becomes a specimen of it. Everything here can be set later.</p>
       ${suggestion ? `<p style="font-size:12.5px;color:var(--blue);margin:0 0 14px;">Pre-filled from AI suggestion — double check before saving.</p>` : ""}
       <form id="new-plant-form">
         <label>Botanical name</label>

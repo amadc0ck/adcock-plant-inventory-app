@@ -371,6 +371,17 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.53.2
+
+**Google Photos import now says what it skipped.** Schema: none · `photos-picker` redeployed.
+
+Selecting 2000 photos imported 1957 with no explanation. Two causes, both silent:
+
+- **Videos were filtered out without a word.** The app stores and renders stills only, so skipping them is right — saying nothing about it is not.
+- **Items with no `baseUrl`** were passed through and failed one at a time during import, rather than being reported up front.
+
+Both are now counted and returned with the original selection size, so the import screen reads *"2000 selected, 1957 importable — 43 videos skipped."* Picking only videos now explains itself rather than reporting "nothing was selected".
+
 ### v1.53.1
 
 **The "photos not fully filed" buckets overlapped.** Schema: none.

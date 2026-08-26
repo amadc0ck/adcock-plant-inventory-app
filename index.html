@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.53.1";
+const APP_VERSION = "1.53.2";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4102,12 +4102,13 @@ function modalContent() {
         <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Importing</h3>
         <p class="subtle" style="margin:0 0 8px;">Downloading from Google Photos and filing into your collection.</p>
         <div class="mono" style="font-size:13px;">${st.done} of ${st.total}${st.failed ? ` · ${st.failed} failed` : ""}</div>
+        ${st.skippedTotal ? `<p class="subtle" style="margin:8px 0 0;font-size:11.5px;">${st.selected} selected, ${st.total} importable — ${skippedReason(st.skipped)}.</p>` : ""}
         <button class="btn-ghost" style="margin-top:14px;" onclick="cancelPhotosImport()">Stop</button>`;
     }
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Done</h3>
-      <p class="subtle" style="margin:0 0 14px;">${st.done} imported${st.failed ? `, ${st.failed} failed` : ""}. They're in the Inbox${data.locationId ? " and filed to this location" : ""}.</p>
+      <p class="subtle" style="margin:0 0 14px;">${st.done} imported${st.failed ? `, ${st.failed} failed` : ""}${st.skippedTotal ? `, ${skippedReason(st.skipped)}` : ""}. They're in the Inbox${data.locationId ? " and filed to this location" : ""}.</p>
       <button class="btn btn-primary btn-block" onclick="cancelPhotosImport()">Close</button>`;
   }
 
@@ -4756,22 +4757,31 @@ async function pollPhotosPicker(intervalMs) {
       // drops back to this tab rather than leaving her stranded there.
       const closed = closePhotosPickerTab();
       if (!closed) toast("Selection received — switch back to this tab to watch it import");
-      await importPickedPhotos(data.items || []);
+      // Carried through so the import screen can account for everything picked
+      // rather than showing a smaller number with no explanation.
+      await importPickedPhotos(data.items || [], { skipped: data.skipped, selected: data.selected });
       return;
     }
   }
 }
 
-async function importPickedPhotos(items) {
+async function importPickedPhotos(items, meta) {
   const st = state.photosImport;
   if (!st) return;
+  const skipped = (meta && meta.skipped) || { videos: 0, unavailable: 0 };
+  const skippedTotal = (skipped.videos || 0) + (skipped.unavailable || 0);
   if (!items.length) {
-    toast("Nothing was selected");
+    toast(skippedTotal
+      ? `Nothing to import — ${countLabel(skippedTotal, "item", "items")} skipped (videos aren't supported)`
+      : "Nothing was selected");
     state.photosImport = null;
     render();
     return;
   }
-  Object.assign(st, { phase: "importing", total: items.length, done: 0, failed: 0, queue: items });
+  Object.assign(st, {
+    phase: "importing", total: items.length, done: 0, failed: 0, queue: items,
+    skipped, skippedTotal, selected: (meta && meta.selected) || items.length,
+  });
   render();
   await runPhotosImportQueue(items);
 }
@@ -4808,6 +4818,15 @@ async function runPhotosImportQueue(items) {
   st.phase = "done";
   render();
   await loadAll();
+}
+
+// Names what was left behind, so a selection of 2000 arriving as 1957 explains
+// itself instead of looking like a failure.
+function skippedReason(skipped) {
+  const parts = [];
+  if (skipped && skipped.videos) parts.push(`${countLabel(skipped.videos, "video", "videos")} skipped`);
+  if (skipped && skipped.unavailable) parts.push(`${countLabel(skipped.unavailable, "item", "items")} unavailable`);
+  return parts.join(" and ");
 }
 
 function cancelPhotosImport() {

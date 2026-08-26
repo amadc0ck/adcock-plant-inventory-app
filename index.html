@@ -154,6 +154,24 @@
      under a grey help-text line and read as more explanation. */
   .suggestion-row{display:flex;align-items:center;gap:10px;margin-top:8px;padding:10px 12px;
     background:rgba(124,167,161,0.12);border:1px solid rgba(124,167,161,0.35);border-radius:10px;}
+  /* The queue as a dashboard rather than a settings list. A row of title,
+     subtitle and a small pill reads as a menu; the number is the thing she is
+     actually scanning for, so it leads. */
+  .queue-group{margin-bottom:20px;}
+  .queue-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;}
+  .queue-head h3{font-family:'Fraunces',serif;font-size:15px;font-style:italic;font-weight:500;color:var(--blue);margin:0;}
+  .queue-head .queue-total{font-size:11px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);font-family:'IBM Plex Mono',monospace;}
+  .queue-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  .queue-tile{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;padding:12px 13px;
+    text-align:left;cursor:pointer;color:inherit;font-family:inherit;display:flex;flex-direction:column;gap:2px;min-height:92px;}
+  .queue-tile:hover{border-color:var(--moss);}
+  .queue-tile.is-clear{opacity:0.45;}
+  .queue-tile.is-urgent{border-color:var(--terracotta);}
+  .queue-num{font-family:'Fraunces',serif;font-size:26px;font-weight:600;line-height:1;color:var(--cream);}
+  .queue-tile.is-clear .queue-num{color:var(--moss-dim);}
+  .queue-tile.is-urgent .queue-num{color:var(--terracotta);}
+  .queue-title{font-size:13px;font-weight:600;color:var(--cream);margin-top:4px;line-height:1.25;}
+  .queue-sub{font-size:11px;color:#8AA090;line-height:1.3;}
   .frost-badge{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;
     background:rgba(124,167,161,0.18);border:1px solid rgba(124,167,161,0.5);color:var(--blue);
     border-radius:20px;padding:2px 8px;font-size:10.5px;letter-spacing:0.3px;}
@@ -444,6 +462,7 @@
        ones sitting over a hole. Columns pack vertically instead. Reading
        order becomes down-then-across, which is fine for independent
        reference cards. */
+    .queue-grid{grid-template-columns:repeat(3,1fr);}
     .section-grid{display:block;columns:2;column-gap:14px;}
     /* Bottom sheet is right on a phone and wrong on a desktop, where it
        leaves a 640px column pinned to the bottom edge of a 1400px window.
@@ -462,6 +481,7 @@
     .card-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
     .plant-list-thumb{width:140px;height:140px;}
     .login-wrap .container{max-width:none;}
+    .queue-grid{grid-template-columns:repeat(4,1fr);}
     .section-grid{columns:3;column-gap:16px;}
     /* Columns, not grid: photos are shown at their own aspect ratio, so cell
        heights vary wildly and a grid would leave every short one over a hole. */
@@ -492,7 +512,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.78.0";
+const APP_VERSION = "1.79.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2240,11 +2260,13 @@ function showGalleryHighlight(plantType) {
 function showGalleryInBloom() {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: true };
   state.tab = "gallery";
+  state.reportView = null;
   render();
 }
 function showGalleryNeeds(kind) {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: kind };
   state.tab = "gallery";
+  state.reportView = null;
   render();
 }
 function toggleGallerySelectMode() {
@@ -2477,6 +2499,7 @@ function inboxCompactRow(p, selectMode) {
 }
 
 function screenInbox() {
+  if (state.reportView) return workQueueDetail();
   const pageSize = state.inboxPageSize || 20;
   const unassigned = inboxPhotos();
   const total = state.photos.filter((p) => !p.plant_id && !p.location_id).length;
@@ -2490,7 +2513,13 @@ function screenInbox() {
   return `
   <div class="screen">
     <div class="container">
-      <p class="subtle" style="margin-bottom:12px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Photos land here first — confirm or attach them to a plant."}</p>
+      <p class="subtle" style="margin-bottom:12px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Everything waiting on you — records to finish, then photos to file."}</p>
+
+      ${/* The queue sits above the grid rather than behind a toggle: the counts
+           are the first thing worth seeing when the app opens, and hiding them
+           behind a tap is how a backlog gets forgotten. Suppressed in select
+           mode, where the job is the photos in front of you. */""}
+      ${selectMode ? "" : workQueue()}
 
       ${total === 0 ? "" : `
         <div class="sticky-controls">
@@ -2672,7 +2701,7 @@ function screenTaxa() {
       </div>
       ${list.length === 0 ? `
         <div class="empty"><div class="display">${state.taxa.length === 0 ? "No plants yet" : "No matches"}</div>
-        <div>${state.taxa.length === 0 ? "Add your first plant from the Inbox or a photo." : "Try a different search."}</div></div>` : `
+        <div>${state.taxa.length === 0 ? "Add your first plant from a photo." : "Try a different search."}</div></div>` : `
         <div class="card-grid">${list.map(taxonCard).join("")}</div>`}
 
       ${/* This tab lists taxa, so a specimen with no taxon would otherwise be
@@ -2865,7 +2894,7 @@ function screenPlants() {
       ${(q || activeFilterCount) ? `<div class="subtle" style="margin:-8px 0 16px;">${list.length} of ${state.plants.length} plants</div>` : ""}
       ${list.length === 0 ? `
         <div class="empty"><div class="display">${state.plants.length === 0 ? "No plants yet" : "No matches"}</div>
-        <div>${state.plants.length === 0 ? "Add your first plant from the Inbox or a photo." : "Try different search or filters."}</div></div>` : `
+        <div>${state.plants.length === 0 ? "Add your first plant from a photo." : "Try different search or filters."}</div></div>` : `
         <div class="card-grid">${list.map(plantRow).join("")}</div>`}
     </div>
   </div>`;
@@ -3568,10 +3597,13 @@ function reportSections() {
   ];
 }
 
-function screenReports() {
+// The work queue. Was the body of the Reports tab; it is the Inbox now, because
+// every row in it is something to do and the Inbox is where she already goes to
+// do things. Reports as a separate destination was a place to look at work
+// rather than a place to work.
+function workQueue() {
   const sections = reportSections();
   const duplicateGroups = findDuplicatePlantGroups();
-
   // Photo gaps route to the Gallery rather than an inline list — it already has
   // the grid and the lightbox. A photo in none of plant, location or Inbox is
   // invisible everywhere else, which is what happens to archive-marked photos.
@@ -3592,6 +3624,69 @@ function screenReports() {
       count: state.photos.filter(photoIsUntaggedArchiveOrArea).length, muted: true },
   ];
 
+  const attentionTotal = sections.reduce((n, x) => n + x.items.length, 0) + duplicateGroups.length;
+  const dupPhotos = findDuplicatePhotoGroups();
+  const dupExtras = dupPhotos.reduce((n, g) => n + g.length - 1, 0);
+
+  // Everything that can be worked, as one vocabulary of tiles. `urgent` is for
+  // the two that are about a plant's survival rather than a record's tidiness.
+  const tile = (n, title, sub, onclick, urgent) => `
+    <button class="queue-tile ${n ? (urgent ? "is-urgent" : "") : "is-clear"}" onclick="${onclick}">
+      <div class="queue-num">${n}</div>
+      <div class="queue-title">${title}</div>
+      <div class="queue-sub">${sub}</div>
+    </button>`;
+
+  const group = (title, total, tiles) => tiles.filter(Boolean).length ? `
+    <div class="queue-group">
+      <div class="queue-head">
+        <h3>${title}</h3>
+        ${total == null ? "" : `<span class="queue-total">${total}</span>`}
+      </div>
+      <div class="queue-grid">${tiles.filter(Boolean).join("")}</div>
+    </div>` : "";
+
+  const byKey = (k) => sections.find((x) => x.key === k);
+  const sect = (k, urgent) => {
+    const x = byKey(k);
+    return x ? tile(x.items.length, x.title, x.sub, `state.reportView='${x.key}';render()`, urgent) : "";
+  };
+
+  const blooming = bloomingSpecimens();
+  const due = expectedToBloom();
+  const photoTotal = photoBuckets.filter((b) => !b.muted).reduce((n, b) => n + b.count, 0);
+
+  return `
+    ${group("Needs you now", null, [
+      sect("frostTender", true),
+      sect("plantsAttention", true),
+    ])}
+
+    ${group("Photos to file", photoTotal, photoBuckets.map((b) =>
+      tile(b.count, b.title, b.sub, `showGalleryNeeds('${b.needs}')`)))}
+
+    ${group("Records to finish", attentionTotal, [
+      sect("plantsNoPhotos"),
+      sect("plantsUnidentified"),
+      sect("plantsNoTaxon"),
+      sect("plantsNoLocation"),
+      sect("locationsNoPlants"),
+      sect("emptyLocations"),
+      dupPhotos.length ? tile(dupPhotos.length, "Duplicate photos", `Same capture time — ${countLabel(dupExtras, "extra copy", "extra copies")}`, "openModal('duplicatePhotos')") : "",
+      duplicateGroups.length ? tile(duplicateGroups.length, "Duplicate plants", "Same species, same location", "openModal('duplicatePlants')") : "",
+    ])}
+
+    ${group("Bloom", null, [
+      blooming.length || due.length ? tile(blooming.length, "In bloom now", "Recorded as flowering", "state.reportView='blooming';render()") : "",
+      blooming.length || due.length ? tile(due.length, "Should be blooming", "Their species flowers around now", "state.reportView='dueToBloom';render()") : "",
+    ])}
+`;
+}
+
+// The drilled-in list for one queue row. Renders in place of the Inbox rather
+// than on its own tab, so "back" means back to the queue.
+function workQueueDetail() {
+  const sections = reportSections();
   const bloomViews = {
     blooming: { title: "In bloom now", sub: "Recorded as flowering", items: bloomingSpecimens(), kind: "plant" },
     dueToBloom: { title: "Should be blooming", sub: "Their species flowers around now", items: expectedToBloom(), kind: "plant" },
@@ -3599,13 +3694,12 @@ function screenReports() {
   const open = state.reportView
     ? (sections.find((x) => x.key === state.reportView) || bloomViews[state.reportView] || null)
     : null;
-
-  if (open) {
-    const renderItem = open.kind === "location" ? reportLocationItem : reportPlantItem;
-    return `
+  if (!open) return "";
+  const renderItem = open.kind === "location" ? reportLocationItem : reportPlantItem;
+  return `
     <div class="screen">
       <div class="container">
-        <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="state.reportView=null;render()">${icon("back")} Reports</button>
+        <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="state.reportView=null;render()">${icon("back")} To Do</button>
         <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 2px;">${open.title}</h2>
         <p class="subtle" style="margin-bottom:16px;">${open.sub} · ${countLabel(open.items.length, "record", "records")}</p>
         ${open.items.length === 0
@@ -3613,23 +3707,19 @@ function screenReports() {
           : `<div class="card-grid">${open.items.map(renderItem).join("")}</div>`}
       </div>
     </div>`;
-  }
+}
 
-  const attentionTotal = sections.reduce((n, x) => n + x.items.length, 0) + duplicateGroups.length;
-
+// The collection at a glance. Moved off the retired Reports tab onto the
+// Gallery, which is the one tab about looking rather than doing.
+function collectionStats() {
   return `
-  <div class="screen">
-    <div class="container">
-      <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Reports</h2>
-      <p class="subtle" style="margin-bottom:16px;">Track the health of your collection and keep it thriving.</p>
-
-      <div class="tag-card" style="padding:0;overflow:hidden;">
+      <div class="tag-card" style="padding:0;overflow:hidden;margin-bottom:18px;">
         <div class="stat-row">
           ${[
-            [icon("leaf"), state.plants.length, "Plants"],
+            [icon("leaf"), state.taxa.length, "Species"],
+            [icon("seedling"), state.plants.length, "Specimens"],
             [icon("pin"), state.locations.length, "Locations"],
             [icon("camera"), state.photos.length, "Photos"],
-            [icon("inbox"), state.photos.filter((p) => !p.plant_id && !p.location_id).length, "Inbox"],
           ].map(([ic, val, label]) => `
             <div class="stat-cell">
               ${ic}
@@ -3637,107 +3727,15 @@ function screenReports() {
               <div class="stat-label">${label}</div>
             </div>`).join("")}
         </div>
-      </div>
-
-      <button class="btn btn-secondary btn-block" style="margin-top:14px;" onclick="goTab('gallery')">Browse full photo gallery →</button>
-
-      <div class="row" style="margin-top:26px;margin-bottom:10px;">
-        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Records needing attention</h3>
-        <span class="attn-count ${attentionTotal ? "has" : "clear"}">${attentionTotal}</span>
-      </div>
-      <div class="tag-card" style="padding:0;overflow:hidden;">
-        ${sections.map((x) => `
-          <button class="attn-row" onclick="state.reportView='${x.key}';render()">
-            <div style="flex:1;min-width:0;">
-              <div class="attn-title">${x.title}</div>
-              <div class="attn-sub">${x.sub}</div>
-            </div>
-            <span class="attn-count ${x.items.length ? "has" : "clear"}">${x.items.length}</span>
-            <span class="action-chevron">${icon("chevronRight")}</span>
-          </button>`).join("")}
-        ${(() => {
-          const dupPhotos = findDuplicatePhotoGroups();
-          if (!dupPhotos.length) return "";
-          const extra = dupPhotos.reduce((n, g) => n + g.length - 1, 0);
-          return `
-          <button class="attn-row" onclick="openModal('duplicatePhotos')">
-            <div style="flex:1;min-width:0;">
-              <div class="attn-title">Possible duplicate photos</div>
-              <div class="attn-sub">Same capture time — ${countLabel(extra, "extra copy", "extra copies")}</div>
-            </div>
-            <span class="attn-count has">${dupPhotos.length}</span>
-            <span class="action-chevron">${icon("chevronRight")}</span>
-          </button>`;
-        })()}
-        ${duplicateGroups.length ? `
-          <button class="attn-row" onclick="openModal('duplicatePlants')">
-            <div style="flex:1;min-width:0;">
-              <div class="attn-title">Possible duplicate plants</div>
-              <div class="attn-sub">Same name, same location</div>
-            </div>
-            <span class="attn-count has">${duplicateGroups.length}</span>
-            <span class="action-chevron">${icon("chevronRight")}</span>
-          </button>` : ""}
-      </div>
-
-      ${(() => {
-        const blooming = bloomingSpecimens();
-        const due = expectedToBloom();
-        if (!blooming.length && !due.length) return "";
-        return `
-        <div class="row" style="margin-top:26px;margin-bottom:10px;">
-          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Bloom</h3>
-        </div>
-        <div class="tag-card" style="padding:0;overflow:hidden;">
-          <button class="attn-row" onclick="state.reportView='blooming';render()">
-            <div style="flex:1;min-width:0;">
-              <div class="attn-title">In bloom now</div>
-              <div class="attn-sub">Recorded as flowering</div>
-            </div>
-            <span class="attn-count ${blooming.length ? "has" : "clear"}">${blooming.length}</span>
-            <span class="action-chevron">${icon("chevronRight")}</span>
-          </button>
-          <button class="attn-row" onclick="state.reportView='dueToBloom';render()">
-            <div style="flex:1;min-width:0;">
-              <div class="attn-title">Should be blooming</div>
-              <div class="attn-sub">Their species flowers around now — worth a look</div>
-            </div>
-            <span class="attn-count ${due.length ? "has" : "clear"}">${due.length}</span>
-            <span class="action-chevron">${icon("chevronRight")}</span>
-          </button>
-        </div>`;
-      })()}
-
-      <div class="row" style="margin-top:26px;margin-bottom:10px;">
-        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photos not fully filed</h3>
-        ${/* Muted buckets are excluded from the headline. Counting archive and
-             area photos as "not fully filed" is the nag this change removes —
-             the row stays reachable, it just does not accuse. */""}
-        ${(() => {
-          const gaps = photoBuckets.filter((b) => !b.muted).reduce((n, b) => n + b.count, 0);
-          return `<span class="attn-count ${gaps ? "has" : "clear"}">${gaps}</span>`;
-        })()}
-      </div>
-      <div class="tag-card" style="padding:0;overflow:hidden;">
-        ${photoBuckets.map((b) => `
-          <button class="attn-row" onclick="showGalleryNeeds('${b.needs}')">
-            <div style="flex:1;min-width:0;">
-              <div class="attn-title">${b.title}</div>
-              <div class="attn-sub">${b.sub}</div>
-            </div>
-            <span class="attn-count ${b.muted ? "clear" : (b.count ? "has" : "clear")}">${b.count}</span>
-            <span class="action-chevron">${icon("chevronRight")}</span>
-          </button>`).join("")}
-      </div>
-    </div>
-  </div>`;
+      </div>`;
 }
+
 
 // Opening a record from a report navigates away from Reports entirely, and the
 // tab resets to the top on return. Remember the origin so the detail screen can
 // offer a way back to the exact list.
 function openFromReport(kind, id, reportKey) {
-  state.backTo = { tab: "reports", reportView: reportKey || null, label: "Reports" };
+  state.backTo = { tab: "inbox", reportView: reportKey || null, label: "To Do" };
   if (kind === "plant") openPlant(id); else openLocation(id);
 }
 function goBackTo() {
@@ -4024,9 +4022,9 @@ function screenGallery() {
   return `
   <div class="screen">
     <div class="container">
-      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('reports')">${icon("back")} Reports</button>
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Gallery</h2>
       <p class="subtle" style="margin-bottom:16px;">${countLabel(state.photos.length, "photograph", "photographs")} documenting the collection.</p>
+      ${collectionStats()}
 
       <div class="sticky-controls">
       <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" id="search-gallery" oninput="state.galleryFilters.search=this.value;render()" />
@@ -4364,7 +4362,7 @@ function modalContent() {
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location to ${activeBulkSelection().size} photos</h3>
-      <p class="subtle" style="margin:0 0 14px;">All selected photos will move out of the Inbox onto that container's page.</p>
+      <p class="subtle" style="margin:0 0 14px;">All selected photos move onto that container's page.</p>
       ${locationPicker("bulkAttachToLocation('{id}')")}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
@@ -5427,7 +5425,7 @@ function modalContent() {
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">${loc ? `Add photo — ${escapeHtml(loc.name)}` : "Add photos"}</h3>
-      <p class="subtle" style="margin:0 0 14px;">${loc ? "Photo of this location/container — won't need attaching to a plant." : "Select multiple to upload them all at once — each lands in the Inbox separately."}</p>
+      <p class="subtle" style="margin:0 0 14px;">${loc ? "Photo of this location/container — won't need attaching to a plant." : "Select multiple to upload them all at once — each lands in To Do separately."}</p>
       <form id="upload-form">
         <input type="file" id="upload-file" accept="image/*" ${loc ? "" : "multiple"} required style="padding:10px;" />
         <label>Notes (optional${loc ? "" : ", applied to all selected"})</label>
@@ -5561,7 +5559,7 @@ function modalContent() {
             taxonId: state.editPhotoPlant ? (state.plants.find((x) => x.id === state.editPhotoPlant) || {}).taxa_id : null,
           }) : ""}`;
         })()}
-        ${plant ? `<div class="field-help">Clearing this returns the photo to the Inbox, unless it still has a location.</div>` : ""}
+        ${plant ? `<div class="field-help">Clearing this returns the photo to To Do, unless it still has a location.</div>` : ""}
 
         <label>Notes</label>
         <textarea id="eph-notes" rows="2">${escapeHtml(ph.notes || "")}</textarea>
@@ -6882,6 +6880,7 @@ function favoritePhotos() {
 function showGalleryFavorites() {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false, favorites: true };
   state.tab = "gallery";
+  state.reportView = null;
   render();
 }
 
@@ -6971,18 +6970,18 @@ function escapeHtml(str) {
 
 function navBtn(t) {
   return `
-    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && (state.tab === "plantDetail" || state.tab === "taxonDetail")) || (t.id === "locations" && state.tab === "locationDetail") || (t.id === "reports" && state.tab === "gallery") ? "active" : ""}" onclick="goTab('${t.id}')">
+    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && (state.tab === "plantDetail" || state.tab === "taxonDetail")) || (t.id === "locations" && state.tab === "locationDetail") || (t.id === "inbox" && state.tab === "reports") ? "active" : ""}" onclick="goTab('${t.id}')">
       ${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
     </button>`;
 }
 function navBar() {
   const leftTabs = [
-    { id: "inbox", label: "Inbox", icon: "inbox", badge: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
+    { id: "inbox", label: "To Do", icon: "clipboard", badge: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
     { id: "plants", label: "Plants", icon: "leaf" },
   ];
   const rightTabs = [
     { id: "locations", label: "Locations", icon: "map" },
-    { id: "reports", label: "Reports", icon: "clipboard" },
+    { id: "gallery", label: "Gallery", icon: "photo" },
   ];
   return `
   <div class="navbar"><div class="container nav-row">
@@ -6997,7 +6996,7 @@ function topBar() {
   const driveOk = !!state.driveToken;
   const inboxSubBar = state.tab === "inbox" ? `
     <div class="inbox-subbar"><div class="container" style="display:flex;align-items:center;justify-content:space-between;">
-      <h2 class="display" style="font-size:18px;font-weight:500;margin:0;">Inbox${unassignedCount ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassignedCount} waiting</span>` : ""}</h2>
+      <h2 class="display" style="font-size:18px;font-weight:500;margin:0;">To Do${unassignedCount ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassignedCount} photos</span>` : ""}</h2>
       ${unassignedCount ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="toggleInboxSelectMode()">${state.inboxSelectMode ? "Cancel" : "Select"}</button>` : ""}
     </div></div>` : "";
   return `
@@ -7135,7 +7134,8 @@ function render() {
   else if (state.tab === "plantDetail") screen = screenPlantDetail();
   else if (state.tab === "locations") screen = screenLocations();
   else if (state.tab === "locationDetail") screen = screenLocationDetail();
-  else if (state.tab === "reports") screen = screenReports();
+  // "reports" is retired; anything still pointing at it lands on the queue.
+  else if (state.tab === "reports") { state.tab = "inbox"; screen = screenInbox(); }
   else if (state.tab === "gallery") screen = screenGallery();
   else if (state.tab === "settings") screen = screenSettings();
 
@@ -7187,7 +7187,7 @@ function renderLightbox() {
   const isIdentifyingClaude = state.identifyingPhotoIdClaude === p.id;
 
   const titleLine = isInbox
-    ? `<div style="font-size:13.5px;">Inbox photo</div>`
+    ? `<div style="font-size:13.5px;">Unfiled photo</div>`
     : isGallery
     ? `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : "Gallery photo"}</div><div style="font-size:11px;color:#9FB0A3;">${allLocationsForPhoto(p).map((l) => escapeHtml(l.name)).join(", ") || "No location"}</div>`
     : isLocation

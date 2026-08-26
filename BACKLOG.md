@@ -227,6 +227,18 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.79.0
+
+**Reports is retired. The work moved to where the work happens.** Schema: none.
+
+Reports was a place to *look at* work; the Inbox was where she went to *do* it. Every row on that tab was something outstanding, so the two were the same list living on different screens.
+
+- **The tab is now "To Do"** — the work queue on top, the unfiled photos below, in one scroll. The counts are the first thing visible when the app opens; putting them behind a toggle is how a backlog gets forgotten. Suppressed in select mode, where the job is the photos in front of you.
+- **The queue is a dashboard, not a menu.** Tiles with the number leading, since the number is what she is scanning for. Grouped as **Needs you now** (frost tender, plants needing attention — the two about a plant's survival rather than a record's tidiness, and the only ones that read as urgent), **Photos to file**, **Records to finish**, and **Bloom**, which hides itself entirely when nothing is blooming or due. Zero-count tiles dim rather than disappear, so a cleared category still reads as cleared.
+- **The fourth nav slot is the Gallery**, which previously had no home of its own — it was reachable only through a button on Reports.
+- **The collection stats moved to the top of the Gallery**, and now split **Species** from **Specimens**, which the old four-up conflated. The Inbox count went with them: it is the tab you are standing on.
+- `state.tab === "reports"` still routes, landing on To Do, so nothing bookmarked or half-remembered breaks.
+
 ### v1.78.0
 
 **FROST-1 — mark a species as not frost hardy.** Schema: `taxa.frost_tender`.

@@ -134,6 +134,36 @@ Proposed behaviour, mirroring `deletePlant()`:
   - **Delete**: the row should never have existed — a duplicate, an accident, or something created with an intention that changed. There is no history worth keeping, and leaving it archived just clutters the list forever.
   Offer both. Default the button to Archive when the location has any history or attachments, and to Delete only when it is genuinely empty.
 
+### LOCP-1 — Act on photos from the Location page
+**Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `screenLocationDetail`
+
+From a location's photos, without navigating away:
+- **Add a plant from this photo** — create a specimen already placed in this location.
+- **Attach or tag to a different plant.**
+- **Unattach.**
+
+Not tagging other *locations* — a location is singular, holding multiple specimens, so cross-tagging containers has no meaning. `photo_locations` stays unused for this.
+
+### LOCP-2 — Add location photos from existing sources
+**Status:** ready · **Effort:** low–medium · **Schema:** none · **Touches:** `screenLocationDetail`
+
+Add photos to a location from an identified plant's photos, from unattached location photos, or from the Inbox — mirroring what PHOTO-2 does for specimens.
+
+### LOCP-3 — Create a specimen from the Location page
+**Status:** ready · **Effort:** low · **Depends on:** SPECIES-1 · **Touches:** `screenLocationDetail`
+
+Standing at a location knowing the species, create a specimen there directly: pick an existing taxon (or create one) and the location is pre-filled. Today it means going to the species record and picking the location from a list of 147.
+
+### LOCP-4 — Prompt to assign a location's orphan photos to a new specimen
+**Status:** ready · **Effort:** medium · **Depends on:** LOCP-3
+
+When a specimen is created in a location that already holds photos with no plant, offer those photos for attachment straight away. Amanda's collection has **364 photos with a location but no plant**, so this is the common case, not an edge one.
+
+### LOC-5 — Areas with sub-areas should show a thumbnail
+**Status:** ready · **Effort:** low · **Touches:** `locationCard`, `locationCoverPhoto`
+
+An area with children shows its own photo or nothing. It should fall back to a sub-area's photo — `locationCoverPhoto()` already walks descendants for this, so the card mostly needs to use it.
+
 ### NAME-1 — Normalize botanical names into structured parts
 **Status:** ready · **Effort:** low–medium · **Schema:** none · **Depends on:** SPECIES-1
 
@@ -360,6 +390,17 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 ---
 
 ## Completed
+
+### v1.41.1 / v1.41.2
+
+**Fixes to the taxa split, from Amanda's first pass through it.**
+
+- **New plants were created with no species** — a regression in v1.41.0. The Plants tab lists taxa, but the create path still wrote a bare `plants` row, so anything created after the split was invisible there. `ensureTaxonForName()` now reuses a taxon matching the botanical name (case- and whitespace-insensitive) or creates one. Propagation inherits the parent's taxon directly.
+- **Unlinked specimens surface in a "Not linked to a species" group** on the taxa list, so a specimen with no name cannot vanish either.
+- **`editPlant` stopped editing species fields.** It was still writing description, type, growth habit, bloom season, origin and all of Care to `plants` columns nothing reads any more — the "still pulling a full plant record" symptom. Replaced with a link to the species record.
+- **Cultivar quoting.** The display layer adds quotes, but real values already carry them ("Echeveria 'Purple Perle'"), rendering as `''doubled''`. `cultivarLabel()` renders anything already quoted verbatim rather than nesting. Stripping the outer pair was tried first and was worse — it leaves embedded-cultivar values unbalanced.
+- **"+ Add another location" retired** from the specimen page. A specimen is one physical plant in one place; extra locations mean extra specimens.
+- Species photo can be set from any specimen's photos. Locations on the specimen page are clickable. "Container photos" → "Location photos". Dropped the stale identify-from-a-photo explainer.
 
 ### v1.41.0
 

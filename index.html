@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.41.1";
+const APP_VERSION = "1.41.2";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1005,11 +1005,26 @@ function taxonById(id) {
 // no parts, which is why composition requires BOTH genus and epithet and still
 // only applies when there is no free-text name to beat.
 // Once the names are normalized into parts (see NAME-1) this precedence flips.
+// Cultivar epithets are quoted by the display layer, so a value that already
+// carries quotes would render as ''doubled''. Real data has both shapes —
+// "Purple Perle" and "Echeveria 'Purple Perle'" — so strip any quoting the
+// value brought with it and apply exactly one pair. NAME-1 fixes the data.
+function cultivarLabel(raw) {
+  if (!raw) return "";
+  const v = String(raw).trim();
+  if (!v) return "";
+  // Anything already carrying a quote is rendered verbatim. Stripping the outer
+  // pair is wrong for values that are really full names with an embedded
+  // cultivar ("Echeveria 'Purple Perle'") — it leaves them unbalanced.
+  if (/['\u2018\u2019"]/.test(v)) return v;
+  return `'${v}'`;
+}
+
 function taxonDisplayName(t) {
   if (!t) return "Unknown";
   if (t.botanical_name && t.botanical_name.trim()) return t.botanical_name.trim();
   const composed = (t.genus && t.species_epithet) ? `${t.genus} ${t.species_epithet}` : "";
-  const withCultivar = composed && t.cultivar ? `${composed} '${t.cultivar}'` : composed;
+  const withCultivar = composed && t.cultivar ? `${composed} ${cultivarLabel(t.cultivar)}` : composed;
   return withCultivar || t.working_label || "Unnamed taxon";
 }
 function taxonSecondaryName(t) {
@@ -1582,7 +1597,7 @@ function screenTaxonDetail() {
           ${fieldRow("clipboard", "Family", t.family)}
           ${fieldRow("clipboard", "Genus", t.genus)}
           ${fieldRow("clipboard", "Species", t.species_epithet)}
-          ${fieldRow("tag", "Cultivar", t.cultivar)}
+          ${fieldRow("tag", "Cultivar", cultivarLabel(t.cultivar))}
         </div>
       </div>
 
@@ -1701,7 +1716,7 @@ function screenPlantDetail() {
           <div class="tag-id">${pl.accession_number}</div>
           <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;font-style:${pl.botanical_name ? "italic" : "normal"};line-height:1.2;">${escapeHtml(plantDisplayName(pl))}</div>
           ${pl.botanical_name && pl.common_name ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(pl.common_name)}</div>` : ""}
-          ${pl.cultivar ? `<div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">'${escapeHtml(pl.cultivar)}'</div>` : ""}
+          ${pl.cultivar ? `<div style="color:var(--ink-soft);font-size:13px;margin-top:2px;">${escapeHtml(cultivarLabel(pl.cultivar))}</div>` : ""}
           ${pl.family || pl.genus ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;letter-spacing:0.2px;">${[pl.family, pl.genus].filter(Boolean).join(" · ")}</div>` : ""}
 
           <div class="wrap-gap" style="margin-top:13px;">
@@ -1729,7 +1744,10 @@ function screenPlantDetail() {
                 </div>`;
               }).join("");
             })()}
-            <button class="btn-ghost" style="padding:6px 0 0;font-size:12px;color:var(--chicory-oncream);" onclick="openModal('addPlantLocation',{plantId:'${pl.id}'})">+ Add another location</button>
+            ${/* A specimen is one physical plant and lives in exactly one place
+                 (SPECIES-2). Extra locations mean extra specimens, added from
+                 the species record. */""}
+            ${allLocationsForPlant(pl).length > 1 ? `<div class="subtle" style="margin-top:6px;font-size:11.5px;">More than one location — each should be its own specimen. Add them from the species record.</div>` : ""}
           </div>
           ${pl.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(pl.description)}</div>` : ""}
         </div>

@@ -488,7 +488,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.75.1";
+const APP_VERSION = "1.76.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1245,10 +1245,27 @@ function plantPicker(onPick, opts) {
          sharply when a species filter returns one specimen and the photo shows
          a second of the same kind. Without an escape hatch that means closing
          the modal, losing what is staged, and starting again elsewhere. */""}
-    ${o.onNew ? `
-      <button type="button" class="btn btn-secondary btn-block" style="margin-top:10px;justify-content:center;" onclick="${o.onNew}">
-        ${icon("plus")} ${escapeHtml(o.newLabel || "New plant from this photo")}
-      </button>` : ""}`;
+    ${/* Text, no icon. icon() emits a bare viewBox, so inside a block button
+         it stretched to the full width — the same no-intrinsic-size trap as
+         the empty states in v1.64.0. */""}
+    ${(() => {
+      // Same species, new specimen: the common case when a species filter
+      // returns one plant and the photo shows a second of the same kind. The
+      // taxon comes from the active filter, or from whatever is already picked.
+      const filterTaxon = state.pickerTaxon ? taxonById(state.pickerTaxon) : null;
+      const pickedTaxon = o.taxonId ? taxonById(o.taxonId) : null;
+      const t = filterTaxon || pickedTaxon;
+      if (!o.onNew && !(t && o.onNewSameSpecies)) return "";
+      return `
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        ${t && o.onNewSameSpecies ? `
+          <button type="button" class="btn btn-accent btn-sm" style="flex:1;justify-content:center;min-width:180px;"
+                  onclick="${o.onNewSameSpecies.replace(/\{taxonId\}/g, t.id)}">Another ${escapeHtml(taxonDisplayName(t))}</button>` : ""}
+        ${o.onNew ? `
+          <button type="button" class="btn btn-secondary btn-sm" style="flex:1;justify-content:center;min-width:180px;"
+                  onclick="${o.onNew}">${escapeHtml(o.newLabel || "New plant from this photo")}</button>` : ""}
+      </div>`;
+    })()}`;
 }
 
 function clearPlantPicker() {
@@ -5433,7 +5450,11 @@ function modalContent() {
               ${chosen ? `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="setEditPhotoPlant('')">Clear</button>` : ""}
             </div>
           </div>
-          ${state.editPhotoPickerOpen ? plantPicker(`setEditPhotoPlant('{id}')`, { onNew: `newPlantFromEditPhoto('${ph.id}')` }) : ""}`;
+          ${state.editPhotoPickerOpen ? plantPicker(`setEditPhotoPlant('{id}')`, {
+            onNew: `newPlantFromEditPhoto('${ph.id}')`,
+            onNewSameSpecies: `addSiblingSpecimen('{taxonId}')`,
+            taxonId: state.editPhotoPlant ? (state.plants.find((x) => x.id === state.editPhotoPlant) || {}).taxa_id : null,
+          }) : ""}`;
         })()}
         ${plant ? `<div class="field-help">Clearing this returns the photo to the Inbox, unless it still has a location.</div>` : ""}
 
@@ -6621,6 +6642,31 @@ function setBatchPlant(plantId) {
 // and Notes are staged in this form and would be silently discarded, so they
 // are written first. Saving without a Save press is surprising; losing her
 // typing is worse, and the toast says which happened.
+// A second specimen of a species already recorded needs no form: the taxon
+// carries every species fact, and the only thing that distinguishes this one is
+// where it stands — which the photo's own location already says. Created and
+// selected in place, so the edit form is never left.
+async function addSiblingSpecimen(taxonId) {
+  const t = taxonById(taxonId);
+  if (!t) { toast("Species not found", true); return; }
+  const locId = state.editPhotoLocation && locationHoldsPlants(locationById(state.editPhotoLocation))
+    ? state.editPhotoLocation : null;
+  try {
+    const [created] = await restPost("plants", {
+      taxa_id: taxonId,
+      location_id: locId,
+      identification_status: "confirmed",
+      collection_category: "current",
+      status: "active",
+      health_status: "healthy",
+    });
+    if (!created) throw new Error("Could not create the specimen");
+    await loadAll();
+    setEditPhotoPlant(created.id);
+    toast(`Created ${created.accession_number}${locId ? "" : " — set its location before saving"}`);
+  } catch (e) { toast(e.message, true); }
+}
+
 async function newPlantFromEditPhoto(photoId) {
   const ph = state.photos.find((x) => x.id === photoId);
   const type = document.getElementById("eph-type");

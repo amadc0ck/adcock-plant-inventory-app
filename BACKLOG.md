@@ -227,6 +227,14 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.76.0
+
+**Same species, new specimen — and the button was an icon the size of the modal.** Schema: none.
+
+- **"Another *Kalanchoe luciae*"** creates a second specimen of a species already recorded, without a form. The taxon carries every species fact; the only thing that distinguishes this one is where it stands, and the photo's own container already says that. It is created and **selected in place**, so the edit form is never left. If the photo sits in an Area or Archive the location is left unset and the toast says so.
+- The species comes from the **active filter** — which is exactly the case that raises the question, a filter returning one plant beside a photo of a second — or from the plant already picked.
+- **The buttons are text.** `icon()` emits a bare `viewBox` with no width or height, so inside a full-width block button it stretched to the button's width: a `+` roughly 300px tall. Same no-intrinsic-size trap as the empty states in v1.64.0, in a context that rule did not cover.
+
 ### v1.75.1
 
 **Select all in the Inbox.** Schema: none.

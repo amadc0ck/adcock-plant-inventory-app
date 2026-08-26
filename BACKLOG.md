@@ -253,6 +253,14 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.63.1
+
+**Bulk duplicate delete failed silently at 694 photos.** Schema: none.
+
+- **The delete never reached the database.** `deletePhotosByIds()` put every id into one `id=in.(...)` filter. A uuid is 36 characters, so 694 of them is a **~26KB query string** — past the 8KB request line every proxy in front of PostgREST enforces, so it was rejected at the edge. Now chunked at 100 ids, six requests per chunk.
+- **The button also read as dead when nothing was selected**, because it was `disabled` — a disabled button gives no feedback at all, and the "Nothing selected" toast behind it was unreachable. Enabled now, so it says what to do.
+- **No progress during a long run.** The `google_photos_id` carry-over is one request per survivor and can't be batched — each carries a different value — so hundreds of duplicates is minutes of apparent nothing. Both phases now drive the task banner, patched in place rather than re-rendered.
+
 ### v1.63.0
 
 **PHOTO-1, PL-2 and a sticky Gallery header.** Schema: `photos.focal_x` / `focal_y`.

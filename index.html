@@ -413,7 +413,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.63.0";
+const APP_VERSION = "1.63.1";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -463,6 +463,7 @@ const state = {
   gallerySelectMode: false,
   gallerySelected: new Set(),
   dupeSelected: new Set(),
+  dupeDelete: null,
   assignSelected: new Set(),
   currentTaxonId: null,
   taxaSearch: "",
@@ -1791,6 +1792,16 @@ function taskBanner() {
     return `<div class="task-banner" style="background:var(--blue);color:#0E2320;" onclick="resumePhotosImport()">
       <div class="task-banner-text">Resume importing ${r.remaining.length} more from Google Photos?<div class="task-banner-sub">${r.done} of ${r.total} done · links expire in about ${r.minutesLeft} min · tap to continue</div></div>
       <button class="btn-ghost" style="padding:0 4px;font-size:12px;color:#0E2320;flex-shrink:0;" onclick="event.stopPropagation();dismissResumableImport()">Discard</button>
+    </div>`;
+  }
+  const dd = state.dupeDelete;
+  if (dd) {
+    const label = dd.phase === "linking"
+      ? "Keeping Google Photos links on the copies you are keeping"
+      : "Deleting duplicates";
+    return `<div class="task-banner">
+      <div class="task-spin"></div>
+      <div class="task-banner-text">${label}<div class="task-banner-sub">${dd.done} of ${dd.total}${dd.phase === "linking" ? " · so they are not re-imported" : ""}</div></div>
     </div>`;
   }
   const imp = state.photosImport;
@@ -4178,7 +4189,7 @@ function modalContent() {
           <button class="btn btn-secondary btn-sm" onclick="selectDuplicateExtras()">
             ${extras && sel.size === extras ? "Clear selection" : `Select all ${countLabel(extras, "extra", "extras")}`}
           </button>
-          <button class="btn btn-danger btn-sm icon-btn" ${sel.size ? "" : "disabled"} onclick="deleteSelectedDuplicates()">
+          <button class="btn btn-danger btn-sm icon-btn" onclick="deleteSelectedDuplicates()">
             ${icon("trash")} Delete ${sel.size}
           </button>
         </div>
@@ -5297,15 +5308,24 @@ async function attachPhotoToExistingPlant(photoId, plantId) {
 //
 // Batched: one request per reference table regardless of how many photos, which
 // matters when clearing dozens of duplicates at once.
-async function deletePhotosByIds(ids) {
+// Chunked at 100. A uuid is 36 characters, so `id=in.(...)` with 694 of them is
+// a ~26KB query string — far past the 8KB request line every proxy in front of
+// PostgREST enforces. The request never reaches the database; it is rejected at
+// the edge. Six requests per chunk is cheap next to silently failing.
+const DELETE_CHUNK = 100;
+async function deletePhotosByIds(ids, onProgress) {
   if (!ids.length) return;
-  const list = `(${ids.join(",")})`;
-  await restPatch("plants", `primary_photo_id=in.${list}`, { primary_photo_id: null });
-  await restPatch("locations", `primary_photo_id=in.${list}`, { primary_photo_id: null });
-  await restPatch("taxa", `primary_photo_id=in.${list}`, { primary_photo_id: null });
-  await restDelete("photo_plants", `photo_id=in.${list}`);
-  await restDelete("photo_locations", `photo_id=in.${list}`);
-  await restDelete("photos", `id=in.${list}`);
+  for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
+    const chunk = ids.slice(i, i + DELETE_CHUNK);
+    const list = `(${chunk.join(",")})`;
+    await restPatch("plants", `primary_photo_id=in.${list}`, { primary_photo_id: null });
+    await restPatch("locations", `primary_photo_id=in.${list}`, { primary_photo_id: null });
+    await restPatch("taxa", `primary_photo_id=in.${list}`, { primary_photo_id: null });
+    await restDelete("photo_plants", `photo_id=in.${list}`);
+    await restDelete("photo_locations", `photo_id=in.${list}`);
+    await restDelete("photos", `id=in.${list}`);
+    if (onProgress) onProgress(Math.min(i + DELETE_CHUNK, ids.length), ids.length);
+  }
 }
 
 async function deletePhoto(photoId) {
@@ -5355,7 +5375,7 @@ function selectDuplicateExtras() {
 // So the id moves to the survivor before the delete. Amanda hit this the hard
 // way: 279 duplicates from a re-picked selection, deleted, taking their
 // dedupe ids with them.
-async function carryOverGooglePhotosIds(deletingIds) {
+async function carryOverGooglePhotosIds(deletingIds, onProgress) {
   const deleting = new Set(deletingIds);
   const patches = [];
   findDuplicatePhotoGroups().forEach((group) => {
@@ -5367,26 +5387,46 @@ async function carryOverGooglePhotosIds(deletingIds) {
     if (!donor) return;
     patches.push([keeper.id, donor.google_photos_id]);
   });
+  let n = 0;
   for (const [id, gid] of patches) {
     // Best-effort: the unique index can reject it if another row already holds
     // that id, which is harmless — dedupe still works through that other row.
     try { await restPatch("photos", `id=eq.${id}`, { google_photos_id: gid }); } catch (e) {}
+    if (onProgress) onProgress(++n, patches.length);
   }
   return patches.length;
 }
 
+// Clearing hundreds of duplicates is minutes of work: the google_photos_id
+// carry-over is one request per survivor and cannot be batched, since each
+// carries a different value. Without a progress banner that reads as a dead
+// button, which is exactly how it read at 694.
 async function deleteSelectedDuplicates() {
   const ids = Array.from(state.dupeSelected);
-  if (!ids.length) { toast("Nothing selected", true); return; }
+  if (!ids.length) { toast("Select the copies to delete first, or use Select all extras", true); return; }
+  if (state.dupeDelete) { toast("Already deleting", true); return; }
   if (!confirm(`Delete ${ids.length} photo${ids.length === 1 ? "" : "s"}? The records go, the files stay in your Google Drive folder.`)) return;
+  state.dupeDelete = { phase: "linking", done: 0, total: ids.length };
+  render();
   try {
-    const carried = await carryOverGooglePhotosIds(ids);
-    await deletePhotosByIds(ids);
+    const step = (phase) => (done, total) => {
+      state.dupeDelete = { phase, done, total };
+      refreshImportProgress();
+    };
+    const carried = await carryOverGooglePhotosIds(ids, step("linking"));
+    state.dupeDelete = { phase: "deleting", done: 0, total: ids.length };
+    refreshImportProgress();
+    await deletePhotosByIds(ids, step("deleting"));
+    state.dupeDelete = null;
     if (carried) toast(`Kept the Google Photos link on ${countLabel(carried, "photo", "photos")} so they are not re-imported`);
     toast(`Deleted ${countLabel(ids.length, "photo", "photos")}`);
     state.dupeSelected = new Set();
     await loadAll();
-  } catch (e) { toast(e.message, true); }
+  } catch (e) {
+    state.dupeDelete = null;
+    toast(e.message, true);
+    render();
+  }
 }
 // Removes just this plant's tag from a photo it doesn't primarily own —
 // unlike deletePhoto(), this never touches the photo record itself, so it's

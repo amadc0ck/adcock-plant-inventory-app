@@ -10,7 +10,7 @@ Item IDs are permanent. Never renumber.
 ## Observed 2026-08-25 — triaged from Amanda's session notes
 
 ### SPECIES-1 — Split taxa from specimens (epic)
-**Status:** needs plan approval · **Effort:** high · **Schema:** yes, new table + FK · **Touches:** nearly every screen
+**Status:** phases 1–2 **done** (v1.41.0–v1.41.3) · phase 3 pending · **Effort:** high · **Schema:** yes, new table + FK · **Touches:** nearly every screen
 
 `plants` is one row per accessioned specimen, so **every species-level fact is copied onto every specimen of that species** and nothing keeps the copies in sync. Four offsets of one plant store the same mature size four times.
 
@@ -54,6 +54,8 @@ Three consequences worth holding onto:
 
 **Locations need no schema change.** "Where can I find any specimen of this taxon" is a query over its specimens; "where exactly is this one" is the specimen's existing `location_id`.
 
+**Phases 1–2 shipped.** 27 taxa created 1:1, navigation rebuilt, specimens created by hand. **Phase 3 remains:** drop the duplicated species columns from `plants` and retire `plant_locations`. Deliberately left as the undo.
+
 Migration groups existing plants by botanical name into taxa, links them, and **leaves the duplicated columns on `plants` until confirmed** — the reversible pattern used for the notes migration in v1.38.0.
 
 **Every individual offset is accessioned** (decided 2026-08-25) — five offsets in a bucket are five specimen rows. Two consequences: propagation needs batch creation (PROP-1), and a taxon's specimen list will often be several near-identical rows, so it must distinguish them by **photo, location and health**, never by name — they share a name by definition.
@@ -88,7 +90,9 @@ Supersedes the plant-level half of GAL-2. AI-1 and AI-2 should be designed again
 Add a count field: "How many offsets?" → create N specimens in one go, each getting its own accession number from the existing trigger, all sharing `parent_plant_id` and the chosen location.
 
 ### SPECIES-2 — Split multi-location plants into one specimen per location
-**Status:** needs plan approval · **Effort:** medium–high · **Schema:** yes, retires `plant_locations` for specimens · **Depends on:** SPECIES-1 · **Touches:** `plants`, `plant_locations`, `photos`, `care_notes`, `screenPlantDetail`, `allLocationsForPlant`, `mergePlants`
+**Status:** splitting **done by hand** 2026-08-25 · cleanup pending · **Effort:** medium–high · **Schema:** yes, retires `plant_locations` for specimens · **Depends on:** SPECIES-1 · **Touches:** `plants`, `plant_locations`, `photos`, `care_notes`, `screenPlantDetail`, `allLocationsForPlant`, `mergePlants`
+
+**Done manually rather than by migration.** Amanda created every missing specimen through the UI, which avoided the automated-split judgement calls entirely. All that remains is deleting 0014's redundant `plant_locations` row and the phase-3 column drop.
 
 **"Every plant + location combo is a specimen"** (Amanda, 2026-08-25). A specimen is one physical individual and a physical individual is in exactly one place, so a plant row listing three locations is really up to three plants.
 
@@ -186,12 +190,6 @@ The free text is also inconsistent in ways that will break parsing:
 
 Fill the parts for all 27 taxa, then flip `taxonDisplayName()` to prefer composed names. Cheap at 27 rows and annoying at 200. Once done, italics can be applied correctly per-part (genus and epithet italic, cultivar upright in quotes), which a single free-text string can never do.
 
-### PERF-1 — Photo loading flicker
-**Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `ensurePhotoLoaded`, `render`, `debouncedRender`
-
-Images visibly flash and blink while loading. Every resolved Drive URL triggers `debouncedRender()`, which rebuilds `#app.innerHTML` from scratch (§11) — so every `<img>` on screen is destroyed and recreated, losing already-painted images and re-requesting them.
-
-`debouncedRender()` reduced how *often* this happens but not what it does. Options: skip the full rebuild and patch resolved `<img>` elements in place; keep a stable placeholder box so layout doesn't shift; or a first-load state. The in-place patch is the real fix — full-rebuild-on-every-photo is the root cause.
 
 ### PD-4 — Health status needs an urgent tier
 **Status:** ready · **Effort:** low · **Schema:** none (text column) · **Touches:** `HEALTH_LABELS`, `plantRow`, `screenReports`
@@ -411,6 +409,10 @@ Reassigning a photo took four steps — detach, navigate away, find it again, re
 - A photo with no location inherits the target's; one that has a location keeps it. Same snapshot rule as attaching.
 
 Filed **TAXP-1** alongside: the species page still shows no photo list, which is where Amanda went looking first.
+
+### v1.41.3
+
+**Link an existing specimen to a species.** An orphaned specimen could not be linked at all — v1.41.1 added taxon resolution to the create and propagate paths but not to edit, so the "Not linked to a species" group had no way out of it. Edit full record gained a Species picker: any existing species, or create one from the botanical name entered above.
 
 ### v1.41.1 / v1.41.2
 

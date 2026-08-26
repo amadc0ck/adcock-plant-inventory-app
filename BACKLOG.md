@@ -227,6 +227,20 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.72.0
+
+**PL-3 and LOCP-4 — picking a specimen, and doing it to many photos at once.** Schema: none.
+
+- **The edit-photo form's Plant field was a `<select>` of all 52 specimens labelled by accession number** — the one picker PL-2 missed, and the one that matters most, since it is where a photo actually gets filed. It is the shared `plantPicker()` now: thumbnail, common name first, search and filters. The choice is **staged**, not saved on tap, because the form has a Save button and this field has to behave like the others in it.
+- **It opens pre-filtered to the photo's own container**, which cuts 52 specimens to the two or three actually standing there. Only when that location holds plants — an Area or Archive gets no default.
+- **Multi-select on the Location page**, in both the feed and the container layouts: Select all, batch edit, batch delete. The Gallery's select machinery is photo-generic despite the name, so it is reused rather than reimplemented. Select mode resets when you leave, since carrying it across meant arriving somewhere new with a selection you could not see.
+- **The batch modal's plant field got the same picker**, staged so that picking does not apply the batch.
+
+Two latent bugs found on the way:
+
+- **`applyGalleryBatch()` built one `id=in.(...)` for the whole selection.** 300 photos is an ~11KB query string — past the request line proxies enforce, so the batch would have been rejected at the edge and looked like a dead button. Same bug as the duplicate delete in v1.63.1; now chunked through the same constant.
+- **`bulkDeletePhotos()` cleared only two of the four things that reference a photo.** A location hero or a species cover anywhere in the selection would FK-error, reported as "failed to delete one photo" with no way to tell which. It uses `deletePhotosByIds()` now, which clears all four and chunks.
+
 ### v1.71.0
 
 **Create a species and specimen from a Gallery tile.** Schema: none.

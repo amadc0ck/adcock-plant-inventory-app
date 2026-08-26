@@ -466,7 +466,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.71.0";
+const APP_VERSION = "1.72.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -517,6 +517,10 @@ const state = {
   gallerySelected: new Set(),
   dupeSelected: new Set(),
   dupeDelete: null,
+  editPhotoPlant: undefined,   // staged plant choice inside the edit-photo form
+  editPhotoPickerOpen: false,
+  batchPlant: "",
+  batchPickerOpen: false,
   assignSelected: new Set(),
   currentTaxonId: null,
   taxaSearch: "",
@@ -1871,20 +1875,22 @@ function toggleInboxPhotoSelected(photoId) {
   else state.inboxSelected.add(photoId);
   render();
 }
-async function bulkDeletePhotos() {
-  const ids = Array.from(state.inboxSelected);
-  if (!confirm(`Delete ${ids.length} photo${ids.length === 1 ? "" : "s"}? Files stay in Google Drive.`)) return;
-  for (const id of ids) {
-    try {
-      await restPatch("plants", `primary_photo_id=eq.${id}`, { primary_photo_id: null });
-      await restDelete("photo_plants", `photo_id=eq.${id}`);
-      await restDelete("photos", `id=eq.${id}`);
-    } catch (e) { toast(`Failed to delete one photo: ${e.message}`, true); }
-  }
-  toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} deleted`);
-  state.inboxSelectMode = false;
-  state.inboxSelected = new Set();
-  await loadAll();
+// Was one request per photo and cleared only two of the four things that
+// reference a photo — a location hero or a species cover anywhere in the
+// selection would FK-error and be reported as "failed to delete one photo"
+// with no way to tell which. deletePhotosByIds clears all four and chunks.
+async function bulkDeletePhotos(which) {
+  const sel = which === "gallery" ? state.gallerySelected : state.inboxSelected;
+  const ids = Array.from(sel);
+  if (!ids.length) { toast("Nothing selected", true); return; }
+  if (!confirm(`Delete ${ids.length} photo${ids.length === 1 ? "" : "s"}? The records go, the files stay in your Google Drive folder.`)) return;
+  try {
+    await deletePhotosByIds(ids);
+    toast(`${countLabel(ids.length, "photo", "photos")} deleted`);
+    if (which === "gallery") { state.gallerySelectMode = false; state.gallerySelected = new Set(); }
+    else { state.inboxSelectMode = false; state.inboxSelected = new Set(); }
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
 }
 async function bulkAttachToPlant(plantId) {
   const ids = Array.from(state.inboxSelected);
@@ -1918,6 +1924,17 @@ function openModal(type, data = {}) {
   // Picker filters are per-open, not sticky: a stale species filter from a
   // previous modal reads as "no plants match".
   state.pickerSearch = ""; state.pickerTaxon = ""; state.pickerLocation = "";
+  if (type === "galleryBatch") { state.batchPlant = ""; state.batchPickerOpen = false; }
+  if (type === "editPhoto") {
+    const ph = state.photos.find((x) => x.id === data.photoId);
+    state.editPhotoPlant = ph ? (ph.plant_id || "") : "";
+    state.editPhotoPickerOpen = !!ph && !ph.plant_id;
+    // The photo's own container is very nearly always where the plant is, and
+    // it cuts 52 specimens down to the two or three actually standing there.
+    if (ph && ph.location_id && locationHoldsPlants(locationById(ph.location_id))) {
+      state.pickerLocation = ph.location_id;
+    }
+  }
   state.modal = { type, data };
   render();
 }
@@ -2019,7 +2036,7 @@ async function applyGalleryBatch() {
   if (!ids.length) { toast("Nothing selected", true); return; }
   const body = {};
   const loc = document.getElementById("gb-location").value;
-  const plant = document.getElementById("gb-plant").value;
+  const plant = state.batchPlant || "";
   const type = document.getElementById("gb-type").value;
   if (loc) body.location_id = loc === "__clear__" ? null : loc;
   if (plant) body.plant_id = plant === "__clear__" ? null : plant;
@@ -2027,8 +2044,12 @@ async function applyGalleryBatch() {
   if (!Object.keys(body).length) { toast("Choose something to change first", true); return; }
   if (!confirm(`Apply to ${ids.length} photo${ids.length === 1 ? "" : "s"}?`)) return;
   try {
-    // PostgREST takes an in-list, so this is one request rather than N.
-    await restPatch("photos", `id=in.(${ids.join(",")})`, body);
+    // Chunked for the same reason deletePhotosByIds is: 300 selected photos
+    // is an ~11KB query string, past the request line proxies enforce, and the
+    // request is rejected at the edge rather than reaching PostgREST.
+    for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
+      await restPatch("photos", `id=in.(${ids.slice(i, i + DELETE_CHUNK).join(",")})`, body);
+    }
     toast(`Updated ${countLabel(ids.length, "photo", "photos")}`);
     state.gallerySelectMode = false;
     state.gallerySelected = new Set();
@@ -2042,7 +2063,10 @@ function clearGalleryView() {
   render();
 }
 function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; state.taxonPhotoLimit = 24; render(); }
-function openLocation(id) { state.tab = "locationDetail"; state.currentLocationId = id; render(); }
+function openLocation(id) {
+  // Select mode is per-screen. Carrying it across meant arriving somewhere new
+  // with a selection you could no longer see.
+  state.gallerySelectMode = false; state.gallerySelected = new Set(); state.tab = "locationDetail"; state.currentLocationId = id; render(); }
 
 function plantPhotosOrdered(plantId) {
   const taggedPhotoIds = new Set(state.photoPlants.filter((pp) => pp.plant_id === plantId).map((pp) => pp.photo_id));
@@ -3078,9 +3102,24 @@ function screenLocationDetail() {
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Location photos</h3>
         <div style="display:flex;align-items:center;gap:12px;">
           <span class="subtle">${photos.length} total</span>
-          <button class="btn btn-secondary btn-sm" onclick="openModal('upload',{locationId:'${l.id}'})">+ Add photos</button>
+          ${photos.length ? `<button class="btn btn-secondary btn-sm" onclick="toggleGallerySelectMode()">${state.gallerySelectMode ? "Done" : "Select"}</button>` : ""}
+          <button class="btn btn-secondary btn-sm" onclick="openModal('upload',{locationId:'${l.id}'})">${icon("photoPlus")}</button>
         </div>
       </div>
+      ${/* LOCP-4. Filing a run of twenty archive shots onto one specimen was
+           twenty trips through the same modal. The Gallery's select machinery
+           is photo-generic despite the name, so it is reused wholesale rather
+           than reimplemented — one definition of what "selected" means. */""}
+      ${state.gallerySelectMode && photos.length ? `
+        <div class="row" style="margin-bottom:12px;">
+          <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllGalleryPhotos(${JSON.stringify(photos.map((p) => p.id))})">
+            ${photos.every((p) => state.gallerySelected.has(p.id)) ? "Clear all" : `Select all ${photos.length}`}
+          </button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-accent btn-sm" ${state.gallerySelected.size ? "" : "disabled"} onclick="openModal('galleryBatch')">Edit ${state.gallerySelected.size}</button>
+            <button class="btn btn-danger btn-sm icon-btn" ${state.gallerySelected.size ? "" : "disabled"} onclick="bulkDeletePhotos('gallery')">${icon("trash")} ${state.gallerySelected.size}</button>
+          </div>
+        </div>` : ""}
 
       ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : !locationHoldsPlants(l) ? `
         ${/* LOCP-3. Feed view. On an Area or an Archive the photos ARE the
@@ -3095,10 +3134,13 @@ function screenLocationDetail() {
             const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
             const shown = [claimedBy, ...taggedIds.map((id) => state.plants.find((x) => x.id === id))].filter(Boolean);
             return `
-            <div class="photo-feed-card">
-              <div class="photo-feed-media" onclick="openLightbox('${l.id}','${p.id}','location')">${photoImg(p)}</div>
+            <div class="photo-feed-card" style="${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}">
+              <div class="photo-feed-media" style="position:relative;" onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : `openLightbox('${l.id}','${p.id}','location')`}">
+                ${photoImg(p)}
+                ${state.gallerySelectMode ? `<div class="select-check ${state.gallerySelected.has(p.id) ? "checked" : ""}" style="top:10px;left:10px;z-index:2;">${state.gallerySelected.has(p.id) ? icon("check") : ""}</div>` : ""}
+              </div>
               <div class="photo-feed-body">
-                <div class="photo-feed-actions">
+                <div class="photo-feed-actions" style="${state.gallerySelectMode ? "display:none;" : ""}">
                   <button class="icon-only" title="Tag a plant shown in this photo" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("tag")}</button>
                   <button class="icon-only" title="Edit this photo" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
                   <button class="icon-only" title="Move to another location" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")}</button>
@@ -3128,9 +3170,11 @@ function screenLocationDetail() {
             const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
             const suggestionBadge = (s) => `<div style="margin-top:6px;padding:6px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;cursor:pointer;" onclick="openModal('identificationDetail',{identificationId:'${s.id}'})"><span class="mono" style="font-size:9px;color:var(--blue);text-transform:uppercase;">${s.source}</span> <em>${escapeHtml(s.suggested_name)}</em>${s.confidence ? ` (${Math.round(s.confidence * 100)}%)` : ""} <span style="color:var(--blue);">— compare →</span></div>`;
             return `
-            <div class="tag-card">
+            <div class="tag-card" style="position:relative;${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}"
+                 onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : ""}">
+              ${state.gallerySelectMode ? `<div class="select-check ${state.gallerySelected.has(p.id) ? "checked" : ""}" style="top:8px;right:8px;z-index:2;">${state.gallerySelected.has(p.id) ? icon("check") : ""}</div>` : ""}
               <div class="photo-row">
-                <div class="photo-icon on-cream" style="cursor:pointer;" onclick="openLightbox('${l.id}','${p.id}','location')">${photoImg(p, "border-radius:6px;")}</div>
+                <div class="photo-icon on-cream" style="cursor:pointer;" onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : `openLightbox('${l.id}','${p.id}','location')`}">${photoImg(p, "border-radius:6px;")}</div>
                 <div style="flex:1;min-width:0;">
                   <div class="tag-id">${fmtDate(photoDate(p))}</div>
                   <div style="font-size:13.5px;color:var(--ink-soft);margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
@@ -3148,11 +3192,11 @@ function screenLocationDetail() {
                    scopes. Now: one primary action, then the same compact ghost
                    row the specimen timeline uses, so a photo offers the same
                    vocabulary wherever it is seen. */""}
-              ${locationHoldsPlants(l) ? `
+              ${locationHoldsPlants(l) && !state.gallerySelectMode ? `
                 <div style="margin-top:10px;">
                   <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
                 </div>` : ""}
-              <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;">
+              <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;${state.gallerySelectMode ? "display:none;" : ""}">
                 ${!plantnetSuggestion
                   ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search") + " Identify"}</button>`
                   : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="dismissIdentification('${plantnetSuggestion.id}')">${icon("close")} Dismiss Pl@ntNet</button>`}
@@ -4452,13 +4496,28 @@ function modalContent() {
         ${locationSelectOptions(null)}
       </select>
 
+      ${/* PL-3. Same staged picker as the edit-photo form — picking must not
+           apply the batch, so it stages and the Apply button commits. */""}
       <label>Plant</label>
-      <select id="gb-plant">
-        <option value="">— Leave unchanged —</option>
-        <option value="__clear__">Detach from plant</option>
-        ${state.plants.slice().sort((a, b) => (a.accession_number || "").localeCompare(b.accession_number || ""))
-          .map((pl) => `<option value="${pl.id}">${pl.accession_number} — ${escapeHtml(plantDisplayName(pl))}</option>`).join("")}
-      </select>
+      ${(() => {
+        const v = state.batchPlant;
+        const chosen = v && v !== "__clear__" ? state.plants.find((x) => x.id === v) : null;
+        const nm = chosen ? plantPickerName(chosen) : null;
+        const label = chosen ? escapeHtml(nm.primary) : v === "__clear__" ? "Detach from plant" : "Leave unchanged";
+        return `
+        <div class="tag-card plant-list-card" style="padding:8px 10px;margin-bottom:8px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13.5px;${chosen ? "font-weight:500;" : "color:var(--ink-soft);"}">${label}</div>
+            ${chosen ? `<div class="mono tag-id">${chosen.accession_number}</div>` : ""}
+          </div>
+          <div style="display:flex;gap:10px;flex-shrink:0;">
+            <button type="button" class="btn-ghost" style="padding:0;font-size:12px;" onclick="state.batchPickerOpen=!state.batchPickerOpen;render()">${state.batchPickerOpen ? "Close" : "Choose"}</button>
+            ${v ? `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;" onclick="setBatchPlant('')">Reset</button>`
+                : `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="setBatchPlant('__clear__')">Detach</button>`}
+          </div>
+        </div>
+        ${state.batchPickerOpen ? plantPicker(`setBatchPlant('{id}')`) : ""}`;
+      })()}
 
       <label>Type</label>
       <select id="gb-type">
@@ -5124,12 +5183,36 @@ function modalContent() {
         <label>Location</label>
         <select id="eph-location">${locationSelectOptions(ph.location_id || null)}</select>
 
+        ${/* PL-3. Was a <select> of all 52 specimens labelled by accession
+             number — the one picker PL-2 missed, and the one that matters most,
+             since this is where a photo gets filed. Accession numbers are not
+             memorised and a bare list gives no way to tell two Crassulas apart.
+             Same plantPicker() as everywhere else, defaulted to this photo's
+             own container. */""}
         <label>Plant</label>
-        <select id="eph-plant">
-          <option value="">— Not attached to a plant —</option>
-          ${state.plants.slice().sort((a, b) => (a.accession_number || "").localeCompare(b.accession_number || ""))
-            .map((pl) => `<option value="${pl.id}" ${ph.plant_id === pl.id ? "selected" : ""}>${pl.accession_number} — ${escapeHtml(plantDisplayName(pl))}</option>`).join("")}
-        </select>
+        ${(() => {
+          const chosen = state.editPhotoPlant ? state.plants.find((x) => x.id === state.editPhotoPlant) : null;
+          const nm = chosen ? plantPickerName(chosen) : null;
+          const cover = chosen ? plantCoverPhoto(chosen) : null;
+          return `
+          <div class="tag-card plant-list-card" style="padding:8px 10px;margin-bottom:8px;">
+            <div class="plant-list-thumb" style="width:44px;height:44px;flex-shrink:0;">
+              ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+            </div>
+            <div style="flex:1;min-width:0;">
+              ${chosen ? `
+                <div style="font-size:13.5px;font-weight:500;">${escapeHtml(nm.primary)}</div>
+                ${nm.secondary ? `<div style="font-size:11.5px;font-style:italic;color:var(--ink-soft);">${escapeHtml(nm.secondary)}</div>` : ""}
+                <div class="mono tag-id">${chosen.accession_number}</div>`
+              : `<div class="value-blank" style="font-size:13px;">Not attached to a plant</div>`}
+            </div>
+            <div style="display:flex;gap:10px;flex-shrink:0;">
+              <button type="button" class="btn-ghost" style="padding:0;font-size:12px;" onclick="state.editPhotoPickerOpen=!state.editPhotoPickerOpen;render()">${state.editPhotoPickerOpen ? "Close" : (chosen ? "Change" : "Choose")}</button>
+              ${chosen ? `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="setEditPhotoPlant('')">Clear</button>` : ""}
+            </div>
+          </div>
+          ${state.editPhotoPickerOpen ? plantPicker(`setEditPhotoPlant('{id}')`) : ""}`;
+        })()}
         ${plant ? `<div class="field-help">Clearing this returns the photo to the Inbox, unless it still has a location.</div>` : ""}
 
         <label>Notes</label>
@@ -6302,6 +6385,21 @@ function paintFocal(x, y) {
   });
 }
 
+// Staged, not saved: the edit-photo form has a Save button and the plant choice
+// has to behave like the other fields in it. The picker closes on pick, so the
+// form does not stay buried under a 52-row list.
+function setBatchPlant(plantId) {
+  state.batchPlant = plantId || "";
+  state.batchPickerOpen = false;
+  render();
+}
+
+function setEditPhotoPlant(plantId) {
+  state.editPhotoPlant = plantId || "";
+  state.editPhotoPickerOpen = false;
+  render();
+}
+
 async function setFocalFromClick(evt, photoId) {
   const img = document.getElementById("focal-img");
   if (!img) return;
@@ -6863,7 +6961,7 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
         await restPatch("photos", `id=eq.${state.modal.data.photoId}`, {
           photo_type: document.getElementById("eph-type").value || "general",
           location_id: document.getElementById("eph-location").value || null,
-          plant_id: document.getElementById("eph-plant").value || null,
+          plant_id: state.editPhotoPlant || null,
           notes: document.getElementById("eph-notes").value || null,
         });
         toast("Photo updated");

@@ -227,6 +227,15 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.70.0
+
+**Locations list, and a report that contradicted itself.** Schema: none.
+
+- **"Plants missing photos" listed plants that were showing a photo.** The report counted only `photos.plant_id` — the direct attachment — while every thumbnail in the same list came from `plantPhotosOrdered()`, which also counts `photo_plants` tags. So a plant whose only photos were tags appeared with a picture *and* as having none. A tagged photo does show the plant; that is what tagging is for. It reads the shared function now, and the local re-implementation is deleted. Same class as the four inline search-field lists collapsed in v1.65.0: a second definition of the same fact, drifting.
+- **The name gets the full card width.** Counts sat in a right-aligned column beside it, so "4026 Sacramento Creation" wrapped to three lines to make room for "0 plants · 3 photos". Counts moved to their own line underneath.
+- **Edit and Add photo are icon-only** — Add photo uses Tabler's `photo-plus`, supplied by Amanda.
+- **Archives are separated from active locations.** Five former homes sat between the Front Yard and the Backyard, and their permanent "0 plants" read as a gap rather than a fact. They now sit under a **From the Archives** heading with a line explaining their photos still tag to specimens. Both `gallery_row = 'archives'` and the `archived` flag qualify.
+
 ### v1.69.0
 
 **LOC-8 — the Location page reads as a place, not a form.** Schema: none.

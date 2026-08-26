@@ -248,6 +248,9 @@
   /* LOCP-3. An Area or an Archive is not a filing queue — its photos are the
      content. Whole frame, no crop (the focal point is for thumbnails, and
      there is nothing to centre on here), one column, captions underneath. */
+  .on-cream-icon{padding:0;color:var(--moss-dim);display:flex;}
+  .on-cream-icon svg{width:20px;height:20px;}
+  .on-cream-icon:hover{color:var(--ink);}
   .photo-feed{max-width:620px;margin:0 auto;display:flex;flex-direction:column;gap:26px;}
   .photo-feed-card{break-inside:avoid;-webkit-column-break-inside:avoid;}
   .photo-feed-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
@@ -463,7 +466,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.69.0";
+const APP_VERSION = "1.70.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1822,6 +1825,7 @@ function icon(name) {
     clipboard: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /><path d="M9 12h6" /><path d="M9 16h6" /></svg>`,
     check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>`,
     search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`,
+    photoPlus: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M12.5 21h-6.5a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v6.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l4 4" /><path d="M14 14l1 -1c.67 -.644 1.45 -.824 2.182 -.54" /><path d="M16 19h6" /><path d="M19 16v6" /></svg>`,
     photoQuestion: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M15 21h-9a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l3 3" /><path d="M19 22v.01" /><path d="M19 19a2.003 2.003 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483" /></svg>`,
     plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>`,
     trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/><path d="M10 11v6M14 11v6"/></svg>`,
@@ -2879,21 +2883,18 @@ function locationCard(l) {
       <div class="plant-list-thumb">
         ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
       </div>
+      ${/* Counts sat beside the name in a right-aligned column, so "4026
+           Sacramento Creation" wrapped to three lines to make room for
+           "0 plants · 3 photos". The name is what identifies the card; it gets
+           the full width and the counts go underneath. */""}
       <div style="flex:1;min-width:0;">
-      <div class="row">
-        <div>
-          <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
-          <div style="font-family:'Fraunces',serif;font-size:15px;font-weight:500;margin-top:2px;">${escapeHtml(l.name)}</div>
+        <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
+        <div style="font-family:'Fraunces',serif;font-size:15px;font-weight:500;margin-top:2px;line-height:1.25;">${escapeHtml(l.name)}</div>
+        <div class="mono" style="font-size:11px;color:var(--moss-dim);margin-top:4px;">${countLabel(plantCount, "plant", "plants")} · ${countLabel(photoCount, "photo", "photos")}${children.length ? ` · <span style="color:var(--blue);">${nestedCountLabel(children)} →</span>` : ""}</div>
+        <div style="display:flex;gap:14px;margin-top:10px;">
+          <button class="btn-ghost on-cream-icon" title="Edit this location" onclick="event.stopPropagation();openModal('editLocation',{locationId:'${l.id}'})">${icon("edit")}</button>
+          <button class="btn-ghost on-cream-icon" title="Add photos here" onclick="event.stopPropagation();openModal('upload',{locationId:'${l.id}'})">${icon("photoPlus")}</button>
         </div>
-        <div style="text-align:right;">
-          <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(plantCount, "plant", "plants")} · ${countLabel(photoCount, "photo", "photos")}</div>
-          ${children.length ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${nestedCountLabel(children)} →</div>` : ""}
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px;">
-        <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('editLocation',{locationId:'${l.id}'})">Edit</button>
-        <button class="btn btn-secondary btn-sm btn-on-cream" onclick="event.stopPropagation();openModal('upload',{locationId:'${l.id}'})">Add photo</button>
-      </div>
       </div>
     </div>`;
 }
@@ -2908,9 +2909,25 @@ function screenLocations() {
         <h2 class="display" style="font-size:22px;font-weight:500;margin:0;">Locations</h2>
         <button class="btn btn-secondary btn-sm" onclick="openModal('newLocation')">+ Add</button>
       </div>
-      ${state.locations.length === 0 ? `
-        <div class="empty"><div class="display">No locations yet</div><div>Add areas, rows, or containers to organize your plants.</div></div>` : `
-        <div class="card-grid">${topLevel.map(locationCard).join("")}</div>`}
+      ${(() => {
+        if (state.locations.length === 0) return `
+          <div class="empty"><div class="display">No locations yet</div><div>Add areas, rows, or containers to organize your plants.</div></div>`;
+        // A former home is not somewhere you file a plant today. Mixing the two
+        // meant scanning past five places the collection has left to reach the
+        // Front Yard, and it made "0 plants" look like a gap rather than a fact.
+        const isArchive = (l) => l.gallery_row === "archives" || l.archived;
+        const active = topLevel.filter((l) => !isArchive(l));
+        const archived = topLevel.filter(isArchive);
+        return `
+          ${active.length ? `<div class="card-grid">${active.map(locationCard).join("")}</div>` : ""}
+          ${archived.length ? `
+            <div class="row" style="margin-top:30px;margin-bottom:12px;">
+              <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">From the Archives</h3>
+              <span class="subtle">${countLabel(archived.length, "former place", "former places")}</span>
+            </div>
+            <p class="subtle" style="margin:-6px 0 12px;font-size:12.5px;">Places the collection used to live. Their photos still tag to specimens — that is how a plant's history across homes gets recorded.</p>
+            <div class="card-grid">${archived.map(locationCard).join("")}</div>` : ""}`;
+      })()}
     </div>
   </div>`;
 }
@@ -3194,13 +3211,17 @@ function findDuplicatePhotoGroups() {
 }
 
 function reportSections() {
-  const photosOf = (pl) => state.photos.filter((p) => p.plant_id === pl.id);
+  // Was a local re-implementation counting only photos.plant_id — the direct
+  // attachment — while every thumbnail in the same list came from
+  // plantPhotosOrdered(), which also counts photo_plants tags. So a plant whose
+  // only photos were tags showed a picture and was reported as having none.
+  // A tagged photo does show the plant; that is the whole point of tagging.
   return [
     { key: "emptyLocations", title: "Empty locations", sub: "No plants or photos",
       items: state.locations.filter((l) => directChildLocations(l.id).length === 0 && photosAtLocation(l.id).length === 0 && plantsAtLocation(l.id).length === 0),
       kind: "location" },
     { key: "plantsNoPhotos", title: "Plants missing photos", sub: "At least one photo needed",
-      items: state.plants.filter((pl) => photosOf(pl).length === 0), kind: "plant" },
+      items: state.plants.filter((pl) => plantPhotosOrdered(pl.id).length === 0), kind: "plant" },
     { key: "plantsUnidentified", title: "Plants missing identification", sub: "Needs a name or confirmation",
       items: state.plants.filter((pl) => pl.identification_status === "unidentified"), kind: "plant" },
     { key: "plantsNoTaxon", title: "Specimens with no species", sub: "Not linked to a species record",

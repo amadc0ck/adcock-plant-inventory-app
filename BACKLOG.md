@@ -253,6 +253,15 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.64.0
+
+**The focal picker was itself cropped, and the section cards sat over holes.** Schema: none.
+
+- **You were picking a point on a crop.** The picker was a `.card-media.ratio-4x3`, so a portrait photo was already cut down before you touched it — you could not see what was being excluded, and the percentage was measured against the **cropped box** rather than the photo, so the number was wrong as well as blind. The stage now shows the whole frame at its own aspect ratio and the click is measured against the image element.
+- **Live crop previews.** Square and 4:3 tiles under the stage update as you move the point, so you see what the crop will do before leaving the modal. Only those two, because they are the only ratios the app crops to — a 16:9 preview would show a shape that never appears.
+- **`.section-grid` packs instead of aligning.** Six cards of very different heights in a 3-column grid made every cell as tall as the tallest, so Collection and Provenance sat over several hundred pixels of nothing. CSS columns pack them vertically. Reading order becomes down-then-across, which is fine for independent reference cards.
+- **Every empty state was drawing a 200px icon.** `icon()` emits a bare `viewBox` with no width or height, so inside a block container the SVG stretched to full width. `.empty svg` is now 32px — this was app-wide, not just Care notes.
+
 ### v1.63.1
 
 **Bulk duplicate delete failed silently at 694 photos.** Schema: none.

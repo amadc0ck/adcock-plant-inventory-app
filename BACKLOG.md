@@ -309,12 +309,14 @@ Layer 1 catches the common case and is independent of AI-1. Do not wait for the 
 ## Blocked
 
 ### BLOOM-1 — Bloom event tracking (Epic 1)
-**Status:** blocked by AI-1 · **Effort:** medium · **Schema:** yes
+**Status:** **ready** — manual tracking needs no AI · **Effort:** medium · **Schema:** yes
 
-- New `bloom_events` table: `plant_id`, nullable `location_id`, `start_date`, nullable `end_date` (null while active), `bloom_photo_id`.
-- New `bloom` photo type, distinct from profile and timeline photos.
-- Manual toggle **and** AI suggestion. AI suggests only.
-- Feeds RPT-4 (What's in Bloom) and GAL-5 (Gallery In Bloom row).
+**Re-scoped 2026-08-26. This was never blocked by AI-1**; it was labelled by its most demanding bullet rather than split, the same way AI-3 was before being separated. Only the suggestion half needs the vision call:
+
+- **Ready now:** `bloom_events` table (`plant_id`, nullable `location_id`, `start_date`, nullable `end_date` — null while active, `bloom_photo_id`), the `bloom` photo type, and the manual toggle. This is the whole of bloom *tracking*.
+- **Blocked by AI-1:** Claude suggesting a bloom from a photo. It proposes, Amanda confirms — a bloom is never set automatically.
+
+Unblocks RPT-4 and GAL-5, which have both been waiting on a dependency that was not real.
 
 
 
@@ -323,7 +325,8 @@ Layer 1 catches the common case and is independent of AI-1. Do not wait for the 
 Plant check-ins support **both** staleness (days since last photo, via `photoDate()`) and a manual flag. Location watch status is a manual flag only.
 
 ### RPT-4 — What's in Bloom section
-**Status:** blocked by BLOOM-1 · **Effort:** low
+**Status:** ready once BLOOM-1's manual half ships · **Effort:** low
+Reads `bloom_events` where `end_date` is null. No AI involved.
 
 ---
 
@@ -348,7 +351,9 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 
 ### GAL-5 — In Bloom row
-**Status:** blocked by BLOOM-1 and OPEN-2
+**Status:** ready once BLOOM-1's manual half ships · OPEN-2 effectively answered
+
+**OPEN-2 resolved by what shipped since it was written.** Every other Gallery row is now derived rather than curated — albums from locations with `gallery_row`, highlights from `taxa.plant_type`, archives from locations. Hand-curating In Bloom would make it the only exception, and worse, blooming is **time-bound**: a manual list goes stale the moment a bloom ends, and nothing would prompt anyone to prune it. Derive it from `bloom_events` where `end_date` is null. Confirm with Amanda before building.
 
 ---
 
@@ -356,7 +361,7 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 **OPEN-1 — Build order.** Amanda sets priority across Plant Detail, Locations, Reports, and Gallery. Current call: **PD-1 first**, then LOC-1. Reversed from the original LOC-1-first call once the card-media image treatment moved to PD-1 — the pattern is designed once there and applied in LOC-1 second. LOC-2 shipped the Locations data defects ahead of both.
 
-**OPEN-2 — In Bloom behavior.** Should the Gallery's In Bloom row be derived automatically from `bloom_events`, matching how blooming is actually tracked, or manually curated like Favorites and Collection Highlights for consistent Gallery interaction? Unresolved. GAL-5 cannot start until this is decided.
+**OPEN-2 — In Bloom behavior.** *Effectively answered 2026-08-26 — see GAL-5.* Written when the Gallery was expected to be curated. Since then albums, highlights and archives all derive from data, so a hand-curated In Bloom row would be the sole exception, and a stale one — blooming ends, and nothing would prompt anyone to remove it. Derive from `bloom_events` where `end_date` is null. Needs a nod from Amanda, not a decision from scratch.
 
 ---
 

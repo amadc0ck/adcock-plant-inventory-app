@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.58.0";
+const APP_VERSION = "1.59.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -436,6 +436,7 @@ const state = {
   careNotes: [],
   taxa: [],
   listOptions: [],
+  bloomEvents: [],
   backfill: null,
   reportView: null,
   photosImport: null,
@@ -455,7 +456,7 @@ const state = {
   inboxYear: "",
   inboxSearch: "",
   tagLocationSearch: "",
-  galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "" },
+  galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false },
   inboxSelectMode: false,
   inboxSelected: new Set(),
   lightboxResumePending: false,
@@ -976,7 +977,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions, bloomEvents] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -990,6 +991,9 @@ async function loadAll() {
       // Resilient on purpose: if list_options does not exist yet the app falls
       // back to the built-in vocabularies rather than failing to load at all.
       restGet("list_options", "?select=*&order=list_name.asc,sort_order.asc").catch(() => null),
+      // Resilient like list_options: the app works before the migration runs,
+      // it just has no bloom history to show.
+      restGetAll("bloom_events", "?select=*&order=started_on.desc").catch(() => null),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -1002,6 +1006,7 @@ async function loadAll() {
     state.careNotes = careNotes;
     state.taxa = taxa;
     state.listOptions = listOptions || [];
+    state.bloomEvents = bloomEvents || [];
   } catch (e) {
     toast(e.message, true);
   }
@@ -1320,6 +1325,64 @@ function locationsOfTaxon(taxonId) {
   return Array.from(seen.values());
 }
 
+// ============================================================
+// BLOOM TRACKING (BLOOM-1). A bloom is an event with a start and an end, not a
+// flag — a plant blooms repeatedly over its life and the history is the point.
+// `ended_on` null means it is blooming right now.
+//
+// Deliberately manual. `taxa.bloom_season` records when a plant is EXPECTED to
+// bloom; bloom_events record when one actually did. Confusing the two would
+// make the Gallery claim things are in flower because the calendar says so.
+// ============================================================
+function bloomsForPlant(plantId) {
+  return state.bloomEvents
+    .filter((b) => b.plant_id === plantId)
+    .sort((a, b) => String(b.started_on).localeCompare(String(a.started_on)));
+}
+function activeBloom(plantId) {
+  return state.bloomEvents.find((b) => b.plant_id === plantId && !b.ended_on) || null;
+}
+function bloomingSpecimens() {
+  const ids = new Set(state.bloomEvents.filter((b) => !b.ended_on).map((b) => b.plant_id));
+  return state.plants.filter((p) => ids.has(p.id));
+}
+
+// Which bloom_season values match today. Northern hemisphere; the overlaps are
+// intentional, since a plant tagged `summer` and one tagged `late_summer` are
+// both plausibly flowering in August.
+function seasonsNow(date) {
+  const m = (date || new Date()).getMonth() + 1;
+  const out = ["intermittent"];
+  if (m >= 3 && m <= 5) out.push("spring");
+  if (m === 6) out.push("early_summer");
+  if (m >= 6 && m <= 8) out.push("summer");
+  if (m >= 8 && m <= 9) out.push("late_summer");
+  if (m >= 9 && m <= 11) out.push("fall");
+  if (m === 12 || m <= 2) out.push("winter");
+  return out;
+}
+
+// Specimens whose species is expected to be flowering now but which have no
+// bloom recorded. This is the "go and look" list — a date comparison against
+// data already held, needing no AI whatever, despite living in an epic named
+// after one.
+function expectedToBloom() {
+  const seasons = seasonsNow();
+  const blooming = new Set(state.bloomEvents.filter((b) => !b.ended_on).map((b) => b.plant_id));
+  return state.plants.filter((p) => {
+    if (blooming.has(p.id) || p.status !== "active") return false;
+    const t = p.taxa_id ? taxonById(p.taxa_id) : null;
+    // `monocarpic` is excluded: it blooms once and dies, so nudging every year
+    // would be noise. `not_observed` means nobody knows yet.
+    if (!t || !t.bloom_season || t.bloom_season === "monocarpic" || t.bloom_season === "not_observed") return false;
+    return seasons.includes(t.bloom_season);
+  });
+}
+
+function bloomPhotosFor(plantId) {
+  return plantPhotosOrdered(plantId).filter((p) => p.photo_type === "bloom");
+}
+
 // Dated care events for a plant, newest first. `noted_on` is the observation
 // date Amanda sets; created_at only breaks ties between notes on the same day.
 function careNotesForPlant(plantId) {
@@ -1579,6 +1642,11 @@ function showGalleryHighlight(plantType) {
   state.galleryFilters = { ...state.galleryFilters, highlight: plantType, album: "" };
   render();
 }
+function showGalleryInBloom() {
+  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: true };
+  state.tab = "gallery";
+  render();
+}
 function showGalleryNeeds(kind) {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: kind };
   state.tab = "gallery";
@@ -1627,7 +1695,7 @@ async function applyGalleryBatch() {
 }
 
 function clearGalleryView() {
-  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "" };
+  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false };
   render();
 }
 function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; render(); }
@@ -2256,6 +2324,35 @@ function screenPlantDetail() {
           : `<p class="subtle" style="margin:0;">Not linked to a species yet.</p>`}
         </div>
 
+        ${(() => {
+          const active = activeBloom(pl.id);
+          const history = bloomsForPlant(pl.id);
+          const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+          const expected = t && t.bloom_season ? (listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season) : null;
+          return `
+          <div class="section-card" ${active ? `style="border-color:var(--pink);"` : ""}>
+            <div class="row" style="margin-bottom:10px;">
+              <h4 style="margin:0;">Bloom</h4>
+              ${active
+                ? `<button class="btn btn-secondary btn-sm" onclick="openModal('endBloom',{bloomId:'${active.id}'})">Mark finished</button>`
+                : `<button class="btn btn-secondary btn-sm icon-btn" onclick="openModal('startBloom',{plantId:'${pl.id}'})">${icon("plant2")} In bloom</button>`}
+            </div>
+            ${active
+              ? `<div style="font-size:13.5px;color:var(--pink);font-weight:600;">Blooming since ${fmtDate(active.started_on)}</div>`
+              : `<div class="subtle" style="font-size:12.5px;">Not currently blooming${expected ? ` · usually ${escapeHtml(expected)}` : ""}.</div>`}
+            ${history.length ? `
+              <div class="subtle" style="font-size:11.5px;margin-top:10px;">History</div>
+              ${history.map((b) => `
+                <div class="field-row">
+                  <span class="field-row-icon">${icon("plant2")}</span>
+                  <span class="field-row-label">${fmtDate(b.started_on)}${b.ended_on ? ` – ${fmtDate(b.ended_on)}` : " – now"}</span>
+                  <span class="field-row-value">
+                    <button class="btn-ghost icon-btn" style="padding:0;font-size:11px;color:var(--terracotta);" onclick="deleteBloom('${b.id}')">${icon("trash")}</button>
+                  </span>
+                </div>`).join("")}` : ""}
+          </div>`;
+        })()}
+
         <div class="section-card">
           <h4>Identification</h4>
           ${fieldRow("check", "Status", ID_STATUS_LABELS[pl.identification_status] || pl.identification_status)}
@@ -2638,7 +2735,13 @@ function screenReports() {
       count: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
   ];
 
-  const open = state.reportView ? sections.find((x) => x.key === state.reportView) : null;
+  const bloomViews = {
+    blooming: { title: "In bloom now", sub: "Recorded as flowering", items: bloomingSpecimens(), kind: "plant" },
+    dueToBloom: { title: "Should be blooming", sub: "Their species flowers around now", items: expectedToBloom(), kind: "plant" },
+  };
+  const open = state.reportView
+    ? (sections.find((x) => x.key === state.reportView) || bloomViews[state.reportView] || null)
+    : null;
 
   if (open) {
     const renderItem = open.kind === "location" ? reportLocationItem : reportPlantItem;
@@ -2720,6 +2823,34 @@ function screenReports() {
           </button>` : ""}
       </div>
 
+      ${(() => {
+        const blooming = bloomingSpecimens();
+        const due = expectedToBloom();
+        if (!blooming.length && !due.length) return "";
+        return `
+        <div class="row" style="margin-top:26px;margin-bottom:10px;">
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Bloom</h3>
+        </div>
+        <div class="tag-card" style="padding:0;overflow:hidden;">
+          <button class="attn-row" onclick="state.reportView='blooming';render()">
+            <div style="flex:1;min-width:0;">
+              <div class="attn-title">In bloom now</div>
+              <div class="attn-sub">Recorded as flowering</div>
+            </div>
+            <span class="attn-count ${blooming.length ? "has" : "clear"}">${blooming.length}</span>
+            <span class="action-chevron">${icon("chevronRight")}</span>
+          </button>
+          <button class="attn-row" onclick="state.reportView='dueToBloom';render()">
+            <div style="flex:1;min-width:0;">
+              <div class="attn-title">Should be blooming</div>
+              <div class="attn-sub">Their species flowers around now — worth a look</div>
+            </div>
+            <span class="attn-count ${due.length ? "has" : "clear"}">${due.length}</span>
+            <span class="action-chevron">${icon("chevronRight")}</span>
+          </button>
+        </div>`;
+      })()}
+
       <div class="row" style="margin-top:26px;margin-bottom:10px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photos not fully filed</h3>
         <span class="attn-count ${photoBuckets.reduce((n, b) => n + b.count, 0) ? "has" : "clear"}">${photoBuckets.reduce((n, b) => n + b.count, 0)}</span>
@@ -2793,6 +2924,12 @@ function filteredGalleryPhotos() {
   // resolve to a photo id set once rather than per-photo.
   const albumIds = f.album ? new Set(photosInLocationTree(f.album).map((p) => p.id)) : null;
   let highlightIds = null;
+  let inBloomIds = null;
+  if (f.inBloom) {
+    const ids = new Set(bloomingSpecimens().map((p) => p.id));
+    const photoIds = new Set(state.photos.filter((p) => p.plant_id && ids.has(p.plant_id)).map((p) => p.id));
+    inBloomIds = photoIds;
+  }
   if (f.highlight) {
     const taxonType = new Map(state.taxa.map((t) => [t.id, t.plant_type]));
     const plantIds = new Set(state.plants.filter((p) => taxonType.get(p.taxa_id) === f.highlight).map((p) => p.id));
@@ -2813,6 +2950,7 @@ function filteredGalleryPhotos() {
     if (f.needs === "no_location" && !(p.plant_id && !p.location_id)) return false;
     if (f.needs === "neither" && (p.plant_id || p.location_id)) return false;
     if (highlightIds && !highlightIds.has(p.id)) return false;
+    if (inBloomIds && !inBloomIds.has(p.id)) return false;
     if (f.photoType && (p.photo_type || "general") !== f.photoType) return false;
     if (f.locationId) {
       const photoLocIds = allLocationsForPhoto(p).map((l) => l.id);
@@ -2904,7 +3042,7 @@ function archivePeriod(l) {
 function screenGallery() {
   const f = state.galleryFilters;
   const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
-  const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs);
+  const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs || f.inBloom);
   const NEEDS_LABELS = { no_plant: "Filed to a location, needs a plant", no_location: "Attached to a plant, needs a location", neither: "Needs a plant and a location" };
   const matches = filteredGalleryPhotos();
 
@@ -2991,7 +3129,7 @@ function screenGallery() {
       ${searching ? `
         ${/* A search or a chosen row collapses to one flat result set. */""}
         <div class="row" style="margin-bottom:12px;">
-          <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : "Results"}</span>
+          <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : f.inBloom ? "In bloom now" : "Results"}</span>
           <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
         </div>
           ${state.gallerySelectMode ? `
@@ -3018,6 +3156,22 @@ function screenGallery() {
                 <div class="gal-card-meta">${countLabel(a.photos.length, "photo", "photos")}</div>
               </div>
             </button>`));
+        })()}
+
+        ${(() => {
+          // GAL-5. Derived from bloom_events rather than curated — OPEN-2's
+          // answer. Every other row derives, and a hand-kept list would go
+          // stale the moment a bloom ended with nothing to prompt a prune.
+          const blooming = bloomingSpecimens();
+          if (!blooming.length) return "";
+          const photos = blooming.flatMap((pl) => {
+            const bloomShots = bloomPhotosFor(pl.id);
+            // Prefer photos actually tagged as blooms; fall back to the
+            // specimen's cover so a plant is never missing from the row.
+            return bloomShots.length ? bloomShots.slice(0, 3) : [plantCoverPhoto(pl)].filter(Boolean);
+          });
+          if (!photos.length) return "";
+          return scroller(`In Bloom`, photos.map(tile), "showGalleryInBloom()");
         })()}
 
         ${(() => {
@@ -3333,6 +3487,37 @@ function modalContent() {
       <p class="mono subtle" style="margin-top:14px;text-align:center;">v${APP_VERSION} · ${APP_UPDATED}</p>
       ${!driveOk ? `<button class="btn btn-primary btn-block" style="margin-top:10px;" onclick="closeModal();goTab('settings')">Go reconnect Drive</button>` : ""}
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Close</button>`;
+  }
+
+  if (type === "startBloom") {
+    const pl = state.plants.find((p) => p.id === data.plantId);
+    if (!pl) return `<p>Not found.</p>`;
+    const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+    const expected = t && t.bloom_season ? (listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season) : null;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Mark as blooming</h3>
+      <p class="mono subtle" style="margin:0 0 14px;">${pl.accession_number}${expected ? ` · expected ${escapeHtml(expected)}` : ""}</p>
+      <label>Started</label>
+      <input type="date" id="bl-start" value="${todayLocalISO()}" />
+      <div class="field-help">Backdate it if you noticed late — this is when the plant started flowering, not when you recorded it.</div>
+      <label>Notes</label>
+      <textarea id="bl-notes" rows="2" placeholder="e.g. first bloom since I've had it"></textarea>
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="startBloom('${pl.id}')">Record</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "endBloom") {
+    const bloom = state.bloomEvents.find((b) => b.id === data.bloomId);
+    if (!bloom) return `<p>Not found.</p>`;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Bloom finished</h3>
+      <p class="mono subtle" style="margin:0 0 14px;">Started ${fmtDate(bloom.started_on)}</p>
+      <label>Ended</label>
+      <input type="date" id="bl-end" value="${todayLocalISO()}" min="${bloom.started_on}" />
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="endBloom('${bloom.id}')">Close it</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "addCareNote") {
@@ -4367,6 +4552,47 @@ async function removePlantLocation(rowId) {
   try {
     await restDelete("plant_locations", `id=eq.${rowId}`);
     toast("Location removed");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function startBloom(plantId) {
+  const pl = state.plants.find((p) => p.id === plantId);
+  if (!pl) return;
+  if (activeBloom(plantId)) { toast("Already recorded as blooming", true); return; }
+  const started = document.getElementById("bl-start")?.value || todayLocalISO();
+  try {
+    await restPost("bloom_events", {
+      plant_id: plantId,
+      // Snapshot, like photo locations: a bloom happened somewhere, and that
+      // stays true after the plant moves.
+      location_id: pl.location_id || null,
+      started_on: started,
+      notes: document.getElementById("bl-notes")?.value || null,
+    });
+    toast("Recorded as blooming");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function endBloom(bloomId) {
+  const ended = document.getElementById("bl-end")?.value || todayLocalISO();
+  const bloom = state.bloomEvents.find((b) => b.id === bloomId);
+  if (bloom && ended < bloom.started_on) { toast("It can't finish before it started", true); return; }
+  try {
+    await restPatch("bloom_events", `id=eq.${bloomId}`, { ended_on: ended });
+    toast("Bloom closed");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deleteBloom(bloomId) {
+  if (!confirm("Delete this bloom record?")) return;
+  try {
+    await restDelete("bloom_events", `id=eq.${bloomId}`);
+    toast("Bloom record deleted");
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

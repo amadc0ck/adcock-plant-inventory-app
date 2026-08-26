@@ -138,6 +138,19 @@ A running dated log of care events, separate from the free-text `plants.notes`.
 
 Displayed newest-first on Plant Detail. Included in the full JSON backup and restored **after** plants, since `plant_id` is a hard FK. See §6 for merge/delete handling.
 
+### `bloom_events`
+When a specimen actually flowered. An event with a start and an end, not a flag — a plant blooms repeatedly and the history is the point.
+
+- `id` uuid PK
+- `plant_id` uuid FK → plants.id, **not null**, `on delete cascade`
+- `location_id` uuid FK → locations.id, nullable — **snapshot** of where it bloomed. A bloom happened somewhere, and that stays true after the plant moves.
+- `started_on` date, not null
+- `ended_on` date, nullable — **null means blooming right now**, which is what every "in bloom" view keys on
+- `notes` text, nullable
+- `created_at` timestamptz
+
+**Distinct from `taxa.bloom_season`, and the distinction matters.** That column records when a species is *expected* to flower; this table records when one *did*. Conflating them would have the Gallery claim plants are in flower because the calendar says so. The expectation drives a "should be blooming — worth a look" prompt in Reports; only a recorded event puts a plant in the In Bloom row.
+
 ### `identifications`
 Audit trail for AI suggestions. Never silently overwrites confirmed data.
 

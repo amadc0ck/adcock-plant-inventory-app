@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.52.2";
+const APP_VERSION = "1.53.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -425,6 +425,7 @@ const state = {
   plantFilters: { category: "", status: "", idStatus: "", original: "", location: "" },
   photoUrlCache: {},
   photoFetchInFlight: new Set(),
+  photoCacheOrder: [],
   photoPlants: [],
   identifications: [],
   identifyingPhotoId: null,
@@ -519,6 +520,28 @@ function apiHeaders(extra = {}) {
   };
 }
 
+// PostgREST caps a single response at db-max-rows, which on this project is
+// 1000. Above that it truncates SILENTLY — no error, no header the app checks —
+// so photo 1001 onward simply never existed as far as the app was concerned.
+// Confirmed live: 1424 rows in the table, 1000 in the app.
+//
+// Pages until a short page comes back. The caller's order is preserved but a
+// unique tiebreaker is appended: offset paging over a non-unique sort can skip
+// or repeat rows across page boundaries when values tie.
+const PAGE_SIZE = 1000;
+async function restGetAll(table, query = "") {
+  const out = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const sep = query.includes("?") ? "&" : (query ? "&" : "?");
+    let q = `${query}${sep}limit=${PAGE_SIZE}&offset=${offset}`;
+    if (!/[?&]order=/.test(q)) q += "&order=id.asc";
+    else if (!/order=[^&]*\bid\./.test(q)) q = q.replace(/([?&]order=[^&]*)/, "$1,id.asc");
+    const page = await restGet(table, q);
+    out.push(...page);
+    if (page.length < PAGE_SIZE) return out;
+  }
+}
+
 async function restGet(table, query = "") {
   const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}${query}`, { headers: apiHeaders() });
   if (!res.ok) throw new Error(await res.text());
@@ -584,21 +607,21 @@ async function exportFullBackup() {
   try {
     toast("Preparing backup…");
     const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions] = await Promise.all([
-      restGet("locations", "?select=*"),
-      restGet("plants", "?select=*"),
-      restGet("photos", "?select=*"),
-      restGet("identifications", "?select=*"),
-      restGet("photo_plants", "?select=*"),
-      restGet("plant_locations", "?select=*"),
-      restGet("photo_locations", "?select=*"),
-      restGet("accession_counters", "?select=*"),
-      restGet("care_notes", "?select=*"),
-      restGet("taxa", "?select=*"),
+      restGetAll("locations", "?select=*"),
+      restGetAll("plants", "?select=*"),
+      restGetAll("photos", "?select=*"),
+      restGetAll("identifications", "?select=*"),
+      restGetAll("photo_plants", "?select=*"),
+      restGetAll("plant_locations", "?select=*"),
+      restGetAll("photo_locations", "?select=*"),
+      restGetAll("accession_counters", "?select=*"),
+      restGetAll("care_notes", "?select=*"),
+      restGetAll("taxa", "?select=*"),
       // Trigger-populated audit trail of every plant move. Its absence meant a
       // restore silently lost all move history (ADM-2).
-      restGet("plant_location_history", "?select=*"),
+      restGetAll("plant_location_history", "?select=*"),
       // May not exist yet — the app falls back to built-in lists (ADM-1).
-      restGet("list_options", "?select=*").catch(() => []),
+      restGetAll("list_options", "?select=*").catch(() => []),
     ]);
     const backup = {
       exported_at: new Date().toISOString(),
@@ -838,12 +861,66 @@ function debouncedRender() {
 // at all, keep rendering the placeholder icon, so "loading" and "none" stay
 // visually distinct. `style` preserves each call site's existing look.
 // Returns HTML, not text — do not escape at the call site.
+// Blob URLs pin their data in memory until revoked, and revoking only happened
+// on logout. A browsing session over a large collection therefore accumulated
+// every photo it had ever shown — at a few MB each, enough to have a phone tab
+// killed. Keeps the most recently loaded and releases the rest.
+//
+// Evicting one still on screen is harmless: its <img> has already decoded, and
+// if it is re-rendered ensurePhotoLoaded simply fetches it again.
+const PHOTO_CACHE_LIMIT = 180;
+function evictPhotoCache() {
+  const order = state.photoCacheOrder;
+  while (order.length > PHOTO_CACHE_LIMIT) {
+    const id = order.shift();
+    // Skip if it was re-loaded since and re-queued further along.
+    if (order.includes(id)) continue;
+    const url = state.photoUrlCache[id];
+    if (url) {
+      try { URL.revokeObjectURL(url); } catch (e) {}
+      delete state.photoUrlCache[id];
+    }
+  }
+}
+
 function photoImg(driveFileId, style, extra) {
   if (!driveFileId) return "";
   const url = state.photoUrlCache[driveFileId];
-  if (!url) ensurePhotoLoaded(driveFileId);
+  // Deliberately does NOT fetch here. It used to, which meant a Gallery filter
+  // matching 1000 photos fired 1000 Drive requests through an Edge Function at
+  // once — every one of them, on screen or not. observeLazyPhotos() fetches
+  // each image as it nears the viewport instead.
   return `<img class="photo-img" data-drive-id="${escapeHtml(driveFileId)}"`
     + `${url ? ` src="${url}"` : ""} style="${style || ""}"${extra ? " " + extra : ""} />`;
+}
+
+// Fetches an image only once it is close to being seen. Re-created after every
+// render because render() replaces the whole DOM, so the previous observer's
+// targets no longer exist.
+let photoObserver = null;
+function observeLazyPhotos() {
+  if (typeof IntersectionObserver === "undefined") {
+    // No observer support: fall back to the old behaviour rather than showing
+    // blank boxes forever.
+    document.querySelectorAll("img[data-drive-id]:not([src])").forEach((el) => ensurePhotoLoaded(el.dataset.driveId));
+    return;
+  }
+  if (photoObserver) photoObserver.disconnect();
+  photoObserver = new IntersectionObserver((entries, obs) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      obs.unobserve(entry.target);
+      ensurePhotoLoaded(entry.target.dataset.driveId);
+    });
+  }, { rootMargin: "300px" }); // start a little before it scrolls in
+  document.querySelectorAll("img[data-drive-id]:not([src])").forEach((el) => photoObserver.observe(el));
+}
+
+// For images that must be there immediately — the lightbox, a detail hero —
+// rather than when they scroll into view.
+function photoImgEager(driveFileId, style, extra) {
+  if (driveFileId && !state.photoUrlCache[driveFileId]) ensurePhotoLoaded(driveFileId);
+  return photoImg(driveFileId, style, extra);
 }
 
 function ensurePhotoLoaded(driveFileId) {
@@ -858,7 +935,9 @@ function ensurePhotoLoaded(driveFileId) {
     .then((blob) => {
       const url = URL.createObjectURL(blob);
       state.photoUrlCache[driveFileId] = url;
+      state.photoCacheOrder.push(driveFileId);
       state.photoFetchInFlight.delete(driveFileId);
+      evictPhotoCache();
       // Fill the waiting <img> elements directly instead of re-rendering.
       // render() replaces app.innerHTML wholesale, so a re-render here
       // destroyed and recreated every image on screen — already-painted ones
@@ -893,16 +972,16 @@ async function loadAll() {
   render();
   try {
     const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions] = await Promise.all([
-      restGet("photos", "?select=*&order=uploaded_at.desc"),
-      restGet("plants", "?select=*&order=accession_number.asc"),
-      restGet("locations", "?select=*&order=sort_order.asc,name.asc"),
+      restGetAll("photos", "?select=*&order=uploaded_at.desc"),
+      restGetAll("plants", "?select=*&order=accession_number.asc"),
+      restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
       restGet("google_auth_tokens", "?select=expires_at&limit=1"),
-      restGet("photo_plants", "?select=*"),
-      restGet("identifications", "?select=*&order=created_at.desc"),
-      restGet("plant_locations", "?select=*"),
-      restGet("photo_locations", "?select=*"),
-      restGet("care_notes", "?select=*&order=noted_on.desc,created_at.desc"),
-      restGet("taxa", "?select=*&order=botanical_name.asc"),
+      restGetAll("photo_plants", "?select=*"),
+      restGetAll("identifications", "?select=*&order=created_at.desc"),
+      restGetAll("plant_locations", "?select=*"),
+      restGetAll("photo_locations", "?select=*"),
+      restGetAll("care_notes", "?select=*&order=noted_on.desc,created_at.desc"),
+      restGetAll("taxa", "?select=*&order=botanical_name.asc"),
       // Resilient on purpose: if list_options does not exist yet the app falls
       // back to the built-in vocabularies rather than failing to load at all.
       restGet("list_options", "?select=*&order=list_name.asc,sort_order.asc").catch(() => null),
@@ -1810,7 +1889,7 @@ function screenTaxonDetail() {
         <div class="detail-split">
           <div class="detail-media">
             <div class="card-media ratio-4x3" style="cursor:pointer;" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">
-              ${cover ? photoImg(cover.drive_file_id) : `<div class="card-media-empty">${icon("photo")}<span>No photos yet</span></div>`}
+              ${cover ? photoImgEager(cover.drive_file_id) : `<div class="card-media-empty">${icon("photo")}<span>No photos yet</span></div>`}
               <button class="media-btn" onclick="event.stopPropagation();openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${cover ? "Change photo" : "Choose photo"}</button>
             </div>
           </div>
@@ -1966,7 +2045,7 @@ function screenPlantDetail() {
         <div class="detail-media">
           <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroPhoto ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : `onclick="openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})"`}>
             ${heroPhoto
-              ? photoImg(heroPhoto.drive_file_id)
+              ? photoImgEager(heroPhoto.drive_file_id)
               : `<div class="card-media-empty">${icon("photo")}<span>Tap to add a profile picture</span></div>`}
             <button class="media-btn" onclick="event.stopPropagation();openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})">${heroPhoto ? "Change photo" : "Add photo"}</button>
           </div>
@@ -2233,7 +2312,7 @@ function screenLocationDetail() {
         <div class="detail-media">
           <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroPhoto ? `onclick="openLightbox('${l.id}','${heroPhoto.id}','location')"` : `onclick="openModal('chooseLocationPhoto',{locationId:'${l.id}'})"`}>
             ${heroPhoto
-              ? photoImg(heroPhoto.drive_file_id)
+              ? photoImgEager(heroPhoto.drive_file_id)
               : `<div class="card-media-empty">${icon("photo")}<span>Tap to add a main photo</span></div>`}
             <button class="media-btn" onclick="event.stopPropagation();openModal('chooseLocationPhoto',{locationId:'${l.id}'})">${heroPhoto ? "Change photo" : "Add photo"}</button>
           </div>
@@ -4850,6 +4929,7 @@ function logout() {
   clearStoredSession();
   Object.values(state.photoUrlCache).forEach((url) => URL.revokeObjectURL(url));
   state.photoUrlCache = {};
+  state.photoCacheOrder = [];
   state.session = null; state.photos = []; state.plants = []; state.locations = [];
   render();
 }
@@ -5046,6 +5126,7 @@ function render() {
   restoreFocus(focusSnapshot);
   if (sameView) restoreScroll(scrollSnapshot);
   lastRenderKey = currentViewKey();
+  observeLazyPhotos();
 }
 
 function renderLightbox() {

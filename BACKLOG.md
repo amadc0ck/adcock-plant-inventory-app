@@ -371,6 +371,16 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.53.0
+
+**Three scale limits, one of them already losing data.** Schema: none.
+
+Found by asking what breaks past 1000 photos, before the archive import rather than after.
+
+- **PostgREST was silently truncating at 1000 rows.** Confirmed live: 1424 in the table, 1000 in the app — **424 photos invisible everywhere**, and every backup taken before this was truncated the same way, so a restore would have lost them. `restGetAll()` now pages every bulk fetch, in `loadAll` and in the backup export. It appends `id.asc` to the caller's order, since offset paging over a non-unique sort can skip or repeat rows on page boundaries.
+- **Blob URLs were never released** except on logout, so a session accumulated every photo it had displayed — at a few MB each, enough to get a phone tab killed. Now capped at 180 most-recent, the rest revoked.
+- **Every rendered image fetched immediately**, on screen or not. A Gallery filter matching 1000 photos fired 1000 Edge Function requests at once. Images now load via `IntersectionObserver` as they near the viewport, with `photoImgEager()` for the few that must not wait — detail heroes and the lightbox.
+
 ### v1.52.2
 
 **Scroll position survives a re-render.** Schema: none · Touched `render()`.

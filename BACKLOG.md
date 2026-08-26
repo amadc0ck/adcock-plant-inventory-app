@@ -371,6 +371,19 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.51.0
+
+**Google Photos imports survive a refresh.** Schema: none · Touched the import loop, `boot()`, `taskBanner()`.
+
+The queue lived only in browser memory, so a hard refresh or a closed tab lost every photo not yet imported — and re-picking would import second copies of the ones that had already succeeded.
+
+- Progress and the remaining queue persist to `localStorage` after each photo. On next load the banner offers **"Resume importing N more"** with how much time is left.
+- **Expired saves are not offered.** `baseUrl`s die 60 minutes after picking, so anything older than 55 minutes is discarded rather than dangled as an option that cannot work.
+- **Deliberate stops clear the save**, so only genuine interruptions offer a resume: pressing Stop, or links expiring mid-run, both clean up after themselves. A refresh kills the loop before its cleanup ever runs, which is precisely what leaves the save behind.
+- Storage failures degrade quietly — private mode or a full quota costs the resume, not the import.
+
+Two limits, both stated in the UI: resume only works inside the 60-minute window, and a photo that was mid-request when the page went away may land twice. The duplicate-photo report catches the latter.
+
 ### v1.50.0
 
 **Import progress, duplicate photo detection, gallery batch editing.** Schema: none.

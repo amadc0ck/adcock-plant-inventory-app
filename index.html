@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.50.0";
+const APP_VERSION = "1.51.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -438,6 +438,7 @@ const state = {
   backfill: null,
   reportView: null,
   photosImport: null,
+  resumableImport: null,
   attachPhotoLimit: 24,
   backTo: null,
   galleryView: "grid",
@@ -1427,6 +1428,13 @@ function closeModal() { state.modal = null; render(); }
 // import dialog — including by tapping the backdrop — leaves the import running
 // with nothing on screen to say so.
 function taskBanner() {
+  if (state.resumableImport) {
+    const r = state.resumableImport;
+    return `<div class="task-banner" style="background:var(--blue);color:#0E2320;" onclick="resumePhotosImport()">
+      <div class="task-banner-text">Resume importing ${r.remaining.length} more from Google Photos?<div class="task-banner-sub">${r.done} of ${r.total} done · links expire in about ${r.minutesLeft} min · tap to continue</div></div>
+      <button class="btn-ghost" style="padding:0 4px;font-size:12px;color:#0E2320;flex-shrink:0;" onclick="event.stopPropagation();dismissResumableImport()">Discard</button>
+    </div>`;
+  }
   const imp = state.photosImport;
   const bf = state.backfill;
   if (imp && imp.phase === "picking") {
@@ -4440,6 +4448,66 @@ async function saveListLabels(listName) {
 // PHOTOS-1. Three-step flow: create a session, wait while Amanda picks in
 // Google Photos' own tab, then import what she chose. Polling is required —
 // there is no callback, the picker just sets mediaItemsSet on the session.
+// The import queue lives in browser memory, so a refresh used to lose every
+// photo not yet imported. Persisting it makes an accidental refresh recoverable.
+//
+// Two limits worth knowing: baseUrls expire 60 minutes after picking, so a
+// resume outside that window cannot work; and a photo that was mid-request when
+// the page went away may land twice, which the duplicate-photo report catches.
+const PHOTOS_IMPORT_KEY = "abg.photosImport";
+
+function savePhotosImport() {
+  const st = state.photosImport;
+  try {
+    if (!st || st.phase !== "importing" || !st.queue) { localStorage.removeItem(PHOTOS_IMPORT_KEY); return; }
+    const remaining = st.queue.slice(st.done);
+    if (!remaining.length) { localStorage.removeItem(PHOTOS_IMPORT_KEY); return; }
+    localStorage.setItem(PHOTOS_IMPORT_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      locationId: st.locationId || null,
+      done: st.done,
+      total: st.total,
+      remaining,
+    }));
+  } catch (e) { /* private mode or full quota — resume is a convenience, not a guarantee */ }
+}
+
+function loadPhotosImport() {
+  try {
+    const raw = localStorage.getItem(PHOTOS_IMPORT_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    // baseUrls are dead after an hour; offering a resume that cannot work is
+    // worse than not offering one.
+    const ageMs = Date.now() - (data.savedAt || 0);
+    if (ageMs > 55 * 60 * 1000 || !data.remaining?.length) { localStorage.removeItem(PHOTOS_IMPORT_KEY); return null; }
+    data.minutesLeft = Math.max(1, Math.round((60 * 60 * 1000 - ageMs) / 60000));
+    return data;
+  } catch (e) { return null; }
+}
+
+function clearPhotosImportSave() {
+  try { localStorage.removeItem(PHOTOS_IMPORT_KEY); } catch (e) {}
+}
+
+async function resumePhotosImport() {
+  const saved = loadPhotosImport();
+  if (!saved) { toast("That import can no longer be resumed — the Google Photos links expired", true); state.resumableImport = null; render(); return; }
+  state.resumableImport = null;
+  state.photosImport = {
+    phase: "importing", locationId: saved.locationId, cancel: false,
+    done: saved.done, failed: 0, total: saved.total, queue: saved.remaining, resumed: true,
+  };
+  render();
+  await runPhotosImportQueue(saved.remaining);
+}
+
+function dismissResumableImport() {
+  clearPhotosImportSave();
+  state.resumableImport = null;
+  render();
+}
+
 async function photosPickerCall(action, body) {
   const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/photos-picker?action=${action}`, {
     method: "POST",
@@ -4510,8 +4578,15 @@ async function importPickedPhotos(items) {
     render();
     return;
   }
-  Object.assign(st, { phase: "importing", total: items.length, done: 0, failed: 0 });
+  Object.assign(st, { phase: "importing", total: items.length, done: 0, failed: 0, queue: items });
   render();
+  await runPhotosImportQueue(items);
+}
+
+async function runPhotosImportQueue(items) {
+  const st = state.photosImport;
+  if (!st) return;
+  savePhotosImport();
 
   // Sequential on purpose: each import is a Google Photos download plus a Drive
   // upload, and baseUrls are only valid for 60 minutes — hammering them risks
@@ -4533,8 +4608,10 @@ async function importPickedPhotos(items) {
         break;
       }
     }
+    savePhotosImport();
     render();
   }
+  clearPhotosImportSave();
   st.phase = "done";
   render();
   await loadAll();
@@ -5250,6 +5327,10 @@ async function ensureTaxonForName(botanicalName, commonName) {
 }
 
 async function boot() {
+  // An import interrupted by a refresh or a closed tab can be picked up, as
+  // long as the picker links are still inside their 60-minute window.
+  state.resumableImport = loadPhotosImport();
+
   const cameFromDriveConnect = window.location.hash === "#drive-connected";
   if (cameFromDriveConnect) {
     history.replaceState(null, "", window.location.pathname);

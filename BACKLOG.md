@@ -227,6 +227,13 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.74.1
+
+**The location suggestion was invisible, and modals were a bottom sheet on a 1400px screen.** Schema: none.
+
+- **The suggestion is a callout now** — tinted panel, pin icon, the plant in bold above the path, and **File it here** as a real accent button. It was grey link text under a grey help-text line, sitting among four other grey help-text lines, so it read as more explanation rather than a one-tap answer.
+- **Modals centre and widen from 700px up.** The bottom-sheet treatment is right on a phone and wrong on a desktop, where it left a 640px column pinned to the bottom edge of the window with the photo scrolled off the top. Centred, 760px, rounded on all four corners, and the drag handle hidden since nothing is being dragged. The phone layout is untouched.
+
 ### v1.74.0
 
 **The photo form suggests where the plant lives.** Schema: none.

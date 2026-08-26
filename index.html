@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.56.0";
+const APP_VERSION = "1.57.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -449,6 +449,11 @@ const state = {
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
+  inboxSort: "newest",
+  inboxPageSize: 20,
+  inboxView: "grid",
+  inboxYear: "",
+  inboxSearch: "",
   tagLocationSearch: "",
   galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "" },
   inboxSelectMode: false,
@@ -1742,21 +1747,116 @@ function screenLogin() {
   </div>`;
 }
 
+// Page size and density are preferences rather than state — they should survive
+// a reload. Everything else about the Inbox view is transient by design.
+const INBOX_PREFS_KEY = "abg.inboxPrefs";
+function loadInboxPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(INBOX_PREFS_KEY) || "{}");
+    if ([20, 50, 100, 250].includes(raw.pageSize)) state.inboxPageSize = raw.pageSize;
+    if (raw.view === "compact" || raw.view === "grid") state.inboxView = raw.view;
+  } catch (e) { /* private mode: fall back to defaults */ }
+}
+function saveInboxPrefs() {
+  try {
+    localStorage.setItem(INBOX_PREFS_KEY, JSON.stringify({ pageSize: state.inboxPageSize, view: state.inboxView }));
+  } catch (e) {}
+}
+function setInboxPageSize(n) { state.inboxPageSize = n; state.inboxLimit = n; saveInboxPrefs(); render(); }
+function setInboxView(v) { state.inboxView = v; saveInboxPrefs(); render(); }
+
+// Sorting on capture date, not upload date. After a bulk import everything
+// shares an upload timestamp, so upload order says nothing — whereas capture
+// date is exactly what groups an archive era together.
+function inboxPhotos() {
+  const q = (state.inboxSearch || "").toLowerCase();
+  let list = state.photos.filter((p) => !p.plant_id && !p.location_id);
+  if (state.inboxYear) list = list.filter((p) => String(photoDate(p) || "").slice(0, 4) === state.inboxYear);
+  if (q) list = list.filter((p) => (p.notes || "").toLowerCase().includes(q));
+  const dir = state.inboxSort === "oldest" ? -1 : 1;
+  return list.sort((a, b) => dir * (new Date(photoDate(b)) - new Date(photoDate(a))));
+}
+
+// Years present in the Inbox, so the filter offers only what is actually there.
+function inboxYears() {
+  const years = new Set();
+  state.photos.forEach((p) => {
+    if (p.plant_id || p.location_id) return;
+    const y = String(photoDate(p) || "").slice(0, 4);
+    if (/^\d{4}$/.test(y)) years.add(y);
+  });
+  return Array.from(years).sort().reverse();
+}
+
+// Compact triage row: enough to decide, not enough to admire. Roughly five
+// times the density of the full card, which is what makes working through a
+// four-figure Inbox feasible.
+function inboxCompactRow(p, selectMode) {
+  const picked = state.inboxSelected.has(p.id);
+  return `
+    <div class="tag-card plant-list-card" style="padding:8px 12px;position:relative;${picked ? "outline:3px solid var(--moss);" : ""}"
+         onclick="${selectMode ? `toggleInboxPhotoSelected('${p.id}')` : `openInboxLightbox('${p.id}')`}">
+      ${selectMode ? `<div class="select-check ${picked ? "checked" : ""}" style="top:6px;left:6px;z-index:2;">${picked ? icon("check") : ""}</div>` : ""}
+      <div class="plant-list-thumb" style="width:52px;height:52px;">${photoImg(p.drive_file_id)}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type && p.photo_type !== "general" ? " · " + escapeHtml(PHOTO_TYPE_LABELS[p.photo_type] || p.photo_type) : ""}</div>
+        <div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${p.notes ? escapeHtml(p.notes) : `<span class="value-blank">No notes</span>`}</div>
+      </div>
+      <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;flex-shrink:0;" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+    </div>`;
+}
+
 function screenInbox() {
-  const unassigned = state.photos.filter((p) => !p.plant_id && !p.location_id);
-  const limit = state.inboxLimit || 20;
+  const pageSize = state.inboxPageSize || 20;
+  const unassigned = inboxPhotos();
+  const total = state.photos.filter((p) => !p.plant_id && !p.location_id).length;
+  const limit = state.inboxLimit || pageSize;
   const visible = unassigned.slice(0, limit);
   const remaining = unassigned.length - visible.length;
+  const years = inboxYears();
+  const filtered = !!(state.inboxYear || state.inboxSearch);
   const selectMode = state.inboxSelectMode;
   const selectedCount = state.inboxSelected.size;
   return `
   <div class="screen">
     <div class="container">
-      <p class="subtle" style="margin-bottom:16px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Photos land here first — confirm or attach them to a plant."}</p>
+      <p class="subtle" style="margin-bottom:12px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Photos land here first — confirm or attach them to a plant."}</p>
+
+      ${total === 0 ? "" : `
+        <div class="wrap-gap" style="margin-bottom:12px;align-items:center;">
+          <select style="width:auto;font-size:13px;padding:7px 9px;" onchange="state.inboxSort=this.value;render()">
+            <option value="newest" ${state.inboxSort === "newest" ? "selected" : ""}>Newest first</option>
+            <option value="oldest" ${state.inboxSort === "oldest" ? "selected" : ""}>Oldest first</option>
+          </select>
+          ${years.length > 1 ? `
+            <select style="width:auto;font-size:13px;padding:7px 9px;" onchange="state.inboxYear=this.value;state.inboxLimit=${pageSize};render()">
+              <option value="">All years</option>
+              ${years.map((y) => `<option value="${y}" ${state.inboxYear === y ? "selected" : ""}>${y}</option>`).join("")}
+            </select>` : ""}
+          <input id="search-inbox" placeholder="Search notes…" value="${escapeHtml(state.inboxSearch || "")}"
+                 style="width:auto;flex:1;min-width:130px;font-size:13px;padding:7px 9px;"
+                 oninput="state.inboxSearch=this.value;state.inboxLimit=${pageSize};render()" />
+          <button class="btn btn-secondary btn-sm icon-btn" onclick="setInboxView('${state.inboxView === "compact" ? "grid" : "compact"}')" title="Switch between full cards and compact rows">
+            ${state.inboxView === "compact" ? icon("photo") + " Full" : icon("clipboard") + " Compact"}
+          </button>
+        </div>
+        <div class="row" style="margin-bottom:12px;">
+          <span class="subtle">${filtered ? `${unassigned.length} of ${total}` : countLabel(total, "photo", "photos")} waiting</span>
+          <span class="subtle" style="display:flex;align-items:center;gap:6px;">
+            Show
+            ${[20, 50, 100, 250].map((n) => `
+              <button class="btn-ghost" style="padding:0 2px;font-size:12px;${pageSize === n ? "color:var(--orange);font-weight:700;" : ""}" onclick="setInboxPageSize(${n})">${n}</button>`).join("")}
+          </span>
+        </div>`}
+
       ${unassigned.length === 0 ? `
-        <div class="empty"><div class="display">Nothing waiting</div><div>Tap the camera button to add a photo.</div></div>` : `
-        <div class="card-grid">${visible.map((p) => photoRow(p, selectMode)).join("")}</div>
-        ${remaining > 0 ? `<button class="btn btn-secondary btn-block" style="margin-top:16px;" onclick="state.inboxLimit=(state.inboxLimit||20)+20;render()">Show ${Math.min(remaining, 20)} more (${remaining} left)</button>` : ""}`}
+        <div class="empty"><div class="display">${filtered ? "No matches" : "Nothing waiting"}</div>
+        <div>${filtered ? "Try a different year or search." : "Tap the camera button to add a photo."}</div>
+        ${filtered ? `<button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="state.inboxYear='';state.inboxSearch='';render()">Clear filters</button>` : ""}</div>` : `
+        ${state.inboxView === "compact"
+          ? `<div class="stack">${visible.map((p) => inboxCompactRow(p, selectMode)).join("")}</div>`
+          : `<div class="card-grid">${visible.map((p) => photoRow(p, selectMode)).join("")}</div>`}
+        ${remaining > 0 ? `<button class="btn btn-secondary btn-block" style="margin-top:16px;" onclick="state.inboxLimit=(state.inboxLimit||${pageSize})+${pageSize};render()">Show ${Math.min(remaining, pageSize)} more (${remaining} left)</button>` : ""}`}
     </div>
   </div>
   ${selectMode && selectedCount > 0 ? `
@@ -5719,6 +5819,7 @@ async function ensureTaxonForName(botanicalName, commonName) {
 async function boot() {
   // An import interrupted by a refresh or a closed tab can be picked up, as
   // long as the picker links are still inside their 60-minute window.
+  loadInboxPrefs();
   state.resumableImport = loadPhotosImport();
 
   const cameFromDriveConnect = window.location.hash === "#drive-connected";

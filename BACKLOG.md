@@ -376,6 +376,20 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.57.0
+
+**The Inbox becomes a triage tool.** Schema: none.
+
+With ~1950 archive photos arriving at once, spanning 2016 to today, a fixed 20-at-a-time stack in upload order was unusable.
+
+- **Sort by capture date**, newest or oldest. Deliberately not upload date: a bulk import shares one upload timestamp, so upload order carries no information, while capture date is exactly what groups an archive era together.
+- **Filter by year**, offering only years actually present in the Inbox — which makes "show me 2018, file it all to Vallejo Apartment" a two-step job.
+- **Search notes.**
+- **Page size** of 20 / 50 / 100 / 250, and a **full-card / compact-row toggle**. Both persist across reloads; junk values in storage are ignored.
+- Compact rows fit roughly five times more per screen, which is what makes a four-figure Inbox workable. Now viable because v1.55.0 stopped the full-render flashing.
+
+Caught in test: the sort direction was inverted, so "newest first" returned oldest first.
+
 ### v1.55.0
 
 **Tell a stalled import from a slow one — and stop the screen flashing.** Schema: none.

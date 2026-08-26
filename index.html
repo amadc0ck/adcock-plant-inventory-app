@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.54.0";
+const APP_VERSION = "1.55.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1524,9 +1524,19 @@ function taskBanner() {
     </div>`;
   }
   if (imp && imp.phase === "importing") {
-    return `<div class="task-banner" onclick="openModal('photosPicker',{})">
-      <div class="task-spin"></div>
-      <div class="task-banner-text">Importing from Google Photos<div class="task-banner-sub">${imp.done} of ${imp.total}${imp.failed ? ` · ${imp.failed} failed` : ""}</div></div>
+    const idleMs = Date.now() - (imp.lastProgressAt || Date.now());
+    // A single import can legitimately run to the 120s timeout, so only call it
+    // stalled well past that — otherwise a slow-but-working run looks broken.
+    const stalled = idleMs > 150000;
+    const detail = [
+      `${imp.done} of ${imp.total}`,
+      imp.failed ? `${imp.failed} failed` : "",
+      imp.lastError ? imp.lastError : "",
+      stalled ? `no progress for ${Math.round(idleMs / 60000)} min` : "",
+    ].filter(Boolean).join(" · ");
+    return `<div class="task-banner" style="${stalled ? "background:var(--terracotta);color:#3A1608;" : ""}" onclick="openModal('photosPicker',{})">
+      <div class="task-spin" style="${stalled ? "animation:none;opacity:0.5;" : ""}"></div>
+      <div class="task-banner-text">${stalled ? "Import may have stalled" : "Importing from Google Photos"}<div class="task-banner-sub">${detail}</div></div>
     </div>`;
   }
   if (bf && bf.running) {
@@ -4101,7 +4111,17 @@ function modalContent() {
         <div class="modal-handle"></div>
         <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Importing</h3>
         <p class="subtle" style="margin:0 0 8px;">Downloading from Google Photos and filing into your collection.</p>
-        <div class="mono" style="font-size:13px;">${st.done} of ${st.total}${st.failed ? ` · ${st.failed} failed` : ""}</div>
+        <div class="mono" id="import-progress" style="font-size:13px;">${st.done} of ${st.total}${st.failed ? ` · ${st.failed} failed` : ""}</div>
+        ${(() => {
+          const elapsed = Math.max(1, Math.round((Date.now() - (st.startedAt || Date.now())) / 1000));
+          const rate = st.done / elapsed;
+          const left = rate > 0 ? Math.round((st.total - st.done) / rate / 60) : null;
+          const idle = Math.round((Date.now() - (st.lastProgressAt || Date.now())) / 1000);
+          return `<div class="mono subtle" style="font-size:11px;margin-top:6px;line-height:1.6;">
+            running ${elapsed < 90 ? elapsed + "s" : Math.round(elapsed / 60) + " min"}${left !== null && st.done ? ` · about ${left} min left` : ""}<br/>
+            last one ${idle < 5 ? "just now" : idle + "s ago"}${st.lastError ? ` · ${escapeHtml(st.lastError)}` : ""}
+          </div>`;
+        })()}
         ${(st.skippedTotal || st.alreadyIn) ? `<p class="subtle" style="margin:8px 0 0;font-size:11.5px;">${st.selected} selected, ${st.total} new${st.alreadyIn ? ` · ${st.alreadyIn} already imported` : ""}${st.skippedTotal ? ` · ${skippedReason(st.skipped)}` : ""}.</p>` : ""}
         <button class="btn-ghost" style="margin-top:14px;" onclick="cancelPhotosImport()">Stop</button>`;
     }
@@ -4683,8 +4703,10 @@ async function resumePhotosImport() {
   state.photosImport = {
     phase: "importing", locationId: saved.locationId, cancel: false,
     done: saved.done, failed: 0, total: saved.total, queue: saved.remaining, resumed: true,
+    startedAt: Date.now(), lastProgressAt: Date.now(), lastError: null,
   };
   render();
+  startImportHeartbeat();
   await runPhotosImportQueue(saved.remaining);
 }
 
@@ -4694,12 +4716,33 @@ function dismissResumableImport() {
   render();
 }
 
+// Each import is a Google Photos download plus a Drive upload, so it can
+// legitimately take a while — but without a ceiling a single hung request
+// blocked the whole sequential queue indefinitely, with the banner frozen on a
+// count that never moved and no way to tell stalled from slow.
+const PHOTOS_IMPORT_TIMEOUT_MS = 120000;
+
 async function photosPickerCall(action, body) {
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/photos-picker?action=${action}`, {
-    method: "POST",
-    headers: apiHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(body || {}),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PHOTOS_IMPORT_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/photos-picker?action=${action}`, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body || {}),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e.name === "AbortError") {
+      const err = new Error(`Timed out after ${Math.round(PHOTOS_IMPORT_TIMEOUT_MS / 1000)}s`);
+      err.timedOut = true;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   const data = await res.json();
   if (!res.ok) {
     const err = new Error(data.error || "Google Photos request failed");
@@ -4800,9 +4843,51 @@ async function importPickedPhotos(items, meta) {
     phase: "importing", total: fresh.length, done: 0, failed: 0, queue: fresh,
     skipped, skippedTotal, alreadyIn,
     selected: (meta && meta.selected) || items.length,
+    startedAt: Date.now(), lastProgressAt: Date.now(), lastError: null,
   });
   render();
+  startImportHeartbeat();
   await runPhotosImportQueue(fresh);
+}
+
+// A stalled import produces no events, so nothing would re-render and the
+// banner would sit on a stale count looking healthy. This ticks the UI so
+// elapsed time and the stall warning stay truthful with no progress at all.
+let importHeartbeat = null;
+// Progress must not go through render(). render() replaces app.innerHTML, so
+// calling it per photo over a 2000-photo import meant 2000 full rebuilds —
+// every image destroyed and re-created, the banner's body padding toggled each
+// time, the screen visibly flashing. Same mistake PERF-1 fixed for photos.
+//
+// Patches the two things that actually change instead, leaving the rest of the
+// DOM alone. Falls back to a full render only when the banner needs to appear
+// or disappear, which happens twice per import rather than once per photo.
+function refreshImportProgress() {
+  const html = taskBanner();
+  const el = document.querySelector(".task-banner");
+  if (!html || !el) { render(); return; }
+  const holder = document.createElement("div");
+  holder.innerHTML = html;
+  const next = holder.firstElementChild;
+  if (next) el.replaceWith(next);
+
+  // The dialog, if it happens to be open on top.
+  const live = document.getElementById("import-progress");
+  if (live && state.photosImport) {
+    const st = state.photosImport;
+    live.textContent = `${st.done} of ${st.total}${st.failed ? ` · ${st.failed} failed` : ""}`;
+  }
+}
+
+function startImportHeartbeat() {
+  stopImportHeartbeat();
+  importHeartbeat = setInterval(() => {
+    if (!state.photosImport || state.photosImport.phase !== "importing") { stopImportHeartbeat(); return; }
+    refreshImportProgress();
+  }, 10000);
+}
+function stopImportHeartbeat() {
+  if (importHeartbeat) { clearInterval(importHeartbeat); importHeartbeat = null; }
 }
 
 async function runPhotosImportQueue(items) {
@@ -4827,17 +4912,24 @@ async function runPhotosImportQueue(items) {
       // overlapping, say. Counted as skipped rather than imported or failed.
       if (res && res.duplicate) st.alreadyIn = (st.alreadyIn || 0) + 1;
       else st.done++;
+      st.lastProgressAt = Date.now();
+      st.lastError = null;
     } catch (e) {
       st.failed++;
+      st.lastProgressAt = Date.now();
+      // Kept so the banner can say what went wrong rather than only that
+      // something did.
+      st.lastError = e.timedOut ? "last one timed out" : (e.message || "failed");
       if (e.expired) {
         toast("Google Photos links expired — reselect the remaining photos", true);
         break;
       }
     }
     savePhotosImport();
-    render();
+    refreshImportProgress();
   }
   clearPhotosImportSave();
+  stopImportHeartbeat();
   st.phase = "done";
   render();
   await loadAll();
@@ -4853,6 +4945,7 @@ function skippedReason(skipped) {
 }
 
 function cancelPhotosImport() {
+  stopImportHeartbeat();
   closePhotosPickerTab();
   if (state.photosImport) state.photosImport.cancel = true;
   state.photosImport = null;

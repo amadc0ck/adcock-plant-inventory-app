@@ -371,6 +371,18 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.55.0
+
+**Tell a stalled import from a slow one — and stop the screen flashing.** Schema: none.
+
+Amanda asked how to tell whether an import was still running. There was no way, and worse, two real defects behind the question.
+
+- **No timeout on an import request.** A single hung one blocked the whole sequential queue indefinitely, with the count frozen and no recovery. Now aborts after 120s, counts as failed, and moves on.
+- **Progress called `render()` per photo** — 2000 full rebuilds over a large import, each destroying every image and toggling the banner's body padding. That was the flashing, and it was **the PERF-1 mistake reintroduced by adding progress feedback**. Progress now patches the banner and the counter in place; a full render happens only when the banner appears or disappears.
+- **A stalled import produced no events**, so nothing re-rendered and the banner sat on a stale count looking healthy. A 10-second heartbeat keeps elapsed time honest.
+- The banner distinguishes the two: after 150s with no progress — comfortably past the 120s ceiling, so a slow run is never mislabelled — it turns terracotta, stops the spinner, says **"Import may have stalled"** with how long, and names the last error.
+- The dialog shows elapsed time, an estimate of time remaining, and when the last photo landed.
+
 ### v1.54.0
 
 **Google Photos import skips what it already has.** Schema: yes, `photos.google_photos_id` + partial unique index.

@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.52.0";
+const APP_VERSION = "1.52.1";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3995,7 +3995,7 @@ function modalContent() {
       return `
         <div class="modal-handle"></div>
         <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Import from Google Photos</h3>
-        <p class="subtle" style="margin:0 0 14px;">Opens Google Photos in a new tab. Pick as many as you like, then come back here — this window keeps checking.</p>
+        <p class="subtle" style="margin:0 0 14px;">Google Photos opens in a new tab. Pick as many as you like and press <strong>Done</strong> — that tab closes itself and you land back here while they import.</p>
         <button class="btn btn-accent btn-block" onclick="startPhotosPicker(${data.locationId ? `'${data.locationId}'` : "null"})">Choose photos</button>
         <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
     }
@@ -4003,7 +4003,7 @@ function modalContent() {
       return `
         <div class="modal-handle"></div>
         <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Waiting for your selection</h3>
-        <p class="subtle" style="margin:0 0 14px;">Google Photos should have opened in another tab. Pick your photos there and press Done — this updates on its own.</p>
+        <p class="subtle" style="margin:0 0 14px;">Pick your photos in the Google Photos tab and press <strong>Done</strong>. It closes itself and brings you back here — nothing to do in this window.</p>
         ${st.pickerUri ? `<button class="btn btn-secondary btn-block" onclick="window.open('${st.pickerUri}','_blank')">Reopen Google Photos</button>` : ""}
         <button class="btn-ghost" style="margin-top:10px;" onclick="cancelPhotosImport()">Cancel</button>`;
     }
@@ -4530,6 +4530,26 @@ async function saveListLabels(listName) {
 // Two limits worth knowing: baseUrls expire 60 minutes after picking, so a
 // resume outside that window cannot work; and a photo that was mid-request when
 // the page went away may land twice, which the duplicate-photo report catches.
+// Handle on the tab Google Photos opens in. Kept outside `state` because it is
+// a live window reference, not data — it must never be serialised or rendered.
+// Since the app opened that tab, the app is allowed to close it again.
+let photosPickerWindow = null;
+
+// After picking, the user is left sitting in Google Photos with nothing to say
+// the import has begun. On a laptop the other tab is at least visible; on a
+// phone tabs are hidden, so it reads as though nothing happened.
+function closePhotosPickerTab() {
+  try {
+    if (photosPickerWindow && !photosPickerWindow.closed) photosPickerWindow.close();
+  } catch (e) { /* cross-origin or already gone — nothing to recover */ }
+  const stillOpen = !!(photosPickerWindow && !photosPickerWindow.closed);
+  photosPickerWindow = null;
+  // Best-effort: browsers usually return focus to the opener when the tab it
+  // opened closes, and often ignore focus() outright.
+  try { window.focus(); } catch (e) {}
+  return !stillOpen;
+}
+
 const PHOTOS_IMPORT_KEY = "abg.photosImport";
 
 function savePhotosImport() {
@@ -4605,8 +4625,9 @@ async function startPhotosPicker(locationId) {
     const session = await photosPickerCall("create");
     state.photosImport = { phase: "picking", sessionId: session.sessionId, pickerUri: session.pickerUri, locationId, cancel: false, done: 0, failed: 0, total: 0 };
     render();
-    // Opened from the click handler so the popup blocker allows it.
-    window.open(session.pickerUri, "_blank");
+    // Opened from the click handler so the popup blocker allows it, and the
+    // handle is kept so the tab can be closed once picking is done.
+    photosPickerWindow = window.open(session.pickerUri, "_blank");
     await pollPhotosPicker(session.pollIntervalMs || 3000);
   } catch (e) {
     state.photosImport = null;
@@ -4641,7 +4662,14 @@ async function pollPhotosPicker(intervalMs) {
       return;
     }
     if (data.pollIntervalMs) intervalMs = data.pollIntervalMs;
-    if (data.mediaItemsSet) { await importPickedPhotos(data.items || []); return; }
+    if (data.mediaItemsSet) {
+      // Close Google Photos the moment the selection lands, so the browser
+      // drops back to this tab rather than leaving her stranded there.
+      const closed = closePhotosPickerTab();
+      if (!closed) toast("Selection received — switch back to this tab to watch it import");
+      await importPickedPhotos(data.items || []);
+      return;
+    }
   }
 }
 
@@ -4694,6 +4722,7 @@ async function runPhotosImportQueue(items) {
 }
 
 function cancelPhotosImport() {
+  closePhotosPickerTab();
   if (state.photosImport) state.photosImport.cancel = true;
   state.photosImport = null;
   closeModal();

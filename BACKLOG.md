@@ -371,6 +371,18 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.52.1
+
+**The Google Photos tab closes itself after picking.** Schema: none.
+
+Pressing Done in the picker left Amanda sitting in Google Photos with nothing to indicate the import had started. On a laptop the other tab is at least visible; **on a phone tabs are hidden, so it reads as though nothing happened** and she had to work out that the app was still open elsewhere.
+
+- The app opened that tab, so it is allowed to close it. The handle is kept outside `state` — it is a live window reference, not data, and must never be serialised or rendered — and the tab is closed the moment `mediaItemsSet` comes back, which drops the browser back to the app.
+- Closing is best-effort. If a browser refuses, she gets an explicit "switch back to this tab" toast rather than silence, and the import runs regardless.
+- Cancelling closes it too, so backing out never leaves a stray tab.
+- A blocked popup — `window.open` returning null — no longer matters: the flow still completes.
+- Both modal descriptions now say what will actually happen, rather than "come back here".
+
 ### v1.52.0
 
 **Batch-delete duplicate photos, and a latent delete bug.** Schema: none.

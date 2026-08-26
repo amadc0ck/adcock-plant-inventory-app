@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.61.0";
+const APP_VERSION = "1.62.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -441,6 +441,7 @@ const state = {
   reportView: null,
   timelineOldestFirst: false,
   taxonPhotoLimit: 24,
+  newPlantExpanded: false,
   photosImport: null,
   resumableImport: null,
   attachPhotoLimit: 24,
@@ -459,7 +460,7 @@ const state = {
   inboxYear: "",
   inboxSearch: "",
   tagLocationSearch: "",
-  galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false },
+  galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false, favorites: false },
   inboxSelectMode: false,
   inboxSelected: new Set(),
   lightboxResumePending: false,
@@ -777,11 +778,16 @@ function extractExifDate(file) {
             const numEntries = view.getUint16(offset, little);
             offset += 2;
             let exifIFDOffset = null;
+            let ifd0DateOffset = null;
             for (let i = 0; i < numEntries; i++) {
               const entryOffset = offset + i * 12;
-              if (view.getUint16(entryOffset, little) === 0x8769) {
-                exifIFDOffset = view.getUint32(entryOffset + 8, little);
-              }
+              const tag = view.getUint16(entryOffset, little);
+              if (tag === 0x8769) exifIFDOffset = view.getUint32(entryOffset + 8, little);
+              // DateTime (0x0132) lives in IFD0 by spec. The code only ever
+              // looked for it inside the ExifIFD, where it never appears, so
+              // that branch was unreachable — scans and some edited images
+              // carry only this tag and got no date at all (EXIF-1).
+              if (tag === 0x0132) ifd0DateOffset = view.getUint32(entryOffset + 8, little);
             }
             if (exifIFDOffset !== null) {
               let exifOffset = tiffOffset + exifIFDOffset;
@@ -802,6 +808,20 @@ function extractExifDate(file) {
                   if (m) { resolve(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`); return; }
                 }
               }
+            }
+            // Nothing in the ExifIFD: fall back to IFD0's DateTime. Less
+            // precise than DateTimeOriginal — it can be a modification time —
+            // but far better than defaulting to the upload date.
+            if (ifd0DateOffset !== null) {
+              const strOffset = tiffOffset + ifd0DateOffset;
+              let str = "";
+              for (let j = 0; j < 19; j++) {
+                const code = view.getUint8(strOffset + j);
+                if (!code) break;
+                str += String.fromCharCode(code);
+              }
+              const m2 = str.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+              if (m2) { resolve(`${m2[1]}-${m2[2]}-${m2[3]}T${m2[4]}:${m2[5]}:${m2[6]}`); return; }
             }
             resolve(null);
             return;
@@ -1359,6 +1379,10 @@ function taxonCoverPhoto(t) {
   }
   const specimens = specimensOfTaxon(t.id);
   const photos = specimens.flatMap((sp) => plantPhotosOrdered(sp.id));
+  // A favourite wins: hearting a photo is how a specimen shot gets promoted to
+  // represent the whole taxon (SPECIES-1's gallery decision).
+  const fav = photos.find((p) => p.is_favorite);
+  if (fav) return fav;
   return photos.sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)))[0] || null;
 }
 // Every distinct location any specimen of this taxon sits in — "where can I
@@ -1631,6 +1655,7 @@ async function bulkAttachToLocation(locationId) {
 function openModal(type, data = {}) {
   // Paging resets per open, so the picker never starts mid-list.
   if (type === "attachInboxPhoto") state.attachPhotoLimit = 24;
+  if (type === "newPlant" || type === "newPlantFromPhoto") state.newPlantExpanded = false;
   state.modal = { type, data };
   render();
 }
@@ -1741,7 +1766,7 @@ async function applyGalleryBatch() {
 }
 
 function clearGalleryView() {
-  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false };
+  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false, favorites: false };
   render();
 }
 function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; state.taxonPhotoLimit = 24; render(); }
@@ -2219,7 +2244,8 @@ function screenTaxonDetail() {
                 <div class="mono" style="font-size:11px;color:var(--moss-dim);margin-top:2px;cursor:pointer;" onclick="openPlant('${specimen.id}')">${specimen.accession_number}</div>
                 <div style="font-size:11px;color:var(--ink-soft);">${loc ? escapeHtml(loc.name) : `<span class="value-blank">No location</span>`}</div>
                 <div style="display:flex;gap:8px;margin-top:6px;">
-                  <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;" onclick="openModal('movePhoto',{photoId:'${photo.id}',fromPlantId:'${specimen.id}'})">${icon("seedling")} Move</button>
+                  <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;${photo.is_favorite ? "color:var(--pink);" : ""}" onclick="toggleFavorite('${photo.id}')">${icon("heartStar")}</button>
+                                    <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;" onclick="openModal('movePhoto',{photoId:'${photo.id}',fromPlantId:'${specimen.id}'})">${icon("seedling")} Move</button>
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;" onclick="openModal('editPhoto',{photoId:'${photo.id}'})">${icon("edit")} Edit</button>
                 </div>
               </div>
@@ -2296,7 +2322,7 @@ function plantRow(pl) {
         ${pl.status !== "active" ? `<span class="pill-solid pill-solid-terracotta">${STATUS_LABELS[pl.status]}</span>` : ""}
       </div>
       <div class="row" style="margin-top:8px;justify-content:flex-end;">
-        <div class="mono" style="font-size:11px;color:var(--moss-dim);flex-shrink:0;">${photos.length} photo${photos.length === 1 ? "" : "s"}</div>
+        <div class="mono" style="font-size:11px;color:var(--moss-dim);flex-shrink:0;">${countLabel(photos.length, "photo", "photos")}</div>
       </div>
     </div>
   </div>`;
@@ -2567,6 +2593,9 @@ function locationCoverPhoto(l) {
 // almost all live on the rows and buckets underneath it, so the direct-only
 // counts read as zero on exactly the cards the Locations list renders.
 function locationCard(l) {
+  // locationCoverPhoto already walks descendants; the card simply never used
+  // that. An area holding no photos of its own — most of them — showed an empty
+  // placeholder while its buckets were full of pictures (LOC-5).
   const plantCount = aggregatePlantCount(l.id);
   const photoCount = aggregatePhotoCount(l.id);
   const children = directChildLocations(l.id);
@@ -2642,6 +2671,7 @@ function screenLocationDetail() {
         <div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px;">${escapeHtml(locationPath(l))}</div>
         ${l.notes ? `<div style="font-size:13.5px;color:var(--ink-soft);margin-top:10px;">${escapeHtml(l.notes)}</div>` : ""}
         <button class="btn-ghost" style="padding:10px 0 0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
+        <button class="btn-ghost" style="padding:10px 0 0 14px;font-size:12.5px;color:var(--terracotta);" onclick="openModal('removeLocation',{locationId:'${l.id}'})">Remove</button>
         </div>
         </div>
       </div>
@@ -2688,7 +2718,10 @@ function screenLocationDetail() {
         </div>
         ${!locationHoldsPlants(l) && plants.length ? `
           <p class="subtle" style="margin:-6px 0 12px;">This ${locationTypeLabel(l.type).toLowerCase()} isn't set up to hold plants directly — ${countLabel(plants.length, "specimen", "specimens")} assigned here probably belong in a container inside it.</p>` : ""}
-        <button class="btn btn-secondary btn-sm" style="margin-bottom:12px;" onclick="openModal('linkPlantToLocation',{locationId:'${l.id}'})">+ Link existing plant</button>
+        <div class="wrap-gap" style="margin-bottom:12px;">
+          <button class="btn btn-accent btn-sm" onclick="openModal('newSpecimenHere',{locationId:'${l.id}'})">+ New specimen here</button>
+          <button class="btn btn-secondary btn-sm" onclick="openModal('linkPlantToLocation',{locationId:'${l.id}'})">Link existing plant</button>
+        </div>
         ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
           <div class="card-grid">${plants.map(plantRow).join("")}</div>`}` : ""}
 
@@ -3054,6 +3087,7 @@ function filteredGalleryPhotos() {
     if (f.needs === "neither" && (p.plant_id || p.location_id)) return false;
     if (highlightIds && !highlightIds.has(p.id)) return false;
     if (inBloomIds && !inBloomIds.has(p.id)) return false;
+    if (f.favorites && !p.is_favorite) return false;
     if (f.photoType && (p.photo_type || "general") !== f.photoType) return false;
     if (f.locationId) {
       const photoLocIds = allLocationsForPhoto(p).map((l) => l.id);
@@ -3145,7 +3179,7 @@ function archivePeriod(l) {
 function screenGallery() {
   const f = state.galleryFilters;
   const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
-  const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs || f.inBloom);
+  const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs || f.inBloom || f.favorites);
   const NEEDS_LABELS = { no_plant: "Filed to a location, needs a plant", no_location: "Attached to a plant, needs a location", neither: "Needs a plant and a location" };
   const matches = filteredGalleryPhotos();
 
@@ -3232,7 +3266,7 @@ function screenGallery() {
       ${searching ? `
         ${/* A search or a chosen row collapses to one flat result set. */""}
         <div class="row" style="margin-bottom:12px;">
-          <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : f.inBloom ? "In bloom now" : "Results"}</span>
+          <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : f.inBloom ? "In bloom now" : f.favorites ? "Favourites" : "Results"}</span>
           <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
         </div>
           ${state.gallerySelectMode ? `
@@ -3246,6 +3280,11 @@ function screenGallery() {
           ? `<div class="empty"><div class="display">No photos match</div><div>Try a different search or filter.</div></div>`
           : state.galleryView === "list" ? listRows(matches) : grid(matches)}`
       : `
+        ${(() => {
+          const favs = favoritePhotos();
+          return favs.length ? scroller("Favourites", favs.slice(0, 20).map(tile), "showGalleryFavorites()") : "";
+        })()}
+
         ${scroller("Recently Added", galleryRecentlyAdded(20).map(tile))}
 
         ${(() => {
@@ -3691,6 +3730,44 @@ function modalContent() {
         </div>
         <label>Notes</label>
         <textarea id="np-notes" rows="2"></textarea>
+
+        ${/* Everything below is optional and hidden by default. The form
+             previously collected seven fields against the edit form's twenty,
+             so anything else meant creating a plant and immediately reopening
+             it — but capture from the Inbox has to stay fast, so the extras
+             expand rather than crowd (PD-6). */""}
+        <button type="button" class="btn-ghost btn-block" style="margin-top:14px;text-align:center;justify-content:center;"
+                onclick="state.newPlantExpanded=!state.newPlantExpanded;render()">
+          ${state.newPlantExpanded ? "Fewer details ↑" : "More details ↓"}
+        </button>
+        <div style="display:${state.newPlantExpanded ? "block" : "none"};">
+          <div class="section-label">Identity</div>
+          <label>Cultivar</label>
+          <input id="np-cultivar" placeholder="e.g. Zwartkop (no quotes)" />
+          <label>Family</label>
+          <input id="np-family" placeholder="e.g. Crassulaceae" />
+          <label>Genus</label>
+          <input id="np-genus" placeholder="e.g. Aeonium" />
+          <label>Species</label>
+          <input id="np-species" placeholder="e.g. arboreum" />
+
+          <div class="section-label">Provenance</div>
+          <label>Date acquired</label>
+          <input type="date" id="np-dateacquired" />
+          <label>Source</label>
+          <select id="np-acqtype">
+            <option value="">— Unspecified —</option>
+            ${Object.entries(ACQ_SOURCE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+          </select>
+          <label>Source name</label>
+          <input id="np-acqname" placeholder="e.g. Ruth Bancroft Garden" />
+
+          <div class="section-label">Condition</div>
+          <label>Health</label>
+          <select id="np-health">
+            ${Object.entries(HEALTH_LABELS).map(([k, v]) => `<option value="${k}" ${k === "healthy" ? "selected" : ""}>${v}</option>`).join("")}
+          </select>
+        </div>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Create plant</button>
       </form>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
@@ -4181,6 +4258,75 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "removeLocation") {
+    const l = locationById(data.locationId);
+    if (!l) return `<p>Not found.</p>`;
+    const kids = directChildLocations(l.id);
+    const plants = plantsAtLocation(l.id);
+    const photos = photosAtLocation(l.id);
+    const history = 0; // counted server-side on delete; surfaced in the confirm
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Remove ${escapeHtml(l.name)}</h3>
+      <p class="subtle" style="margin:0 0 14px;">Two different things, for two different reasons.</p>
+
+      ${kids.length ? `
+        <div class="surface" style="padding:12px;margin-bottom:14px;border-color:var(--terracotta);">
+          <div style="font-size:13px;">This holds ${countLabel(kids.length, "location", "locations")}. Move or remove those first — deleting this would orphan them.</div>
+        </div>` : ""}
+
+      <div class="surface" style="padding:14px;margin-bottom:12px;">
+        <div style="font-weight:600;font-size:14px;">Archive it</div>
+        <p class="subtle" style="margin:6px 0 10px;font-size:12.5px;">For a container that no longer exists — you repotted, the plant moved on. It disappears from pickers and lists, and every photo, plant and move it was ever part of is kept.</p>
+        <button class="btn btn-secondary btn-block" onclick="archiveLocation('${l.id}')">${l.archived ? "Un-archive" : "Archive"}</button>
+      </div>
+
+      <div class="surface" style="padding:14px;">
+        <div style="font-weight:600;font-size:14px;color:var(--terracotta);">Delete it</div>
+        <p class="subtle" style="margin:6px 0 10px;font-size:12.5px;">For a location that should never have existed — a duplicate, a typo. ${plants.length || photos.length ? `<strong>${countLabel(plants.length, "plant is", "plants are")} and ${countLabel(photos.length, "photo is", "photos are")} filed here</strong> — they are unassigned, not deleted. Its move history is destroyed.` : "Nothing is filed here."}</p>
+        <button class="btn btn-danger btn-block" ${kids.length ? "disabled" : ""} onclick="deleteLocation('${l.id}')">
+          ${kids.length ? "Empty it first" : "Delete permanently"}
+        </button>
+      </div>
+
+      <button class="btn-ghost" style="margin-top:14px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "newSpecimenHere") {
+    const l = locationById(data.locationId);
+    if (!l) return `<p>Not found.</p>`;
+    // Location-first creation. The other direction meant opening the species
+    // record and hunting for this location among 149 (LOCP-3).
+    const taxa = [...state.taxa].sort((a, b) => taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">New specimen here</h3>
+      <p class="subtle" style="margin:0 0 14px;">${escapeHtml(locationPath(l))}</p>
+      <form id="new-specimen-here-form">
+        <label>Which plant is it? *</label>
+        <select id="nsh-taxon" required>
+          <option value="">— Choose a species —</option>
+          ${taxa.map((t) => `<option value="${t.id}">${escapeHtml(taxonDisplayName(t))}</option>`).join("")}
+          <option value="__new__">+ A species not listed yet</option>
+        </select>
+        <div id="nsh-newname-wrap" style="display:none;">
+          <label>Botanical name</label>
+          <input id="nsh-newname" placeholder="e.g. Echeveria elegans" />
+        </div>
+        <label>Acquisition source</label>
+        <select id="nsh-acqtype">
+          <option value="">— Unspecified —</option>
+          ${Object.entries(ACQ_SOURCE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+        </select>
+        <label>Health</label>
+        <select id="nsh-health">
+          ${Object.entries(HEALTH_LABELS).map(([k, v]) => `<option value="${k}" ${k === "healthy" ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Create here</button>
+      </form>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "newSpecimen") {
     const t = taxonById(data.taxonId);
     if (!t) return `<p>Not found.</p>`;
@@ -4414,6 +4560,9 @@ function modalContent() {
         <input id="pp-botanical" value="${escapeHtml(parent.botanical_name || "")}" />
         <label>Common name</label>
         <input id="pp-common" value="${escapeHtml(parent.common_name || "")}" />
+        <label>How many offsets?</label>
+        <input type="number" id="pp-count" value="1" min="1" max="25" />
+        <div class="field-help">Each becomes its own specimen with its own accession number, all sharing this parent and location. Taking five cuttings should not mean filling this in five times.</div>
         <label>Location</label>
         <select id="pp-location">${locationSelectOptions(workArea ? workArea.id : null)}</select>
         <label>Notes</label>
@@ -4871,6 +5020,55 @@ async function moveToHospital(plantId) {
 // from needing a plant or a location. That is exactly what severed archive
 // photos from the specimens they show. Filing one to an archive location says
 // something true instead, and keeps any plant link intact.
+async function archiveLocation(locationId) {
+  const l = locationById(locationId);
+  if (!l) return;
+  try {
+    await restPatch("locations", `id=eq.${locationId}`, { archived: !l.archived });
+    toast(l.archived ? "Un-archived" : "Archived — hidden from pickers, history kept");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// Five things reference a location, all hard FKs. plant_location_history is the
+// one that matters: it is a trigger-populated audit trail, and the FK means
+// deleting a location destroys its history. The confirm says how many rows that
+// is rather than doing it quietly — that visibility is what made the call
+// obvious the last time this was done by hand.
+async function deleteLocation(locationId) {
+  const l = locationById(locationId);
+  if (!l) return;
+  if (directChildLocations(locationId).length) { toast("Move or remove what is inside it first", true); return; }
+  let historyCount = 0;
+  try {
+    const rows = await restGet("plant_location_history", `?select=id&location_id=eq.${locationId}`);
+    historyCount = rows.length;
+  } catch (e) { /* counting is best-effort; the warning still stands */ }
+  const plants = plantsAtLocation(locationId).length;
+  const photos = photosAtLocation(locationId).length;
+  const consequences = [
+    plants ? `${plants} plant${plants === 1 ? "" : "s"} unassigned` : "",
+    photos ? `${photos} photo${photos === 1 ? "" : "s"} unassigned` : "",
+    historyCount ? `${historyCount} move record${historyCount === 1 ? "" : "s"} destroyed` : "",
+  ].filter(Boolean);
+  const msg = `Delete "${l.name}" permanently?` + (consequences.length ? `\n\n${consequences.join("\n")}` : "\n\nNothing is filed here.") + "\n\nThis can't be undone.";
+  if (!confirm(msg)) return;
+  try {
+    await restPatch("plants", `location_id=eq.${locationId}`, { location_id: null });
+    await restPatch("photos", `location_id=eq.${locationId}`, { location_id: null });
+    await restPatch("locations", `primary_photo_id=is.null&id=eq.${locationId}`, {});
+    await restDelete("plant_locations", `location_id=eq.${locationId}`);
+    await restDelete("photo_locations", `location_id=eq.${locationId}`);
+    await restDelete("plant_location_history", `location_id=eq.${locationId}`);
+    await restDelete("locations", `id=eq.${locationId}`);
+    toast("Location deleted");
+    closeModal();
+    goTab("locations");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function fileToArchiveLocation(photoId, locationId) {
   try {
     await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId });
@@ -5623,6 +5821,28 @@ function cancelBackfill() {
   if (state.backfill) { state.backfill.cancel = true; toast("Stopping after the photos in flight…"); }
 }
 
+// GAL-1, and GAL-2 with it. A favourited photo is a highlight — one mechanism
+// rather than two overlapping ones. It also promotes a photo into the taxon
+// gallery, so hearting does real work rather than just decorating.
+async function toggleFavorite(photoId) {
+  const p = state.photos.find((x) => x.id === photoId);
+  if (!p) return;
+  try {
+    await restPatch("photos", `id=eq.${photoId}`, { is_favorite: !p.is_favorite });
+    toast(p.is_favorite ? "Removed from favourites" : "Added to favourites");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+function favoritePhotos() {
+  return state.photos.filter((p) => p.is_favorite)
+    .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+}
+function showGalleryFavorites() {
+  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false, favorites: true };
+  state.tab = "gallery";
+  render();
+}
+
 async function setTaxonPhoto(taxonId, photoId) {
   try {
     await restPatch("taxa", `id=eq.${taxonId}`, { primary_photo_id: photoId, updated_at: new Date().toISOString() });
@@ -5949,7 +6169,8 @@ function renderLightbox() {
       <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
         ${pl ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openPlant('${pl.id}')">View plant</button>` : ""}
         ${galleryLocs[0] ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openLocation('${galleryLocs[0].id}')">View location</button>` : ""}
-        <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
+        <button class="btn btn-secondary btn-sm icon-btn" style="${p.is_favorite ? "color:var(--pink);" : ""}" onclick="event.stopPropagation();toggleFavorite('${p.id}')">${icon("heartStar")} ${p.is_favorite ? "Favourited" : "Favourite"}</button>
+            <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
             <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>
       </div>`;
   } else {
@@ -6066,6 +6287,19 @@ async function ensureTaxonForName(botanicalName, commonName) {
           original_collection: document.getElementById("np-original").checked,
           notes: document.getElementById("np-notes").value || null,
         };
+        // The expandable half may not be in the DOM at all; read defensively so
+        // a collapsed form submits exactly as it did before.
+        const opt = (id) => { const el = document.getElementById(id); return el && el.value ? el.value : null; };
+        Object.assign(body, {
+          cultivar: opt("np-cultivar"),
+          family: opt("np-family"),
+          genus: opt("np-genus"),
+          species: opt("np-species"),
+          date_acquired: opt("np-dateacquired"),
+          acquisition_source_type: opt("np-acqtype"),
+          acquisition_source_name: opt("np-acqname"),
+          health_status: opt("np-health") || "healthy",
+        });
         body.taxa_id = await ensureTaxonForName(body.botanical_name, body.common_name);
         const [newPlant] = await restPost("plants", body);
         if (state.modal.type === "newPlantFromPhoto") {
@@ -6143,6 +6377,43 @@ async function ensureTaxonForName(botanicalName, commonName) {
         };
         await restPatch("taxa", `id=eq.${state.modal.data.taxonId}`, body);
         toast("Species record saved");
+        closeModal();
+        await loadAll();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  const newSpecimenHereForm = document.getElementById("new-specimen-here-form");
+  if (newSpecimenHereForm) {
+    const sel = document.getElementById("nsh-taxon");
+    const wrap = document.getElementById("nsh-newname-wrap");
+    // Reveal the name field only when it is needed, rather than showing an
+    // input that is wrong for the common case.
+    if (sel && wrap) sel.onchange = () => { wrap.style.display = sel.value === "__new__" ? "" : "none"; };
+    newSpecimenHereForm.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const choice = document.getElementById("nsh-taxon").value;
+        let taxaId = choice && choice !== "__new__" ? choice : null;
+        if (choice === "__new__") {
+          const name = document.getElementById("nsh-newname").value.trim();
+          if (!name) { toast("Give the new species a name", true); return; }
+          taxaId = await ensureTaxonForName(name, null);
+          await loadAll();
+        }
+        const t = taxaId ? taxonById(taxaId) : null;
+        const [created] = await restPost("plants", {
+          taxa_id: taxaId,
+          location_id: state.modal.data.locationId,
+          acquisition_source_type: document.getElementById("nsh-acqtype").value || null,
+          health_status: document.getElementById("nsh-health").value,
+          identification_status: taxaId ? "confirmed" : "unidentified",
+          collection_category: "current",
+          status: "active",
+          botanical_name: t ? t.botanical_name : null,
+          common_name: t ? t.common_name : null,
+        });
+        toast(`Created ${created ? created.accession_number : "specimen"}`);
         closeModal();
         await loadAll();
       } catch (e) { toast(e.message, true); }
@@ -6274,8 +6545,13 @@ async function ensureTaxonForName(botanicalName, commonName) {
         // An offset is the same taxon as its mother by definition. Fall back to
         // a name lookup only if the parent predates the taxa split.
         body.taxa_id = parent.taxa_id || await ensureTaxonForName(body.botanical_name, body.common_name);
-        const [newPlant] = await restPost("plants", body);
-        toast(`Created ${newPlant.accession_number}`);
+        const count = Math.min(25, Math.max(1, parseInt(document.getElementById("pp-count").value, 10) || 1));
+        // One insert of N rows: the accession trigger numbers each in turn.
+        const created = await restPost("plants", Array.from({ length: count }, () => ({ ...body })));
+        const newPlant = Array.isArray(created) ? created[0] : created;
+        toast(count === 1
+          ? `Created ${newPlant.accession_number}`
+          : `Created ${count} offsets — ${newPlant.accession_number} onward`);
         closeModal();
         await loadAll();
       } catch (e) { toast(e.message, true); }

@@ -82,12 +82,6 @@ Open before building:
 Supersedes the plant-level half of GAL-2. AI-1 and AI-2 should be designed against this model, not the current flat one.
 
 
-### PROP-1 — Propagate more than one offset at a time
-**Status:** ready · **Effort:** low · **Schema:** none · **Touches:** `propagatePlant` modal, `wireModalForms`
-
-`propagatePlant` creates one specimen per run. With every offset accessioned separately (SPECIES-1), taking five offsets off a mother plant means running the form five times and typing the same values five times.
-
-Add a count field: "How many offsets?" → create N specimens in one go, each getting its own accession number from the existing trigger, all sharing `parent_plant_id` and the chosen location.
 
 ### SPECIES-2 — Split multi-location plants into one specimen per location
 **Status:** splitting **done by hand** 2026-08-25 · cleanup pending · **Effort:** medium–high · **Schema:** yes, retires `plant_locations` for specimens · **Depends on:** SPECIES-1 · **Touches:** `plants`, `plant_locations`, `photos`, `care_notes`, `screenPlantDetail`, `allLocationsForPlant`, `mergePlants`
@@ -121,23 +115,6 @@ order by location_count desc;
 ```
 
 
-### LOC-4 — No way to delete or archive a location
-**Status:** ready · **Effort:** low–medium · **Schema:** none · **Touches:** `screenLocationDetail`, `editLocation` modal, new `deleteLocation()`
-
-A location can be created and edited but never removed, so mistakes and scaffolding accumulate with no way to clear them. Removing two ("Large Containers", "Container 001") took hand-written SQL on 2026-08-25.
-
-Six things reference `locations.id` and all must be handled before the row goes, or the delete FK-errors or strips data silently:
-`locations.parent_location_id` · `plants.location_id` · `photos.location_id` · `plant_locations` · `photo_locations` · `plant_location_history`
-
-Proposed behaviour, mirroring `deletePlant()`:
-- **Refuse outright** if the location has child locations — reparent or delete those first, and say so.
-- **Plants and photos are unassigned, never deleted** — same principle as `deletePlant()` leaving photos intact. Offer to reassign to another location instead of nulling.
-- **`plant_location_history` is the real decision.** It is a trigger-populated audit trail; the FK means deleting a location forces deleting its history. The confirm dialog must say how many history rows will be destroyed rather than doing it quietly. In the real case they were 5 and 4 rows and were judged not meaningful, but that was a judgement made only because the counts were visible first.
-- **Archive and delete are both needed, for different reasons** (Amanda, 2026-08-25) — this is not archive-versus-delete:
-  - **Archive** (`locations.archived` boolean): the container was real and has history, but no longer exists physically — the usual case being a **repot**. Hide it from pickers and lists; keep every history row intact.
-  - **Delete**: the row should never have existed — a duplicate, an accident, or something created with an intention that changed. There is no history worth keeping, and leaving it archived just clutters the list forever.
-  Offer both. Default the button to Archive when the location has any history or attachments, and to Delete only when it is genuinely empty.
-
 
 ### LOCP-1 — Act on photos from the Location page
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `screenLocationDetail`
@@ -149,24 +126,6 @@ From a location's photos, without navigating away:
 
 Not tagging other *locations* — a location is singular, holding multiple specimens, so cross-tagging containers has no meaning. `photo_locations` stays unused for this.
 
-
-### LOCP-3 — Create a specimen from the Location page
-**Status:** ready · **Effort:** low · **Depends on:** SPECIES-1 · **Touches:** `screenLocationDetail`
-
-Standing at a location knowing the species, create a specimen there directly: pick an existing taxon (or create one) and the location is pre-filled. Today it means going to the species record and picking the location from a list of 147.
-
-
-### LOC-5 — Areas with sub-areas should show a thumbnail
-**Status:** ready · **Effort:** low · **Touches:** `locationCard`, `locationCoverPhoto`
-
-An area with children shows its own photo or nothing. It should fall back to a sub-area's photo — `locationCoverPhoto()` already walks descendants for this, so the card mostly needs to use it.
-
-### EXIF-1 — Parser ignores DateTime in IFD0
-**Status:** ready · **Effort:** trivial · **Touches:** `extractExifDate`
-
-`extractExifDate()` checks for tag `0x0132` (`DateTime`) but only **inside the ExifIFD**, and by spec that tag lives in IFD0. The branch is unreachable, confirmed by test: a JPEG carrying only `DateTime` in IFD0 returns null.
-
-Phone photos are unaffected — they carry `DateTimeOriginal` (`0x9003`) in the ExifIFD. Scans and some edited images are not. Fix is to also scan IFD0's entries for `0x0132` before giving up.
 
 
 ### NAME-1 — Normalize botanical names into structured parts
@@ -195,19 +154,7 @@ Fill the parts for all 27 taxa, then flip `taxonDisplayName()` to prefer compose
 
 Name to confirm: `urgent` / "Urgent care".
 
-### PD-6 — New Plant form is missing most fields
-**Status:** ready · **Effort:** low–medium · **Touches:** `newPlant` / `newPlantFromPhoto` modal (~`index.html:2166`), `wireModalForms`
 
-The create form collects only botanical name, common name, ID status, location, category, original-collection, notes. The edit form collects roughly twenty fields. Everything else can only be filled by creating the plant and immediately reopening it in Edit.
-
-Gap widened with PD-2 — none of `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `origin` appear at creation. Affects both entry points, which share one modal.
-
-Decide: full parity with the edit form, or a short form plus a "More details" expander so quick capture from the Inbox stays fast.
-
-### PL-1 — Status badge placement on plant list cards
-**Status:** ready · **Effort:** low · **Touches:** `plantRow` (`index.html:1305`), `.status-badge` CSS
-
-The badge sits at the card's top-right corner (moved there in v1.34.1 from an invisible corner dot). Amanda dislikes the placement. Needs a specific direction before building — inline with the title, on the thumbnail, as a left edge stripe, or a text pill in the metadata row.
 
 ### PL-2 — Plant pickers should lead with a photo and common name
 **Status:** ready · **Effort:** low–medium · **Touches:** every `${p.accession_number} — ${plantDisplayName(p)}` picker (~`index.html:1843`, `1924`, `1962`, `2265`, `2412`)
@@ -243,12 +190,6 @@ Acceptance criteria:
 
 Counts, inline actions, and the nested indicator already ship — see LOC-2. This item is layout and imagery only.
 
-### LOC-3 — Apply the zero-count treatment to plant cards
-**Status:** ready · **Effort:** trivial · **Schema:** none · **Touches:** `plantRow` (`index.html:1242`)
-
-LOC-2 established the rule that a zero count renders dimmed rather than hidden (`countLabel()` / `.count-zero`, `REFERENCE.md` §12), and applied it to the Locations card and the Location Detail child cards. `plantRow` still renders its photo count by hand, so a plant with no photos shows an undimmed `0 photos` while location cards dim theirs.
-
-One-line change: route it through `countLabel()`. Deliberately deferred out of LOC-2 to keep that commit scoped to the Locations screens.
 
 ---
 
@@ -306,15 +247,7 @@ Plant check-ins support **both** staleness (days since last photo, via `photoDat
 
 ## Gallery rebuild — largest net-new area
 
-### GAL-1 — Favorites
-**Status:** ready · **Effort:** low · **Schema:** `photos.is_favorite` boolean
-Heart icon, manual per-photo toggle, filter row in Gallery.
 
-**Second consumer: SPECIES-1.** A taxon's photo gallery is the favorited photos across all of its specimens, so `is_favorite` is not just a Gallery filter — it is how a specimen photo gets promoted to represent the taxon. Icon supplied: `heartStar`, already defined in `icon()` since v1.38.0.
-
-### GAL-2 — Collection Highlights (per-photo tagging only)
-**Status:** ready · **Effort:** low
-**Plant-level grouping shipped in v1.45.0** — the Highlights row derives from `taxa.plant_type`, so Cacti rolls up eight genera with no junction table. What remains is only the open question of whether *photo-level* tags are additionally wanted: tagging one photo as a highlight independently of its plant. If not, this item is done.
 
 ### GAL-2 (original scope)
 **Status:** ready · **Effort:** medium · **Schema:** category-tagging junction table
@@ -345,6 +278,25 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 ---
 
 ## Completed
+
+### v1.62.0
+
+**Eight polish items in one pass.** Schema: `photos.is_favorite`.
+
+- **GAL-1 + GAL-2 — favourites are the highlight mechanism**, one idea rather than two overlapping ones. Hearting a photo puts it in the Gallery's Favourites row **and** promotes it to represent its taxon, so the gesture does real work. Amanda's call, and it closes GAL-2 without building per-photo category tags.
+- **PD-6 — the New Plant form keeps its seven fields**, with everything else behind **More details**. It previously collected seven against the edit form's twenty, so anything more meant creating a plant and immediately reopening it — but Inbox capture has to stay fast, so the extras expand rather than crowd. The handler reads them defensively, so a collapsed form submits exactly as before.
+- **PL-1 — closed as obsolete.** Badge placement on the flat plant list stopped mattering when the Plants tab became taxa; Amanda prefers the specimen cards on the species page as they are.
+- **EXIF-1** — `DateTime` (`0x0132`) lives in IFD0 by spec, and the parser only ever looked inside the ExifIFD, making that branch unreachable. Scans and edited images now get a date instead of falling back to upload time.
+- **LOC-5** — an area with no photo of its own borrows from a descendant. `locationCoverPhoto()` already walked the tree; the card just never used it, so most areas showed an empty placeholder while their buckets were full of pictures.
+- **LOCP-3** — create a specimen from the Location page, with the location filled in. The other direction meant opening a species record and hunting for the location among 149.
+- **PROP-1** — "How many offsets?" creates N specimens in one insert, each numbered by the accession trigger, all sharing the parent and location.
+- **LOC-4** — remove a location, split into **Archive** (a container that no longer exists; hidden from pickers, history kept) and **Delete** (a row that should never have existed). Delete refuses while child locations remain, and the confirm names exactly what it will destroy — including how many move records — because that visibility is what made the call obvious when it was last done by hand.
+- **LOC-3** — the last undimmed zero count.
+
+```sql
+alter table photos add column if not exists is_favorite boolean not null default false;
+create index if not exists photos_favorite_idx on photos (is_favorite) where is_favorite;
+```
 
 ### v1.61.0
 

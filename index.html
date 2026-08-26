@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.41.0";
+const APP_VERSION = "1.41.1";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1475,6 +1475,20 @@ function screenTaxa() {
         <div class="empty"><div class="display">${state.taxa.length === 0 ? "No plants yet" : "No matches"}</div>
         <div>${state.taxa.length === 0 ? "Add your first plant from the Inbox or a photo." : "Try a different search."}</div></div>` : `
         <div class="card-grid">${list.map(taxonCard).join("")}</div>`}
+
+      ${/* This tab lists taxa, so a specimen with no taxon would otherwise be
+           unreachable. Surface them rather than letting them disappear. */""}
+      ${(() => {
+        const orphans = state.plants.filter((p) => !p.taxa_id);
+        if (orphans.length === 0) return "";
+        return `
+        <div class="row" style="margin-top:26px;margin-bottom:8px;">
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Not linked to a species</h3>
+          <span class="subtle">${countLabel(orphans.length, "specimen", "specimens")}</span>
+        </div>
+        <p class="subtle" style="margin:-4px 0 12px;">Open one and use Edit full record to give it a name, or link it from the species record.</p>
+        <div class="card-grid">${orphans.map(plantRow).join("")}</div>`;
+      })()}
     </div>
   </div>`;
 }
@@ -1520,8 +1534,9 @@ function screenTaxonDetail() {
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
           <div class="detail-media">
-            <div class="card-media ratio-4x3">
+            <div class="card-media ratio-4x3" style="cursor:pointer;" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">
               ${cover ? photoImg(cover.drive_file_id) : `<div class="card-media-empty">${icon("photo")}<span>No photos yet</span></div>`}
+              <button class="media-btn" onclick="event.stopPropagation();openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${cover ? "Change photo" : "Choose photo"}</button>
             </div>
           </div>
           <div class="detail-body">
@@ -1537,6 +1552,7 @@ function screenTaxonDetail() {
             <div class="action-card">
               <button class="action-row" onclick="openModal('editTaxon',{taxonId:'${t.id}'})">${icon("edit")}<span class="action-label">Edit species record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
               <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+              <button class="action-row" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${icon("photoStar")}<span class="action-label">Set species photo</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             </div>
           </div>
         </div>
@@ -1708,7 +1724,7 @@ function screenPlantDetail() {
                 const row = extraRows.find((r) => r.location_id === l.id);
                 return `
                 <div class="row" style="margin-top:${i > 0 ? "3" : "0"}px;">
-                  <div style="font-size:13px;color:var(--ink);font-weight:500;">📍 ${escapeHtml(locationPath(l))}${isPrimary ? ` <span style="font-size:11px;color:var(--ink-soft);font-weight:400;">(main)</span>` : ""}</div>
+                  <div style="font-size:13px;color:var(--ink);font-weight:500;cursor:pointer;" onclick="event.stopPropagation();openLocation('${l.id}')">📍 ${escapeHtml(locationPath(l))}${isPrimary ? ` <span style="font-size:11px;color:var(--ink-soft);font-weight:400;">(main)</span>` : ""}</div>
                   ${!isPrimary && row ? `<button class="btn-ghost" style="padding:0;font-size:11.5px;color:var(--terracotta);" onclick="removePlantLocation('${row.id}')">Remove</button>` : ""}
                 </div>`;
               }).join("");
@@ -1993,10 +2009,9 @@ function screenLocationDetail() {
         <div class="card-grid">${plants.map(plantRow).join("")}</div>`}
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
-        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Container photos</h3>
+        <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Location photos</h3>
         <span class="subtle">${photos.length} total</span>
       </div>
-      <p class="subtle" style="margin:-6px 0 14px;">Identify or create plants straight from a photo below — no need to re-upload the same shot for each specimen.</p>
 
       ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : `
         <div class="card-grid">
@@ -2562,52 +2577,12 @@ function modalContent() {
         <label>Identification notes</label>
         <textarea id="ep-idnotes" rows="2" placeholder="e.g. Possible Echinopsis, species uncertain">${escapeHtml(pl.identification_notes || "")}</textarea>
 
-        <div class="section-label">Details</div>
-        <label>Description</label>
-        <textarea id="ep-description" rows="3" placeholder="What this plant looks like — species level, not notes about this specimen">${escapeHtml(pl.description || "")}</textarea>
-        <label>Type</label>
-        <select id="ep-planttype">
-          <option value="">— Not recorded —</option>
-          ${Object.entries(PLANT_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${pl.plant_type === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
-        <label>Growth habit</label>
-        <select id="ep-growthhabit">
-          <option value="">— Not recorded —</option>
-          ${Object.entries(GROWTH_HABIT_LABELS).map(([k, v]) => `<option value="${k}" ${pl.growth_habit === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
-        <label>Mature size</label>
-        <input id="ep-maturesize" placeholder="e.g. 3&ndash;4 ft tall &times; 5 ft wide" value="${escapeHtml(pl.mature_size || "")}" />
-        <label>Bloom season</label>
-        <select id="ep-bloomseason">
-          <option value="">— Not recorded —</option>
-          ${Object.entries(BLOOM_SEASON_LABELS).map(([k, v]) => `<option value="${k}" ${pl.bloom_season === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
-        <label>Origin</label>
-        <select id="ep-origin">
-          ${Object.entries(ORIGIN_LABELS).map(([k, v]) => `<option value="${k}" ${(pl.origin || "unknown") === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
-        <div class="field-help">Native or introduced relative to this garden's region — not where the plant is from, which is Native range below.</div>
-
-        <div class="section-label">Care</div>
-        <label>Native range</label>
-        <input id="ep-native" placeholder="e.g. Central Mexico" value="${escapeHtml(pl.native_range || "")}" />
-        <label>Hardy to</label>
-        <input id="ep-hardy" placeholder="e.g. Zone 9 or 20&deg;F" value="${escapeHtml(pl.hardy_to || "")}" />
-        <label>Light needs</label>
-        <div class="wrap-gap" style="margin-top:2px;">
-          ${["direct","indirect","partial","full","shade","morning","afternoon","all_day"].map((opt) => `
-            <label class="checkbox-row" style="margin-top:6px;background:var(--bg);padding:6px 10px 6px 8px;border-radius:20px;width:auto;">
-              <input type="checkbox" class="ep-light-checkbox" value="${opt}" ${(pl.light_conditions || []).includes(opt) ? "checked" : ""} />
-              <span style="text-transform:capitalize;font-size:13px;">${opt.replace("_", " ")}</span>
-            </label>`).join("")}
-        </div>
-        <label>Water needs</label>
-        <select id="ep-water">
-          <option value="">— Unspecified —</option>
-          <option value="low" ${pl.water_needs === "low" ? "selected" : ""}>Low</option>
-          <option value="moderate" ${pl.water_needs === "moderate" ? "selected" : ""}>Moderate</option>
-          <option value="high" ${pl.water_needs === "high" ? "selected" : ""}>High</option>
-        </select>
+        ${/* Details and Care moved to the taxon in v1.41.0 — editing them here
+             would write to columns nothing reads any more. Edit the species
+             record from the specimen's Species card instead. */""}
+        <div class="section-label">Species</div>
+        <p class="subtle" style="margin:0 0 8px;">Description, type, growth habit, bloom season, origin and care all belong to the species and apply to every specimen of it.</p>
+        ${pl.taxa_id ? `<button type="button" class="btn btn-secondary btn-block" onclick="closeModal();openModal('editTaxon',{taxonId:'${pl.taxa_id}'})">Edit species record</button>` : `<p class="subtle" style="margin:0;">This specimen is not linked to a species yet.</p>`}
 
         <div class="section-label">Collection</div>
         <label>Category</label>
@@ -2787,6 +2762,29 @@ function modalContent() {
         <select id="add-loc-select">${options.map((o) => `<option value="${o.id}">${escapeHtml(o.label)}</option>`).join("")}</select>
         <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="addPlantLocation('${data.plantId}', document.getElementById('add-loc-select').value)">Add location</button>`}
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "chooseTaxonPhoto") {
+    const t = taxonById(data.taxonId);
+    if (!t) return `<p>Not found.</p>`;
+    // Any photo from any specimen of this taxon. Once GAL-1 lands this becomes
+    // the favourited ones.
+    const photos = specimensOfTaxon(t.id)
+      .flatMap((sp) => plantPhotosOrdered(sp.id))
+      .filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i)
+      .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Choose species photo</h3>
+      <p class="subtle" style="margin:0 0 14px;">Any photo of any specimen can represent the species.</p>
+      ${photos.length === 0 ? `<p class="subtle">No specimen of this plant has photos yet. Add photos to a specimen first, or upload one from the Inbox.</p>` : `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:50vh;overflow-y:auto;">
+          ${photos.map((p) => `
+            <button onclick="setTaxonPhoto('${t.id}','${p.id}')" style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);outline:${t.primary_photo_id === p.id ? "3px solid var(--moss)" : "none"};">
+              ${photoImg(p.drive_file_id)}
+            </button>`).join("")}
+        </div>`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "editTaxon") {
@@ -3427,6 +3425,15 @@ async function attachInboxPhotoToPlant(photoId, plantId) {
 // Note it does NOT clear location_id: per REFERENCE section 3 a photo is only
 // back in the Inbox once BOTH plant_id and location_id are null, so a photo
 // with a location stays filed under that location. The toast says which.
+async function setTaxonPhoto(taxonId, photoId) {
+  try {
+    await restPatch("taxa", `id=eq.${taxonId}`, { primary_photo_id: photoId, updated_at: new Date().toISOString() });
+    toast("Species photo set");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function detachPhotoFromPlant(photoId) {
   const photo = state.photos.find((p) => p.id === photoId);
   if (!photo) return;
@@ -3770,6 +3777,25 @@ function wireModalForms() {
     };
   }
 
+// SPECIES-1. The Plants tab lists taxa, so a specimen with no taxon is
+// invisible there. Every create path must resolve one: reuse an existing taxon
+// with the same botanical name, otherwise make a new one. A specimen with no
+// name at all keeps taxa_id null on purpose and surfaces in the Unidentified
+// group on the taxa list instead.
+async function ensureTaxonForName(botanicalName, commonName) {
+  const name = (botanicalName || "").trim();
+  if (!name) return null;
+  const existing = state.taxa.find(
+    (t) => (t.botanical_name || "").trim().toLowerCase() === name.toLowerCase()
+  );
+  if (existing) return existing.id;
+  const [created] = await restPost("taxa", {
+    botanical_name: name,
+    common_name: (commonName || "").trim() || null,
+  });
+  return created ? created.id : null;
+}
+
   const newPlantForm = document.getElementById("new-plant-form");
   if (newPlantForm) {
     newPlantForm.onsubmit = async (e) => {
@@ -3784,6 +3810,7 @@ function wireModalForms() {
           original_collection: document.getElementById("np-original").checked,
           notes: document.getElementById("np-notes").value || null,
         };
+        body.taxa_id = await ensureTaxonForName(body.botanical_name, body.common_name);
         const [newPlant] = await restPost("plants", body);
         if (state.modal.type === "newPlantFromPhoto") {
           const sourcePhoto = state.photos.find((p) => p.id === state.modal.data.photoId);
@@ -3900,16 +3927,6 @@ function wireModalForms() {
           species: document.getElementById("ep-species").value || null,
           identification_status: document.getElementById("ep-idstatus").value,
           identification_notes: document.getElementById("ep-idnotes").value || null,
-          description: document.getElementById("ep-description").value || null,
-          plant_type: document.getElementById("ep-planttype").value || null,
-          growth_habit: document.getElementById("ep-growthhabit").value || null,
-          mature_size: document.getElementById("ep-maturesize").value || null,
-          bloom_season: document.getElementById("ep-bloomseason").value || null,
-          origin: document.getElementById("ep-origin").value || "unknown",
-          native_range: document.getElementById("ep-native").value || null,
-          hardy_to: document.getElementById("ep-hardy").value || null,
-          light_conditions: Array.from(document.querySelectorAll(".ep-light-checkbox:checked")).map((el) => el.value),
-          water_needs: document.getElementById("ep-water").value || null,
           collection_category: document.getElementById("ep-category").value,
           original_collection: document.getElementById("ep-original").checked,
           status: document.getElementById("ep-status").value,
@@ -3968,6 +3985,9 @@ function wireModalForms() {
           acquisition_source_type: "propagation",
           acquisition_source_name: `Propagated from ${parent.accession_number}`,
         };
+        // An offset is the same taxon as its mother by definition. Fall back to
+        // a name lookup only if the parent predates the taxa split.
+        body.taxa_id = parent.taxa_id || await ensureTaxonForName(body.botanical_name, body.common_name);
         const [newPlant] = await restPost("plants", body);
         toast(`Created ${newPlant.accession_number}`);
         closeModal();

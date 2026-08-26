@@ -466,7 +466,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.72.0";
+const APP_VERSION = "1.72.1";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5178,7 +5178,10 @@ function modalContent() {
         <select id="eph-type">
           ${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${(ph.photo_type || "general") === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
-        <div class="field-help">Historical marks a photo as collection history — it leaves the Inbox and needs no plant.</div>
+        ${/* The `historical` type was removed in v1.56.0 — archive-ness comes
+             from the photo's location being an archive, not from a type. This
+             help text described the removed option for four versions. */""}
+        <div class="field-help">What the photo shows, never how it is filed. Archive photos are archive photos because of where they are filed, not their type.</div>
 
         <label>Location</label>
         <select id="eph-location">${locationSelectOptions(ph.location_id || null)}</select>
@@ -6738,7 +6741,7 @@ function renderLightbox() {
   const titleLine = isInbox
     ? `<div style="font-size:13.5px;">Inbox photo</div>`
     : isGallery
-    ? `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : "Gallery photo"}</div><div style="font-size:11px;color:#9FB0A3;">${allLocationsForPhoto(p).map((l) => escapeHtml(l.name)).join(", ") || (p.photo_type === "historical" ? "Archived — no plant or container" : "")}</div>`
+    ? `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : "Gallery photo"}</div><div style="font-size:11px;color:#9FB0A3;">${allLocationsForPhoto(p).map((l) => escapeHtml(l.name)).join(", ") || "No location"}</div>`
     : isLocation
     ? `<div style="font-size:13.5px;">${loc ? escapeHtml(loc.name) : ""}</div><div style="font-size:11px;color:#9FB0A3;">${loc ? escapeHtml(locationPath(loc)) : ""}</div>`
     : `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : ""}</div><div style="font-size:11px;color:#9FB0A3;">📍 ${pl && locationById(pl.location_id) ? escapeHtml(locationPath(locationById(pl.location_id))) : "No location set"}</div>`;

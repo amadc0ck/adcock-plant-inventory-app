@@ -124,7 +124,8 @@ One row per individual accessioned specimen.
 - `taken_at` timestamptz, nullable — real capture date from EXIF when available (§7)
 - `uploaded_at` timestamptz — fallback display date
 - `is_primary` boolean — **legacy, effectively unused.** Superseded by `plants.primary_photo_id` / `locations.primary_photo_id`
-- `photo_type` text, default `general` — **general / bloom / detail / condition** (v1.56.0). Describes **what the photo shows**, never how it is filed; filing is `plant_id` and `location_id`.
+- `photo_type` text, default `general`, **constrained by `photos_photo_type_check`** — the rename in v1.56.0 changed the app but not the constraint, so `bloom` was rejected by the database until v1.72.1. Any change to this vocabulary is a schema change, not a labels change.
+ — **general / bloom / detail / condition** (v1.56.0). Describes **what the photo shows**, never how it is filed; filing is `plant_id` and `location_id`.
   - `identification` was removed: it existed only to keep a reference shot out of a timeline, a distinction obscure enough that nobody could say when to use it, and moot once AI-1 identifies from any photo.
   - `historical` was removed, and it was actively harmful: it meant *"needs no plant or location"*, so an archive photo and a specimen-tagged photo were **mutually exclusive**. A plant's history across former homes could not be recorded. **Archive-ness now comes from the photo's location being an archive location** (`locations.gallery_row = 'archives'`), which is both true and compatible with a plant link. See `isArchivePhoto()`.
   - `flower` renamed `bloom`, matching BLOOM-1's vocabulary.

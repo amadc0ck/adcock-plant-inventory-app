@@ -227,6 +227,24 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.72.1
+
+**Leftovers from the v1.56.0 photo-type rename.** Schema: see below — a DB constraint was never updated.
+
+Saving a photo as **Bloom** failed with `photos_photo_type_check`. The app was renamed `flower` → `bloom` and lost `identification` / `historical` in v1.56.0, but the database check constraint still allowed only the old set, so the one type the rename was *for* was the one the database refused. Four versions of bloom tracking shipped against a column that could not store it.
+
+Two dead references removed alongside: the Type field's help text still described the removed `historical` option, and the Gallery lightbox still had a `photo_type === "historical"` branch that could never fire.
+
+```sql
+alter table photos drop constraint if exists photos_photo_type_check;
+update photos set photo_type = 'bloom'   where photo_type = 'flower';
+update photos set photo_type = 'general'
+  where photo_type is null or photo_type not in ('general','bloom','detail','condition');
+alter table photos add constraint photos_photo_type_check
+  check (photo_type in ('general','bloom','detail','condition'));
+notify pgrst, 'reload schema';
+```
+
 ### v1.72.0
 
 **PL-3 and LOCP-4 — picking a specimen, and doing it to many photos at once.** Schema: none.

@@ -154,6 +154,10 @@
      under a grey help-text line and read as more explanation. */
   .suggestion-row{display:flex;align-items:center;gap:10px;margin-top:8px;padding:10px 12px;
     background:rgba(124,167,161,0.12);border:1px solid rgba(124,167,161,0.35);border-radius:10px;}
+  .frost-badge{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;
+    background:rgba(124,167,161,0.18);border:1px solid rgba(124,167,161,0.5);color:var(--blue);
+    border-radius:20px;padding:2px 8px;font-size:10.5px;letter-spacing:0.3px;}
+  .frost-badge svg{width:14px;height:14px;}
   .suggestion-icon{display:flex;color:var(--blue);flex-shrink:0;}
   .suggestion-icon svg{width:18px;height:18px;}
 
@@ -488,7 +492,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.77.2";
+const APP_VERSION = "1.78.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1816,6 +1820,19 @@ function taxonPhotos(taxonId) {
   return out.sort((a, b) => new Date(photoDate(b.photo)) - new Date(photoDate(a.photo)));
 }
 
+// FROST-1. An explicit flag, not derived from hardy_to — that column is free
+// text ("Zone 9", "20F", "Zone 10b — not frost hardy") and parsing it on the
+// one night a year it matters is exactly when a wrong guess costs a plant.
+function isFrostTender(t) {
+  return !!(t && t.frost_tender);
+}
+function plantIsFrostTender(pl) {
+  return isFrostTender(pl && pl.taxa_id ? taxonById(pl.taxa_id) : null);
+}
+function frostBadge(size) {
+  return `<span class="frost-badge" title="Not frost hardy — bring in before a freeze">${icon("temperatureSnow")}${size === "full" ? " Not frost hardy" : ""}</span>`;
+}
+
 function taxonCoverPhoto(t) {
   if (!t) return null;
   if (t.primary_photo_id) {
@@ -2012,6 +2029,7 @@ function icon(name) {
     clipboard: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" /><path d="M9 12h6" /><path d="M9 16h6" /></svg>`,
     check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>`,
     search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`,
+    temperatureSnow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5a4 4 0 1 0 4 0v-8.5a2 2 0 1 0 -4 0v8.5" /><path d="M4 9h4" /><path d="M14.75 4l1 2h2.25" /><path d="M17 4l-3 5l2 3" /><path d="M20.25 10l-1.25 2l1.25 2" /><path d="M22 12h-6l-2 3" /><path d="M18 18h-2.25l-1 2" /><path d="M17 20l-3 -5h-1" /><path d="M12 9l2.088 .008" /></svg>`,
     photoPlus: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M12.5 21h-6.5a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v6.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l4 4" /><path d="M14 14l1 -1c.67 -.644 1.45 -.824 2.182 -.54" /><path d="M16 19h6" /><path d="M19 16v6" /></svg>`,
     photoQuestion: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M15 21h-9a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l3 3" /><path d="M19 22v.01" /><path d="M19 19a2.003 2.003 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483" /></svg>`,
     plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>`,
@@ -2624,7 +2642,7 @@ function taxonCard(t) {
       </div>
       <div style="flex:1;min-width:0;">
         <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}</div>
-        <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-top:2px;line-height:1.25;">${taxonDisplayHtml(t)}</div>
+        <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-top:2px;line-height:1.25;">${taxonDisplayHtml(t)}${isFrostTender(t) ? " " + frostBadge() : ""}</div>
         ${secondary ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(secondary)}</div>` : ""}
         <div class="row" style="margin-top:8px;">
           <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(specimens.length, "specimen", "specimens")}</div>
@@ -2723,6 +2741,7 @@ function screenTaxonDetail() {
           <div class="detail-body">
             <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}${t.family ? " · " + escapeHtml(t.family) : ""}</div>
             <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;line-height:1.2;">${taxonDisplayHtml(t)}</div>
+            ${isFrostTender(t) ? `<div style="margin-top:6px;">${frostBadge("full")}</div>` : ""}
             ${taxonSecondaryName(t) ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(taxonSecondaryName(t))}</div>` : ""}
             ${t.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(t.description)}</div>` : ""}
             <div style="margin-top:12px;font-size:13px;color:var(--ink);">
@@ -2865,7 +2884,7 @@ function plantRow(pl) {
     </div>
     <div style="flex:1;min-width:0;">
       <div class="tag-id">${pl.accession_number}</div>
-      <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin-top:2px;line-height:1.25;">${plantDisplayHtml(pl)}</div>
+      <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin-top:2px;line-height:1.25;">${plantDisplayHtml(pl)}${plantIsFrostTender(pl) ? " " + frostBadge() : ""}</div>
       ${(() => {
         const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
         return t && t.common_name ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(t.common_name)}</div>` : "";
@@ -2917,6 +2936,7 @@ function screenPlantDetail() {
         <div class="detail-body">
           <div class="tag-id">${pl.accession_number}</div>
           <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;line-height:1.2;">${plantDisplayHtml(pl)}</div>
+          ${plantIsFrostTender(pl) ? `<div style="margin-top:6px;">${frostBadge("full")}</div>` : ""}
           ${(() => {
             const common = taxon && taxon.common_name;
             const lineage = taxon ? [taxon.family, taxon.genus].filter(Boolean).join(" · ") : "";
@@ -3524,6 +3544,17 @@ function reportSections() {
       items: state.plants.filter((pl) => plantPhotosOrdered(pl.id).length === 0), kind: "plant" },
     { key: "plantsUnidentified", title: "Plants missing identification", sub: "Needs a name or confirmation",
       items: state.plants.filter((pl) => pl.identification_status === "unidentified"), kind: "plant" },
+    { key: "frostTender", title: "Frost tender — bring in", sub: "Species marked not frost hardy",
+      // Sorted by location path, not by name: on a cold night this is a route
+      // through the garden, not an index.
+      items: state.plants
+        .filter((pl) => pl.status === "active" && plantIsFrostTender(pl))
+        .sort((a, b) => {
+          const la = a.location_id ? locationPath(locationById(a.location_id)) : "";
+          const lb = b.location_id ? locationPath(locationById(b.location_id)) : "";
+          return la.localeCompare(lb) || (a.accession_number || "").localeCompare(b.accession_number || "");
+        }),
+      kind: "plant" },
     { key: "plantsNoTaxon", title: "Specimens with no species", sub: "Not linked to a species record",
       items: state.plants.filter((pl) => !pl.taxa_id), kind: "plant" },
     { key: "plantsNoLocation", title: "Plants with no location", sub: "Nowhere to find them",
@@ -4979,6 +5010,11 @@ function modalContent() {
         <input id="et-native" placeholder="e.g. Central Mexico" value="${escapeHtml(t.native_range || "")}" />
         <label>Hardy to</label>
         <input id="et-hardy" placeholder="e.g. Zone 9 or 20&deg;F" value="${escapeHtml(t.hardy_to || "")}" />
+        <div class="checkbox-row">
+          <input type="checkbox" id="et-frosttender" ${isFrostTender(t) ? "checked" : ""} />
+          <label for="et-frosttender">Not frost hardy — bring in before a freeze</label>
+        </div>
+        <div class="field-help">Flags every specimen of this species in the frost report, so a cold night is a list rather than a memory test.</div>
         <label>Light needs</label>
         <div class="wrap-gap" style="margin-top:2px;">
           ${Object.entries(listOptionsFor("light_conditions")).map(([k, v]) => `
@@ -7410,11 +7446,25 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
           origin: document.getElementById("et-origin").value || "unknown",
           native_range: document.getElementById("et-native").value || null,
           hardy_to: document.getElementById("et-hardy").value || null,
+          frost_tender: document.getElementById("et-frosttender").checked,
           light_conditions: Array.from(document.querySelectorAll(".et-light-checkbox:checked")).map((el) => el.value),
           water_needs: document.getElementById("et-water").value || null,
           updated_at: new Date().toISOString(),
         };
-        await restPatch("taxa", `id=eq.${state.modal.data.taxonId}`, body);
+        // Ships ahead of its SQL. PGRST204 is PostgREST saying the column does
+        // not exist; retry without it so the rest of the edit still saves and
+        // she is told what to run rather than losing the form.
+        try {
+          await restPatch("taxa", `id=eq.${state.modal.data.taxonId}`, body);
+        } catch (err) {
+          if (!/PGRST204/.test(err.message) || !("frost_tender" in body)) throw err;
+          delete body.frost_tender;
+          await restPatch("taxa", `id=eq.${state.modal.data.taxonId}`, body);
+          toast("Saved, but the frost flag needs its column added first", true);
+          closeModal();
+          await loadAll();
+          return;
+        }
         toast("Species record saved");
         closeModal();
         await loadAll();

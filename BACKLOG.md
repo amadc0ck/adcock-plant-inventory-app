@@ -227,6 +227,30 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.78.0
+
+**FROST-1 — mark a species as not frost hardy.** Schema: `taxa.frost_tender`.
+
+- A checkbox on the species record, beside Hardy to. **Explicit, not derived from `hardy_to`** — that column is free text ("Zone 9", "20F", "Zone 10b — not frost hardy"), and the one night a year it matters is exactly when a parsing guess costs a plant.
+- **A badge wherever the species is named**: the taxon card and list, the species record, and every specimen of it — so it is visible while browsing, not only when looking for it.
+- **A Reports section, "Frost tender — bring in."** It lists **specimens**, not species, because on a cold night the question is which physical plants and where. Sorted by **location path** rather than name, so it reads as a route through the garden. Dead and deaccessioned specimens are excluded — nothing to carry.
+- The code ships ahead of the SQL: saving a species before the column exists degrades on `PGRST204`, keeps the rest of the edit, and says which statement is missing.
+
+```sql
+alter table taxa add column if not exists frost_tender boolean not null default false;
+create index if not exists taxa_frost_tender_idx on taxa (frost_tender) where frost_tender;
+notify pgrst, 'reload schema';
+```
+
+A starting point, for review rather than blind application — `hardy_to` is free text and this only catches the obvious cases:
+
+```sql
+select id, botanical_name, hardy_to
+from taxa
+where hardy_to ~* 'zone\s*1[01]|not frost|tender|frost.?sensitive'
+order by botanical_name;
+```
+
 ### v1.77.2
 
 **"Showing plants in Bucket 80" was showing all 58.** Schema: none.

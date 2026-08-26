@@ -67,6 +67,7 @@ The **kind** of plant — whatever the most specific level is known: a species, 
 - `working_label` — names an unidentified taxon until it has a real one. Three plants can obviously be the same kind without anyone knowing what that kind is; a null `taxa_id` cannot express that.
 - `description`, `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `origin`
 - `native_range`, `hardy_to`, `light_conditions`, `water_needs`
+- `frost_tender` boolean, default false (v1.78.0) — deliberately **not** derived from `hardy_to`, which is free text and unparseable. Drives the badge on every specimen of the species and the "Frost tender — bring in" report, which lists specimens in location order because on a cold night it is a route, not an index.
 - `primary_photo_id` — any specimen's photo
 
 **Display name precedence is composed parts first, `botanical_name` second** (v1.65.0, NAME-1). Reversed from v1.41.0, which preferred the free text only because the parts were barely populated (family 3/27, genus 5/27, species 3/27). NAME-1 filled all 33 taxa, so composition is now the better name and the only form that can be marked up per part. Composition needs **genus plus either an epithet or a cultivar** — genus alone loses to the free text, since a partial name is worse than none.

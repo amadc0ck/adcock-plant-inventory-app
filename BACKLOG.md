@@ -227,6 +227,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.68.0
+
+**LOCP-3 — Areas and Archives get a feed, not a filing queue.** Schema: none.
+
+- **A location that does not hold plants renders its photos as a single-column feed**: the whole frame uncropped, actions as icons, caption underneath, date last. On an Area or an Archive the photos *are* the content; the card layout treated them as records waiting to be processed.
+- **Identify and Ask Claude are gone from that view.** Both exist to name a plant, and there is no plant here to name — offering them was asking a question with no answer.
+- **So is "Other containers."** Cross-tagging a whole-area view into individual buckets is noise, which is what LOCP-1 concluded when it left `photo_locations` unused for exactly this case. It stays where containers are the subject: a photo of Bucket 22 genuinely can show Bucket 23.
+- **Edit and Delete are icon-only** in both views.
+- The feed keeps Tag a plant, Edit, Move, Set as cover and Delete — the Santa Rita workflow still runs from here.
+
 ### v1.67.0
 
 **LOCP-1/LOCP-2 — the Location page's photo actions.** Schema: none.

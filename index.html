@@ -245,6 +245,22 @@
      toggle to go wrong, and a failed fetch can never flash a broken-image
      icon. Inline styles at call sites still override the box rules. */
   .photo-img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;transition:opacity .18s ease;}
+  /* LOCP-3. An Area or an Archive is not a filing queue — its photos are the
+     content. Whole frame, no crop (the focal point is for thumbnails, and
+     there is nothing to centre on here), one column, captions underneath. */
+  .photo-feed{max-width:620px;margin:0 auto;display:flex;flex-direction:column;gap:26px;}
+  .photo-feed-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .photo-feed-media{width:100%;background:#0B1410;cursor:zoom-in;line-height:0;min-height:80px;}
+  .photo-feed-media .photo-img{width:100%;height:auto;object-fit:contain;object-position:center;}
+  .photo-feed-body{padding:12px 15px 15px;}
+  .photo-feed-actions{display:flex;align-items:center;gap:18px;margin-bottom:10px;}
+  .photo-feed-actions .icon-only{background:none;border:none;padding:0;cursor:pointer;color:var(--cream);display:flex;}
+  .photo-feed-actions .icon-only svg{width:21px;height:21px;}
+  .photo-feed-actions .icon-only:hover{color:var(--moss);}
+  .photo-feed-actions .icon-only.danger{color:var(--terracotta);}
+  .photo-feed-actions .spacer{margin-left:auto;}
+  .photo-feed-cap{font-size:13.5px;color:var(--cream);line-height:1.45;}
+  .photo-feed-meta{font-size:11px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);margin-top:8px;font-family:'IBM Plex Mono',monospace;}
   .photo-img:not([src]){opacity:0;}
   .card-media-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
   .card-media-empty svg{width:36px;height:36px;}
@@ -440,7 +456,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.67.0";
+const APP_VERSION = "1.68.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3012,7 +3028,40 @@ function screenLocationDetail() {
         </div>
       </div>
 
-      ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : `
+      ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : !locationHoldsPlants(l) ? `
+        ${/* LOCP-3. Feed view. On an Area or an Archive the photos ARE the
+             content, not records waiting to be filed. Identify and Ask Claude
+             are dropped — there is no plant here to name — and so is "other
+             containers": cross-tagging a whole-area view into buckets is noise,
+             which is what LOCP-1 said when it left photo_locations unused for
+             exactly this case. */""}
+        <div class="photo-feed">
+          ${photos.map((p) => {
+            const claimedBy = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
+            const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
+            const shown = [claimedBy, ...taggedIds.map((id) => state.plants.find((x) => x.id === id))].filter(Boolean);
+            return `
+            <div class="photo-feed-card">
+              <div class="photo-feed-media" onclick="openLightbox('${l.id}','${p.id}','location')">${photoImg(p)}</div>
+              <div class="photo-feed-body">
+                <div class="photo-feed-actions">
+                  <button class="icon-only" title="Tag a plant shown in this photo" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("tag")}</button>
+                  <button class="icon-only" title="Edit this photo" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+                  <button class="icon-only" title="Move to another location" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")}</button>
+                  ${l.primary_photo_id !== p.id
+                    ? `<button class="icon-only" title="Use as this location's cover" onclick="setLocationPhoto('${l.id}','${p.id}')">${icon("photoStar")}</button>`
+                    : `<span class="pill pill-orange" style="font-size:9.5px;">Cover</span>`}
+                  <button class="icon-only danger spacer" title="Delete this photo" onclick="deletePhoto('${p.id}')">${icon("trash")}</button>
+                </div>
+                ${p.notes
+                  ? `<div class="photo-feed-cap">${escapeHtml(p.notes)}</div>`
+                  : `<div class="photo-feed-cap subtle" style="cursor:pointer;" onclick="openModal('editPhoto',{photoId:'${p.id}'})">Add a caption…</div>`}
+                ${shown.length ? `<div style="font-size:12px;color:var(--blue);margin-top:6px;">Shows ${shown.map((sp) => `<span style="cursor:pointer;" onclick="openPlant('${sp.id}')">${plantDisplayHtml(sp)}</span>`).join(", ")}</div>` : ""}
+                <div class="photo-feed-meta">${fmtDate(photoDate(p))}</div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>` : `
         <div class="card-grid">
           ${photos.map((p) => {
             const suggestions = pendingIdentifications(p.id);
@@ -3057,12 +3106,12 @@ function screenLocationDetail() {
                   ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : icon("photoQuestion") + " Ask Claude"}</button>`
                   : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="dismissIdentification('${claudeSuggestion.id}')">${icon("close")} Dismiss Claude</button>`}
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attach',{photoId:'${p.id}', locationId:'${l.id}'})">${icon("tag")} Attach to a plant</button>
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
+                <button class="btn-ghost" style="padding:0;" title="Edit this photo" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Move</button>
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagLocations',{photoId:'${p.id}'})">${icon("map")} Other containers</button>
                 ${l.primary_photo_id !== p.id ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setLocationPhoto('${l.id}','${p.id}')">${icon("photoStar")} Set as cover</button>` : ""}
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="removePhotoFromLocation('${p.id}','${l.id}')">${icon("link")} ${p.location_id === l.id ? "Unfile" : "Remove tag"}</button>
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>
+                <button class="btn-ghost" style="padding:0;color:var(--terracotta);" title="Delete this photo" onclick="deletePhoto('${p.id}')">${icon("trash")}</button>
               </div>
             </div>`;
           }).join("")}

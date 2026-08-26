@@ -238,6 +238,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.66.0
+
+**A photo with no plant is a gap only where plants are expected.** Schema: none.
+
+- **LOC-7.** Three screens flagged archive and whole-area photos as unfiled: the Location page banner, the Reports "Needs a plant" bucket, and "Locations with photos but no plants". None of them were wrong about the data — an Area is a view of the wall and an Archive is a former home, so neither names a plant, and neither should. At archive scale that noise would have buried the real gaps.
+- **`photoAwaitsPlant()`** now gates all three on `locationHoldsPlants()`, so the "Plants are assigned directly to this location" checkbox governs whether the absence counts against you. It respects the explicit override in both directions: an area opted in is a gap, a container opted out is not.
+- **New bucket: "Could show a specimen."** Archive and area photos not yet tagged to a plant. Deliberately excluded from the "Photos not fully filed" headline count and rendered without the alert colour — these are an opportunity, not a debt. This is the working queue for the Santa Rita case: a specimen photographed across four former homes.
+- **The Location page keeps the bulk action either way**, since tagging an archive shot to a specimen is exactly the point. Only the framing changes — "Assign" against an orange border becomes "Tag a plant" against a plain one.
+- Gallery and Reports read the same predicate, so the counts still add up and each bucket can be worked through without re-covering another.
+
 ### v1.65.0
 
 **NAME-1 and SPECIES-1 phase 3, together.** Schema: none yet — the column drop is below, deliberately unrun.

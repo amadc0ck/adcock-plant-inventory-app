@@ -440,7 +440,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.65.0";
+const APP_VERSION = "1.66.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1459,6 +1459,25 @@ function locationHoldsPlants(l) {
   if (l.holds_plants === true) return true;
   if (l.holds_plants === false) return false;
   return ["container", "hospital", "work_area"].includes(l.type);
+}
+
+// LOC-7. A photo with no plant is a GAP only where plants are expected. At an
+// Area (a view of the whole wall) or an Archive (a former home), it is the
+// normal case — flagging it made three screens nag about correct data, and at
+// archive scale it would have buried the real gaps.
+//
+// Not the same as "cannot be tagged": an archive photo tagged to a specimen is
+// exactly the Santa Rita workflow. This governs whether NOT being tagged counts
+// against you, nothing else.
+function photoLocationExpectsPlants(p) {
+  if (!p || !p.location_id) return false;
+  return locationHoldsPlants(locationById(p.location_id));
+}
+function photoAwaitsPlant(p) {
+  return !!(p.location_id && !p.plant_id && photoLocationExpectsPlants(p));
+}
+function photoIsUntaggedArchiveOrArea(p) {
+  return !!(p.location_id && !p.plant_id && !photoLocationExpectsPlants(p));
 }
 
 function locationTypeLabel(t) {
@@ -2965,14 +2984,22 @@ function screenLocationDetail() {
         const orphans = photosAtLocation(l.id).filter((p) => !p.plant_id);
         if (!orphans.length) return "";
         const here = plantsAtLocation(l.id);
+        // Where plants are not expected, the same photos are not a backlog.
+        // The bulk action stays — tagging an archive shot to a specimen is the
+        // point — but it reads as something available, not something owed.
+        const expected = locationHoldsPlants(l);
         return `
-        <div class="surface" style="padding:14px;margin-top:20px;border-color:var(--orange);">
+        <div class="surface" style="padding:14px;margin-top:20px;${expected ? "border-color:var(--orange);" : ""}">
           <div class="row">
             <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;font-size:14px;">${countLabel(orphans.length, "photo", "photos")} here with no plant</div>
-              <div class="subtle" style="font-size:12px;margin-top:2px;">${here.length ? `${countLabel(here.length, "specimen lives", "specimens live")} here` : "No specimens here yet — add one first, or attach these to a plant elsewhere"}</div>
+              <div style="font-weight:600;font-size:14px;">${expected
+                ? `${countLabel(orphans.length, "photo", "photos")} here with no plant`
+                : `${countLabel(orphans.length, "photo", "photos")} here`}</div>
+              <div class="subtle" style="font-size:12px;margin-top:2px;">${expected
+                ? (here.length ? `${countLabel(here.length, "specimen lives", "specimens live")} here` : "No specimens here yet — add one first, or attach these to a plant elsewhere")
+                : `${locationTypeLabel(l.type)} views are not expected to name a plant. Tag one to a specimen anywhere in the collection to add it to that plant's timeline.`}</div>
             </div>
-            <button class="btn btn-accent btn-sm" onclick="openModal('assignLocationPhotos',{locationId:'${l.id}'})">Assign</button>
+            <button class="btn ${expected ? "btn-accent" : "btn-secondary"} btn-sm" onclick="openModal('assignLocationPhotos',{locationId:'${l.id}'})">${expected ? "Assign" : "Tag a plant"}</button>
           </div>
         </div>`;
       })()}
@@ -3082,7 +3109,9 @@ function reportSections() {
     { key: "plantsAttention", title: "Plants needing attention", sub: "Watch or recovery",
       items: state.plants.filter((pl) => pl.health_status === "watch" || pl.health_status === "recovery"), kind: "plant" },
     { key: "locationsNoPlants", title: "Locations with photos but no plants", sub: "Photographed, never catalogued",
-      items: state.locations.filter((l) => photosAtLocation(l.id).length > 0 && plantsAtLocation(l.id).length === 0), kind: "location" },
+      // Areas and archives are excluded: they are not expected to hold
+      // specimens, so listing them here is not a finding.
+      items: state.locations.filter((l) => locationHoldsPlants(l) && photosAtLocation(l.id).length > 0 && plantsAtLocation(l.id).length === 0), kind: "location" },
   ];
 }
 
@@ -3097,12 +3126,17 @@ function screenReports() {
   // not fully filed and each can be worked through without re-covering the
   // others. They previously overlapped, counting the same photos three times.
   const photoBuckets = [
-    { title: "Needs a plant", sub: "Filed to a location, not to a specimen", needs: "no_plant",
-      count: state.photos.filter((p) => p.location_id && !p.plant_id).length },
+    { title: "Needs a plant", sub: "At a container or bed, not filed to a specimen", needs: "no_plant",
+      count: state.photos.filter(photoAwaitsPlant).length },
     { title: "Needs a location", sub: "Attached to a plant, nowhere on the map", needs: "no_location",
       count: state.photos.filter((p) => p.plant_id && !p.location_id).length },
     { title: "Needs both", sub: "No plant and no location", needs: "neither",
       count: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
+    // Not a gap — an opportunity. These are the archive and whole-area shots
+    // that CAN be tagged to a specimen to extend its history, but are not
+    // wrong for lacking one.
+    { title: "Could show a specimen", sub: "Archive and area photos not yet tagged to a plant", needs: "area_no_plant",
+      count: state.photos.filter(photoIsUntaggedArchiveOrArea).length, muted: true },
   ];
 
   const bloomViews = {
@@ -3223,7 +3257,13 @@ function screenReports() {
 
       <div class="row" style="margin-top:26px;margin-bottom:10px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photos not fully filed</h3>
-        <span class="attn-count ${photoBuckets.reduce((n, b) => n + b.count, 0) ? "has" : "clear"}">${photoBuckets.reduce((n, b) => n + b.count, 0)}</span>
+        ${/* Muted buckets are excluded from the headline. Counting archive and
+             area photos as "not fully filed" is the nag this change removes —
+             the row stays reachable, it just does not accuse. */""}
+        ${(() => {
+          const gaps = photoBuckets.filter((b) => !b.muted).reduce((n, b) => n + b.count, 0);
+          return `<span class="attn-count ${gaps ? "has" : "clear"}">${gaps}</span>`;
+        })()}
       </div>
       <div class="tag-card" style="padding:0;overflow:hidden;">
         ${photoBuckets.map((b) => `
@@ -3232,7 +3272,7 @@ function screenReports() {
               <div class="attn-title">${b.title}</div>
               <div class="attn-sub">${b.sub}</div>
             </div>
-            <span class="attn-count ${b.count ? "has" : "clear"}">${b.count}</span>
+            <span class="attn-count ${b.muted ? "clear" : (b.count ? "has" : "clear")}">${b.count}</span>
             <span class="action-chevron">${icon("chevronRight")}</span>
           </button>`).join("")}
       </div>
@@ -3313,10 +3353,12 @@ function filteredGalleryPhotos() {
     // be added up or worked through without repeating them.
     //
     // Each bucket now describes what is missing given what is already there:
-    //   no_plant     — filed to a location, needs a plant
-    //   no_location  — attached to a plant, needs a location
-    //   neither      — has nothing
-    if (f.needs === "no_plant" && !(p.location_id && !p.plant_id)) return false;
+    //   no_plant        — at a location that HOLDS plants, needs one
+    //   area_no_plant   — at an area or archive, where no plant is expected
+    //   no_location     — attached to a plant, needs a location
+    //   neither         — has nothing
+    if (f.needs === "no_plant" && !photoAwaitsPlant(p)) return false;
+    if (f.needs === "area_no_plant" && !photoIsUntaggedArchiveOrArea(p)) return false;
     if (f.needs === "no_location" && !(p.plant_id && !p.location_id)) return false;
     if (f.needs === "neither" && (p.plant_id || p.location_id)) return false;
     if (highlightIds && !highlightIds.has(p.id)) return false;
@@ -3414,7 +3456,7 @@ function screenGallery() {
   const f = state.galleryFilters;
   const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
   const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs || f.inBloom || f.favorites);
-  const NEEDS_LABELS = { no_plant: "Filed to a location, needs a plant", no_location: "Attached to a plant, needs a location", neither: "Needs a plant and a location" };
+  const NEEDS_LABELS = { no_plant: "Filed to a container or bed, needs a plant", no_location: "Attached to a plant, needs a location", neither: "Needs a plant and a location", area_no_plant: "Archive and area photos, not yet tagged to a plant" };
   const matches = filteredGalleryPhotos();
 
   const tile = (p) => `

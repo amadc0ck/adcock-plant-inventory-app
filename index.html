@@ -466,7 +466,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.73.0";
+const APP_VERSION = "1.73.1";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1989,29 +1989,37 @@ async function bulkDeletePhotos(which) {
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
+// The Inbox and the Gallery each have their own selection, and the bulk modals
+// are shared. One accessor rather than a modal per screen.
+function activeBulkSelection() {
+  return state.gallerySelectMode ? state.gallerySelected : state.inboxSelected;
+}
+function clearActiveBulkSelection() {
+  if (state.gallerySelectMode) { state.gallerySelectMode = false; state.gallerySelected = new Set(); }
+  else { state.inboxSelectMode = false; state.inboxSelected = new Set(); }
+}
+
 async function bulkAttachToPlant(plantId) {
-  const ids = Array.from(state.inboxSelected);
+  const ids = Array.from(activeBulkSelection());
   for (const id of ids) {
     try { await restPatch("photos", `id=eq.${id}`, { plant_id: plantId }); }
     catch (e) { toast(`Failed on one photo: ${e.message}`, true); }
   }
   toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} attached`);
   closeModal();
-  state.inboxSelectMode = false;
-  state.inboxSelected = new Set();
+  clearActiveBulkSelection();
   await loadAll();
 }
 async function bulkAttachToLocation(locationId) {
   if (!locationId) { toast("Choose a location first", true); return; }
-  const ids = Array.from(state.inboxSelected);
+  const ids = Array.from(activeBulkSelection());
   for (const id of ids) {
     try { await restPatch("photos", `id=eq.${id}`, { location_id: locationId }); }
     catch (e) { toast(`Failed on one photo: ${e.message}`, true); }
   }
   toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} attached to container`);
   closeModal();
-  state.inboxSelectMode = false;
-  state.inboxSelected = new Set();
+  clearActiveBulkSelection();
   await loadAll();
 }
 function openModal(type, data = {}) {
@@ -2460,14 +2468,21 @@ function photoRow(p, selectMode) {
         const recents = recentLocationIds().map(locationById).filter(Boolean);
         const archives = state.locations.filter((l) => l.gallery_row === "archives" && !l.archived);
         const chip = (l, fn) => `<button class="btn-ghost" style="font-size:11.5px;padding:3px 9px;border:1px solid rgba(37,41,37,0.18);border-radius:20px;" onclick="${fn}">${escapeHtml(l.name)}</button>`;
+        // Five archives as chips wrapped to three rows on every one of 1,929
+        // cards. They are a closed, rarely-changing set, which is what a select
+        // is for. Recents stay one-tap: they are the streak, and the whole
+        // point is not to open anything.
         return `
-          ${recents.length ? `<div class="wrap-gap" style="margin-top:9px;align-items:center;">
-            <span class="subtle" style="font-size:11px;letter-spacing:0.3px;text-transform:uppercase;">Recent</span>
-            ${recents.slice(0, 5).map((l) => chip(l, `attachPhotoToLocation('${p.id}','${l.id}')`)).join("")}
-          </div>` : ""}
-          ${archives.length ? `<div class="wrap-gap" style="margin-top:7px;align-items:center;">
-            <span class="subtle" style="font-size:11px;letter-spacing:0.3px;text-transform:uppercase;">Former home</span>
-            ${archives.slice(0, 5).map((l) => chip(l, `fileToArchiveLocation('${p.id}','${l.id}')`)).join("")}
+          ${recents.length || archives.length ? `
+          <div class="wrap-gap" style="margin-top:9px;align-items:center;gap:6px;">
+            ${recents.length ? `<span class="subtle" style="font-size:11px;letter-spacing:0.3px;text-transform:uppercase;">Recent</span>` : ""}
+            ${recents.slice(0, 3).map((l) => chip(l, `attachPhotoToLocation('${p.id}','${l.id}')`)).join("")}
+            ${archives.length ? `
+              <select style="width:auto;font-size:11.5px;padding:4px 7px;margin-left:auto;"
+                      onchange="if(this.value)fileToArchiveLocation('${p.id}',this.value)">
+                <option value="">Former home…</option>
+                ${archives.map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("")}
+              </select>` : ""}
           </div>` : ""}`;
       })()}` : ""}
     </div>
@@ -3841,6 +3856,18 @@ function screenGallery() {
       }).join("")}
     </div>`;
 
+  const bulkBar = state.gallerySelectMode && state.gallerySelected.size ? `
+    <div class="bulk-action-bar">
+      <div class="container" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span class="mono" style="font-size:12.5px;color:var(--cream);">${state.gallerySelected.size} selected</span>
+        <button class="btn btn-accent btn-sm" onclick="openModal('galleryBatch')">Edit</button>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add location</button>
+        <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos('gallery')">${icon("trash")} Delete</button>
+        <button class="btn-ghost" style="margin-left:auto;font-size:12.5px;" onclick="toggleGallerySelectMode()">Cancel</button>
+      </div>
+    </div>` : "";
+
   return `
   <div class="screen">
     <div class="container">
@@ -3870,12 +3897,16 @@ function screenGallery() {
           <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : f.inBloom ? "In bloom now" : f.favorites ? "Favourites" : "Results"}</span>
           <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
         </div>
+          ${/* Select all stays inline — it belongs with the result count it
+               acts on. The actions move to the fixed bar below, because an
+               inline row scrolls out of reach the moment you start selecting,
+               which is exactly when you need it. */""}
           ${state.gallerySelectMode ? `
             <div class="row" style="margin-bottom:12px;">
               <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllGalleryPhotos(${JSON.stringify(matches.map((p) => p.id))})">
                 ${matches.length && matches.every((p) => state.gallerySelected.has(p.id)) ? "Clear all" : `Select all ${matches.length}`}
               </button>
-              <button class="btn btn-accent btn-sm" ${state.gallerySelected.size ? "" : "disabled"} onclick="openModal('galleryBatch')">Edit ${state.gallerySelected.size}</button>
+              <span class="subtle" style="font-size:12px;">${state.gallerySelected.size} selected</span>
             </div>` : ""}
         ${matches.length === 0
           ? `<div class="empty"><div class="display">No photos match</div><div>Try a different search or filter.</div></div>`
@@ -3953,7 +3984,8 @@ function screenGallery() {
         })()}
       `}
     </div>
-  </div>`;
+  </div>
+  ${bulkBar}`;
 }
 
 function screenSettings() {
@@ -4162,7 +4194,7 @@ function modalContent() {
   if (type === "bulkAttachPlant") {
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach ${state.inboxSelected.size} photos to plant</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach ${activeBulkSelection().size} photos to plant</h3>
       <p class="subtle" style="margin:0 0 14px;">All selected photos will be attached to the same plant.</p>
       ${plantPicker("bulkAttachToPlant('{id}')")}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
@@ -4171,7 +4203,7 @@ function modalContent() {
   if (type === "bulkAttachLocation") {
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location to ${state.inboxSelected.size} photos</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location to ${activeBulkSelection().size} photos</h3>
       <p class="subtle" style="margin:0 0 14px;">All selected photos will move out of the Inbox onto that container's page.</p>
       ${locationPicker("bulkAttachToLocation('{id}')")}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;

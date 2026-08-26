@@ -227,6 +227,14 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.73.1
+
+**The Gallery's bulk actions were unreachable, and the archive shortcuts took three rows.** Schema: none.
+
+- **Select mode in the Gallery rendered its actions inline**, above the results — so the moment you scrolled down to select anything, the buttons scrolled away. The Inbox already had a **fixed bottom bar** for this; the Gallery now uses the same one, with Edit, Attach to plant, Add location, Delete and Cancel. Select all stays inline, where it belongs beside the count it acts on.
+- **The bulk modals are shared rather than duplicated.** `activeBulkSelection()` returns whichever selection is live, so the Inbox and the Gallery use one set of modals and one set of handlers instead of a parallel pair.
+- **Former-home shortcuts became a dropdown.** Five archives rendered as chips wrapped to three rows on every one of 1,929 cards. They are a closed, rarely-changing set — which is what a select is for — and it now offers all of them rather than the first five. Recents stay one-tap chips, capped at three, on the same row: they are the streak, and not opening anything is the whole point.
+
 ### v1.73.0
 
 **LOC-9 and INB-1 — navigating 157 locations, and the Inbox at 1,929 cards.** Schema: none.

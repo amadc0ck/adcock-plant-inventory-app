@@ -184,26 +184,6 @@ An area with children shows its own photo or nothing. It should fall back to a s
 
 Phone photos are unaffected — they carry `DateTimeOriginal` (`0x9003`) in the ExifIFD. Scans and some edited images are not. Fix is to also scan IFD0's entries for `0x0132` before giving up.
 
-### PHOTOS-1 — Import from Google Photos
-**Status:** needs plan approval · **Effort:** medium–high · **Schema:** none · **Touches:** new Edge Function(s), the upload modal, Google OAuth scopes
-
-Amanda's entire photo archive lives in Google Photos. The Archives half of GAL-4 — Meraki Office, Parents' House, Vallejo Apartment — is unreachable without this, and importing hundreds of historical photos one phone-upload at a time is not realistic.
-
-**Bulk library access no longer exists.** `photoslibrary.readonly` was removed 31 March 2025; apps can only reach media they created themselves. This is the same restriction that broke Drive (§8) — Google applied the identical model to Photos. The replacement is the **Photos Picker API**: user-initiated selection.
-
-Flow: `POST /v1/sessions/create` → open the returned `pickerUri` → Amanda multi-selects in Google Photos' own UI → poll `GET /v1/sessions/{id}` until `mediaItemsSet` → `GET /v1/mediaItems/list` → fetch each `mediaFile.baseUrl` → upload to Drive → insert a `photos` row.
-
-Two properties that make this cheaper than it looks:
-- **No external JS library.** Unlike the Drive picker (a JS widget, which would collide with constraint #1), this is REST plus a URL to open. Everything stays inline.
-- **`createTime` is returned per item** — the capture time, explicitly not the upload time. So **no EXIF parsing**, which matters because an iPhone archive is largely HEIC and `extractExifDate()` cannot read HEIC at all. This path sidesteps the entire class of problem fixed in v1.45.2/v1.46.0.
-
-Decisions before building:
-- **Import a JPEG rendition, not the original.** `baseUrl` with sizing parameters returns a JPEG; the original may be HEIC, which most browsers will not display and which the rest of the app assumes it can render. Costs some quality, gains universal display and smaller files. The capture date is unaffected either way, since it comes from the API.
-- **Storage is duplicated.** Photos and Drive have been separate stores since 2019, so importing copies bytes into the app's Drive folder. Drive, Photos and Gmail share one 15 GB free quota, so an imported photo is counted twice. Check quota before a large import, and import selectively rather than wholesale — the Picker makes that natural.
-- **Adding the scope requires re-consent.** Same Google account and same OAuth client, but scopes are granted per authorization, so the existing Drive-only token gains nothing. One trip through Settings → Reconnect replaces it with a token covering both. Refresh tokens still expire roughly weekly (§8) — unchanged.
-- **Sessions expire**, duration unconfirmed. The poll loop needs a timeout and a clear failure message rather than spinning.
-
-**Unverified before building:** the exact scope string (believed `photospicker.mediaitems.readonly`) and the `baseUrl` parameters for the desired rendition. The reference says parameters are required but points elsewhere for them. Pin both against live docs — do not assume.
 
 ### NAME-1 — Normalize botanical names into structured parts
 **Status:** ready · **Effort:** low–medium · **Schema:** none · **Depends on:** SPECIES-1
@@ -394,6 +374,22 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 ---
 
 ## Completed
+
+### v1.48.0
+
+**PHOTOS-1 — Import from Google Photos.** Schema: none · New `photos-picker` Edge Function, scope added to `drive-oauth-start`, picker modal and flow in the app.
+
+Amanda's whole photo archive lives in Google Photos, so GAL-4's Archives were unreachable without this.
+
+- Bulk library access was removed 2025-03-31 — apps reach only media they created. The **Picker API** is the replacement: she selects in Google Photos' own UI and the app gets exactly those items. Same restriction that shaped Drive (§8).
+- One function, three actions: `create` (session + pickerUri), `poll` (until `mediaItemsSet`, then page through), `import` (download → Drive → `photos` row).
+- **Imports a scaled JPEG (`=w2560-h2560`), not `=d`.** The original of an iPhone library is HEIC, which browsers and the rest of this app cannot display. The rendition drops EXIF, which does not matter — **capture time comes from the API's `createTime`**, so this path is immune to the whole EXIF problem class fixed in v1.45.2.
+- **No external JS library**, unlike the Drive picker widget — REST plus a URL to open, so constraint #1 holds.
+- `baseUrl`s expire after **60 minutes**; that is surfaced as "reselect the photos" and stops the run rather than failing every remaining item.
+- A 403 on create means the token predates the scope, returned as `needsReconnect` so the app says "Settings → Reconnect" instead of showing a raw error.
+- Polling gives up after 15 minutes rather than spinning forever.
+
+**Prerequisites Amanda completed:** enabled the Photos Picker API in Cloud Console and declared the scope on the consent screen. One reconnect still needed, since scopes are per-authorization.
 
 ### v1.47.0
 

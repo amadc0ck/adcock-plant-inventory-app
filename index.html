@@ -391,7 +391,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.47.0";
+const APP_VERSION = "1.48.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -425,6 +425,7 @@ const state = {
   listOptions: [],
   backfill: null,
   reportView: null,
+  photosImport: null,
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
@@ -3663,7 +3664,43 @@ function modalContent() {
         <textarea id="upload-notes" rows="2" placeholder="e.g. new growth on the west side"></textarea>
         <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn">${loc ? "Upload" : "Upload to Inbox"}</button>
       </form>
+      <div class="divider"></div>
+      <button class="btn btn-secondary btn-block" onclick="openModal('photosPicker',${loc ? `{locationId:'${loc.id}'}` : "{}"})">${icon("photo")} Import from Google Photos</button>
+      <div class="field-help">Pick from your Google Photos library. Capture dates come across automatically.</div>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "photosPicker") {
+    const st = state.photosImport;
+    if (!st) {
+      return `
+        <div class="modal-handle"></div>
+        <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Import from Google Photos</h3>
+        <p class="subtle" style="margin:0 0 14px;">Opens Google Photos in a new tab. Pick as many as you like, then come back here — this window keeps checking.</p>
+        <button class="btn btn-accent btn-block" onclick="startPhotosPicker(${data.locationId ? `'${data.locationId}'` : "null"})">Choose photos</button>
+        <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+    }
+    if (st.phase === "picking") {
+      return `
+        <div class="modal-handle"></div>
+        <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Waiting for your selection</h3>
+        <p class="subtle" style="margin:0 0 14px;">Google Photos should have opened in another tab. Pick your photos there and press Done — this updates on its own.</p>
+        ${st.pickerUri ? `<button class="btn btn-secondary btn-block" onclick="window.open('${st.pickerUri}','_blank')">Reopen Google Photos</button>` : ""}
+        <button class="btn-ghost" style="margin-top:10px;" onclick="cancelPhotosImport()">Cancel</button>`;
+    }
+    if (st.phase === "importing") {
+      return `
+        <div class="modal-handle"></div>
+        <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Importing</h3>
+        <p class="subtle" style="margin:0 0 8px;">Downloading from Google Photos and filing into your collection.</p>
+        <div class="mono" style="font-size:13px;">${st.done} of ${st.total}${st.failed ? ` · ${st.failed} failed` : ""}</div>
+        <button class="btn-ghost" style="margin-top:14px;" onclick="cancelPhotosImport()">Stop</button>`;
+    }
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Done</h3>
+      <p class="subtle" style="margin:0 0 14px;">${st.done} imported${st.failed ? `, ${st.failed} failed` : ""}. They're in the Inbox${data.locationId ? " and filed to this location" : ""}.</p>
+      <button class="btn btn-primary btn-block" onclick="cancelPhotosImport()">Close</button>`;
   }
 
   return "";
@@ -4110,6 +4147,116 @@ async function saveListLabels(listName) {
 // Idempotent: only touches rows where taken_at is null, so it can be stopped
 // and re-run. Concurrency is deliberately low; every photo is a Drive fetch
 // through an Edge Function.
+// PHOTOS-1. Three-step flow: create a session, wait while Amanda picks in
+// Google Photos' own tab, then import what she chose. Polling is required —
+// there is no callback, the picker just sets mediaItemsSet on the session.
+async function photosPickerCall(action, body) {
+  const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/photos-picker?action=${action}`, {
+    method: "POST",
+    headers: apiHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body || {}),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const err = new Error(data.error || "Google Photos request failed");
+    err.needsReconnect = !!data.needsReconnect;
+    err.expired = !!data.expired;
+    throw err;
+  }
+  return data;
+}
+
+async function startPhotosPicker(locationId) {
+  try {
+    const session = await photosPickerCall("create");
+    state.photosImport = { phase: "picking", sessionId: session.sessionId, pickerUri: session.pickerUri, locationId, cancel: false, done: 0, failed: 0, total: 0 };
+    render();
+    // Opened from the click handler so the popup blocker allows it.
+    window.open(session.pickerUri, "_blank");
+    await pollPhotosPicker(session.pollIntervalMs || 3000);
+  } catch (e) {
+    state.photosImport = null;
+    render();
+    // A 403 here means the stored token predates the Photos scope. Nothing is
+    // wrong with the picker; she just has to re-consent once.
+    toast(e.needsReconnect ? "Google needs reconnecting with Photos access — Settings → Reconnect" : e.message, true);
+  }
+}
+
+async function pollPhotosPicker(intervalMs) {
+  const st = state.photosImport;
+  if (!st) return;
+  // Sessions expire, so this cannot poll forever.
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (state.photosImport && !state.photosImport.cancel) {
+    if (Date.now() > deadline) {
+      toast("Gave up waiting for a selection — start again when you're ready", true);
+      state.photosImport = null;
+      render();
+      return;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+    if (!state.photosImport || state.photosImport.cancel) return;
+    let data;
+    try {
+      data = await photosPickerCall("poll", { sessionId: st.sessionId });
+    } catch (e) {
+      toast(e.message, true);
+      state.photosImport = null;
+      render();
+      return;
+    }
+    if (data.pollIntervalMs) intervalMs = data.pollIntervalMs;
+    if (data.mediaItemsSet) { await importPickedPhotos(data.items || []); return; }
+  }
+}
+
+async function importPickedPhotos(items) {
+  const st = state.photosImport;
+  if (!st) return;
+  if (!items.length) {
+    toast("Nothing was selected");
+    state.photosImport = null;
+    render();
+    return;
+  }
+  Object.assign(st, { phase: "importing", total: items.length, done: 0, failed: 0 });
+  render();
+
+  // Sequential on purpose: each import is a Google Photos download plus a Drive
+  // upload, and baseUrls are only valid for 60 minutes — hammering them risks
+  // rate limiting mid-run and losing the window.
+  for (const item of items) {
+    if (st.cancel) break;
+    try {
+      await photosPickerCall("import", {
+        baseUrl: item.baseUrl,
+        filename: item.filename,
+        createTime: item.createTime,
+        locationId: st.locationId || null,
+      });
+      st.done++;
+    } catch (e) {
+      st.failed++;
+      if (e.expired) {
+        toast("Google Photos links expired — reselect the remaining photos", true);
+        break;
+      }
+    }
+    debouncedRender();
+  }
+  st.phase = "done";
+  render();
+  await loadAll();
+}
+
+function cancelPhotosImport() {
+  if (state.photosImport) state.photosImport.cancel = true;
+  state.photosImport = null;
+  closeModal();
+  render();
+}
+
 async function backfillPhotoDates() {
   if (state.backfill?.running) return;
   const pending = state.photos.filter((p) => !p.taken_at && p.drive_file_id);

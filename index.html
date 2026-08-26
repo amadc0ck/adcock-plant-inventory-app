@@ -42,6 +42,7 @@
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
   body{padding-bottom:76px;min-height:100vh;}
+  body.has-task-banner{padding-top:46px;}
   h1,h2,h3,.display{font-family:'Fraunces',serif;}
   .mono{font-family:'IBM Plex Mono',monospace;}
   a{color:inherit;}
@@ -268,6 +269,17 @@
   .field-row-label{font-size:12.5px;color:#8AA090;flex-shrink:0;}
   .field-row-value{font-size:13.5px;color:#C9D6CC;margin-left:auto;text-align:right;min-width:0;word-break:break-word;}
 
+  /* Long-running task banner. Imports and backfills outlive the modal that
+     started them — tapping the backdrop dismisses the modal but not the work —
+     so progress needs somewhere to live that a stray tap cannot hide. */
+  .task-banner{position:fixed;left:0;right:0;top:0;z-index:60;background:var(--orange);color:#3A2408;
+    display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.3);}
+  .task-banner .task-spin{width:14px;height:14px;border:2px solid rgba(58,36,8,0.35);border-top-color:#3A2408;
+    border-radius:50%;animation:taskspin 0.8s linear infinite;flex-shrink:0;}
+  @keyframes taskspin{to{transform:rotate(360deg);}}
+  .task-banner-text{flex:1;min-width:0;font-size:13px;font-weight:600;}
+  .task-banner-sub{font-size:11px;font-weight:400;opacity:0.8;}
+
   /* Reports: stat tiles and attention rows, both on cream. */
   .stat-row{display:grid;grid-template-columns:repeat(4,1fr);}
   .stat-cell{text-align:center;padding:14px 6px;border-right:1px solid rgba(37,41,37,0.12);}
@@ -391,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.49.0";
+const APP_VERSION = "1.50.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -429,6 +441,8 @@ const state = {
   attachPhotoLimit: 24,
   backTo: null,
   galleryView: "grid",
+  gallerySelectMode: false,
+  gallerySelected: new Set(),
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
@@ -1409,6 +1423,33 @@ function openModal(type, data = {}) {
   render();
 }
 function closeModal() { state.modal = null; render(); }
+// Work that survives its modal needs a home. Without this, dismissing the
+// import dialog — including by tapping the backdrop — leaves the import running
+// with nothing on screen to say so.
+function taskBanner() {
+  const imp = state.photosImport;
+  const bf = state.backfill;
+  if (imp && imp.phase === "picking") {
+    return `<div class="task-banner" onclick="openModal('photosPicker',{})">
+      <div class="task-spin"></div>
+      <div class="task-banner-text">Waiting for your Google Photos selection<div class="task-banner-sub">Pick photos in the other tab, then press Done</div></div>
+    </div>`;
+  }
+  if (imp && imp.phase === "importing") {
+    return `<div class="task-banner" onclick="openModal('photosPicker',{})">
+      <div class="task-spin"></div>
+      <div class="task-banner-text">Importing from Google Photos<div class="task-banner-sub">${imp.done} of ${imp.total}${imp.failed ? ` · ${imp.failed} failed` : ""}</div></div>
+    </div>`;
+  }
+  if (bf && bf.running) {
+    return `<div class="task-banner" onclick="goTab('settings')">
+      <div class="task-spin"></div>
+      <div class="task-banner-text">Reading capture dates<div class="task-banner-sub">${bf.done} of ${bf.total} · ${bf.found} dated</div></div>
+    </div>`;
+  }
+  return "";
+}
+
 function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
 function showGalleryAlbum(locationId) {
   state.galleryFilters = { ...state.galleryFilters, album: locationId, highlight: "" };
@@ -1423,6 +1464,48 @@ function showGalleryNeeds(kind) {
   state.tab = "gallery";
   render();
 }
+function toggleGallerySelectMode() {
+  state.gallerySelectMode = !state.gallerySelectMode;
+  state.gallerySelected = new Set();
+  render();
+}
+function toggleGalleryPhotoSelected(id) {
+  if (state.gallerySelected.has(id)) state.gallerySelected.delete(id);
+  else state.gallerySelected.add(id);
+  render();
+}
+function selectAllGalleryPhotos(ids) {
+  const all = ids.every((id) => state.gallerySelected.has(id));
+  state.gallerySelected = all ? new Set() : new Set(ids);
+  render();
+}
+
+// Batch edit only writes the fields actually chosen. A blank select means
+// "leave alone", not "clear" — clearing 40 photos' locations by accident
+// because a dropdown defaulted to empty would be unrecoverable in bulk.
+async function applyGalleryBatch() {
+  const ids = Array.from(state.gallerySelected);
+  if (!ids.length) { toast("Nothing selected", true); return; }
+  const body = {};
+  const loc = document.getElementById("gb-location").value;
+  const plant = document.getElementById("gb-plant").value;
+  const type = document.getElementById("gb-type").value;
+  if (loc) body.location_id = loc === "__clear__" ? null : loc;
+  if (plant) body.plant_id = plant === "__clear__" ? null : plant;
+  if (type) body.photo_type = type;
+  if (!Object.keys(body).length) { toast("Choose something to change first", true); return; }
+  if (!confirm(`Apply to ${ids.length} photo${ids.length === 1 ? "" : "s"}?`)) return;
+  try {
+    // PostgREST takes an in-list, so this is one request rather than N.
+    await restPatch("photos", `id=in.(${ids.join(",")})`, body);
+    toast(`Updated ${countLabel(ids.length, "photo", "photos")}`);
+    state.gallerySelectMode = false;
+    state.gallerySelected = new Set();
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 function clearGalleryView() {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "" };
   render();
@@ -2269,6 +2352,26 @@ function findDuplicatePlantGroups() {
 // Reports is a list of gaps, each drilled into rather than all expanded at
 // once. The previous version rendered every list inline, so the screen was a
 // wall of cards and the counts — the actual signal — were buried in it.
+// Two photos sharing an exact capture second are almost certainly the same
+// shot filed twice — the same frame cannot be taken twice. This is the only
+// signal available: no file hash or size is stored, and drive_file_id is
+// unique per upload, so a re-upload of the same image looks entirely new.
+//
+// The case this catches in practice is importing from Google Photos something
+// already uploaded from the phone. Both carry the same createTime/EXIF date.
+function findDuplicatePhotoGroups() {
+  const byTime = new Map();
+  state.photos.forEach((p) => {
+    if (!p.taken_at) return; // upload dates collide constantly and mean nothing
+    const key = new Date(p.taken_at).toISOString();
+    if (!byTime.has(key)) byTime.set(key, []);
+    byTime.get(key).push(p);
+  });
+  return Array.from(byTime.values())
+    .filter((g) => g.length > 1)
+    .sort((a, b) => new Date(photoDate(b[0])) - new Date(photoDate(a[0])));
+}
+
 function reportSections() {
   const photosOf = (pl) => state.photos.filter((p) => p.plant_id === pl.id);
   return [
@@ -2363,6 +2466,20 @@ function screenReports() {
             <span class="attn-count ${x.items.length ? "has" : "clear"}">${x.items.length}</span>
             <span class="action-chevron">${icon("chevronRight")}</span>
           </button>`).join("")}
+        ${(() => {
+          const dupPhotos = findDuplicatePhotoGroups();
+          if (!dupPhotos.length) return "";
+          const extra = dupPhotos.reduce((n, g) => n + g.length - 1, 0);
+          return `
+          <button class="attn-row" onclick="openModal('duplicatePhotos')">
+            <div style="flex:1;min-width:0;">
+              <div class="attn-title">Possible duplicate photos</div>
+              <div class="attn-sub">Same capture time — ${countLabel(extra, "extra copy", "extra copies")}</div>
+            </div>
+            <span class="attn-count has">${dupPhotos.length}</span>
+            <span class="action-chevron">${icon("chevronRight")}</span>
+          </button>`;
+        })()}
         ${duplicateGroups.length ? `
           <button class="attn-row" onclick="openModal('duplicatePlants')">
             <div style="flex:1;min-width:0;">
@@ -2579,7 +2696,9 @@ function screenGallery() {
         const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
         const locs = allLocationsForPhoto(p);
         return `
-        <div class="tag-card plant-list-card" style="padding:8px 12px;" onclick="openGalleryLightbox('${p.id}')">
+        <div class="tag-card plant-list-card" style="padding:8px 12px;position:relative;${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}"
+             onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : `openGalleryLightbox('${p.id}')`}">
+          ${state.gallerySelectMode ? `<div class="select-check ${state.gallerySelected.has(p.id) ? "checked" : ""}" style="top:6px;left:6px;z-index:2;">${state.gallerySelected.has(p.id) ? icon("check") : ""}</div>` : ""}
           <div class="plant-list-thumb" style="width:52px;height:52px;">${photoImg(p.drive_file_id)}</div>
           <div style="flex:1;min-width:0;">
             <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type && p.photo_type !== "general" ? " · " + escapeHtml(p.photo_type) : ""}</div>
@@ -2597,7 +2716,9 @@ function screenGallery() {
         const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
         const locs = allLocationsForPhoto(p);
         return `
-        <div class="tag-card" style="padding:0;overflow:hidden;cursor:pointer;" onclick="openGalleryLightbox('${p.id}')">
+        <div class="tag-card" style="padding:0;overflow:hidden;cursor:pointer;position:relative;${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}"
+             onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : `openGalleryLightbox('${p.id}')`}">
+          ${state.gallerySelectMode ? `<div class="select-check ${state.gallerySelected.has(p.id) ? "checked" : ""}" style="top:8px;left:8px;z-index:2;">${state.gallerySelected.has(p.id) ? icon("check") : ""}</div>` : ""}
           <div class="card-media ratio-1x1">${photoImg(p.drive_file_id)}</div>
           <div style="padding:10px 12px;">
             <div class="row">
@@ -2625,6 +2746,7 @@ function screenGallery() {
         </button>
         <div style="display:flex;align-items:center;gap:10px;">
           ${searching ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="clearGalleryView()">Clear</button>` : ""}
+          ${searching ? `<button class="btn btn-secondary btn-sm" onclick="toggleGallerySelectMode()">${state.gallerySelectMode ? "Done" : "Select"}</button>` : ""}
           <button class="btn btn-secondary btn-sm icon-btn" onclick="state.galleryView = state.galleryView === 'list' ? 'grid' : 'list';render()" title="Switch between large photos and compact rows">
             ${state.galleryView === "list" ? icon("photo") + " Large" : icon("clipboard") + " Compact"}
           </button>
@@ -2637,6 +2759,13 @@ function screenGallery() {
           <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : "Results"}</span>
           <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
         </div>
+          ${state.gallerySelectMode ? `
+            <div class="row" style="margin-bottom:12px;">
+              <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllGalleryPhotos(${JSON.stringify(matches.map((p) => p.id))})">
+                ${matches.length && matches.every((p) => state.gallerySelected.has(p.id)) ? "Clear all" : `Select all ${matches.length}`}
+              </button>
+              <button class="btn btn-accent btn-sm" ${state.gallerySelected.size ? "" : "disabled"} onclick="openModal('galleryBatch')">Edit ${state.gallerySelected.size}</button>
+            </div>` : ""}
         ${matches.length === 0
           ? `<div class="empty"><div class="display">No photos match</div><div>Try a different search or filter.</div></div>`
           : state.galleryView === "list" ? listRows(matches) : grid(matches)}`
@@ -3299,6 +3428,70 @@ function modalContent() {
             </button>`).join("")}
         </div>`}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "galleryBatch") {
+    const n = state.gallerySelected.size;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Edit ${countLabel(n, "photo", "photos")}</h3>
+      <p class="subtle" style="margin:0 0 14px;">Only what you set here changes. Leave a field blank to leave it as it is.</p>
+
+      <label>Location</label>
+      <select id="gb-location">
+        <option value="">— Leave unchanged —</option>
+        <option value="__clear__">Remove location</option>
+        ${locationSelectOptions(null)}
+      </select>
+
+      <label>Plant</label>
+      <select id="gb-plant">
+        <option value="">— Leave unchanged —</option>
+        <option value="__clear__">Detach from plant</option>
+        ${state.plants.slice().sort((a, b) => (a.accession_number || "").localeCompare(b.accession_number || ""))
+          .map((pl) => `<option value="${pl.id}">${pl.accession_number} — ${escapeHtml(plantDisplayName(pl))}</option>`).join("")}
+      </select>
+
+      <label>Type</label>
+      <select id="gb-type">
+        <option value="">— Leave unchanged —</option>
+        ${Object.entries({ general: "General", identification: "Identification", flower: "Flower", detail: "Detail", condition: "Condition", historical: "Historical / archive" })
+          .map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+      </select>
+
+      <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="applyGalleryBatch()">Apply to ${n}</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "duplicatePhotos") {
+    const groups = findDuplicatePhotoGroups();
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Possible duplicate photos</h3>
+      <p class="subtle" style="margin:0 0 14px;">Same capture time to the second, so almost certainly the same shot filed twice — usually a phone upload and a Google Photos import of the same frame. Check before deleting: a burst can share a second.</p>
+      ${groups.length === 0 ? `<p class="subtle">No duplicates found.</p>` : `
+        <div class="stack">
+          ${groups.map((g) => `
+            <div class="surface" style="padding:12px;">
+              <div class="mono subtle" style="font-size:11px;margin-bottom:8px;">${fmtDate(g[0].taken_at)} · ${countLabel(g.length, "copy", "copies")}</div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+                ${g.map((p) => {
+                  const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
+                  const loc = p.location_id ? locationById(p.location_id) : null;
+                  return `
+                  <div>
+                    <div class="card-media ratio-1x1" style="border-radius:6px;cursor:pointer;" onclick="closeModal();openGalleryLightbox('${p.id}')">${photoImg(p.drive_file_id)}</div>
+                    <div style="font-size:10.5px;color:#8AA090;margin-top:4px;line-height:1.35;">
+                      ${plant ? escapeHtml(plantDisplayName(plant)) : `<span class="value-blank">No plant</span>`}<br/>
+                      ${loc ? escapeHtml(loc.name) : `<span class="value-blank">No location</span>`}
+                    </div>
+                    <button class="btn-ghost icon-btn" style="padding:4px 0 0;font-size:11px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>
+                  </div>`;
+                }).join("")}
+              </div>
+            </div>`).join("")}
+        </div>`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
   }
 
   if (type === "duplicatePlants") {
@@ -4340,7 +4533,7 @@ async function importPickedPhotos(items) {
         break;
       }
     }
-    debouncedRender();
+    render();
   }
   st.phase = "done";
   render();
@@ -4626,9 +4819,11 @@ function render() {
     ${topBar()}
     ${screen}
     ${navBar()}
+    ${taskBanner()}
     ${state.modal ? `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${modalContent()}</div></div>` : ""}
     ${state.lightbox ? renderLightbox() : ""}
   `;
+  document.body.classList.toggle("has-task-banner", !!taskBanner());
   wireModalForms();
   restoreFocus(focusSnapshot);
 }

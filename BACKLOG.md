@@ -371,6 +371,14 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.50.0
+
+**Import progress, duplicate photo detection, gallery batch editing.** Schema: none.
+
+- **Long-running work now has a persistent banner.** Tapping the modal backdrop calls `closeModal()`, which cleared the dialog but left the import running with **nothing on screen to say so** — easy to trigger while switching to the Google Photos tab. The banner sits above everything, survives modal dismissal, shows live counts, and reopens the dialog when tapped. Covers the EXIF backfill too.
+- **Duplicate photo report.** Groups photos sharing an exact capture second. That is the only signal available — no file hash or size is stored, and `drive_file_id` is unique per upload, so re-uploading the same image looks entirely new. The case it catches in practice is importing from Google Photos something already uploaded from the phone: both carry the same capture time. Photos with no `taken_at` are never grouped, since upload timestamps collide constantly and mean nothing.
+- **Gallery multi-select and batch edit.** Select within any filtered view, then set location, plant or type across all of them in **one** request. A blank field means *leave alone*, never *clear* — clearing forty photos' locations because a dropdown defaulted to empty would be unrecoverable in bulk — with explicit "Remove location" and "Detach from plant" options for when clearing is the intent.
+
 ### v1.49.0
 
 **Five fixes from Amanda's first pass through the new screens.** Schema: none.

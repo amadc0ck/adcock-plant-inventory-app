@@ -82,7 +82,6 @@ Open before building:
 Supersedes the plant-level half of GAL-2. AI-1 and AI-2 should be designed against this model, not the current flat one.
 
 
-
 ### SPECIES-2 — Split multi-location plants into one specimen per location
 **Status:** splitting **done by hand** 2026-08-25 · cleanup pending · **Effort:** medium–high · **Schema:** yes, retires `plant_locations` for specimens · **Depends on:** SPECIES-1 · **Touches:** `plants`, `plant_locations`, `photos`, `care_notes`, `screenPlantDetail`, `allLocationsForPlant`, `mergePlants`
 
@@ -115,7 +114,6 @@ order by location_count desc;
 ```
 
 
-
 ### LOCP-1 — Act on photos from the Location page
 **Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `screenLocationDetail`
 
@@ -125,7 +123,6 @@ From a location's photos, without navigating away:
 - **Unattach.**
 
 Not tagging other *locations* — a location is singular, holding multiple specimens, so cross-tagging containers has no meaning. `photo_locations` stays unused for this.
-
 
 
 ### NAME-1 — Normalize botanical names into structured parts
@@ -155,25 +152,6 @@ Fill the parts for all 27 taxa, then flip `taxonDisplayName()` to prefer compose
 Name to confirm: `urgent` / "Urgent care".
 
 
-
-### PL-2 — Plant pickers should lead with a photo and common name
-**Status:** ready · **Effort:** low–medium · **Touches:** every `${p.accession_number} — ${plantDisplayName(p)}` picker (~`index.html:1843`, `1924`, `1962`, `2265`, `2412`)
-
-Attach/tag pickers list plants as `ABG-2026-0007 — Aeonium arboreum 'Zwartkop'`. Accession numbers aren't memorized and botanical names aren't yet recognizable at a glance, so the list is hard to scan.
-
-- Lead with **common name**, falling back to botanical name when there's no common name — the inverse of `plantDisplayName()`'s current precedence.
-- Show a **thumbnail**. This is the actual recognition cue.
-- Accession number demoted to small mono text, not the primary label.
-
-Note these are `<select><option>` elements in places, which cannot hold images — those become custom list pickers, which is where the effort sits.
-
-### PHOTO-1 — Per-photo focal point
-**Status:** ready · **Effort:** medium · **Schema:** yes · **Touches:** `photos`, `.card-media img`, lightbox
-
-Every cropped image is hardcoded `object-position:top` (`.card-media img`). Good default for upright specimens, wrong for wide plantings and off-centre subjects — the original reason for dropping 16:9.
-
-Add `photos.focal_x` / `focal_y` (0–100 percent, default 50/50 or 50/0) and emit `object-position:{x}% {y}%`. UI: click a point on the photo in the lightbox to set it. Once this exists, the crop complaint behind PD-1 and LOC-1 is properly solved rather than defaulted around.
-
 ---
 
 ## Ready now — no upstream dependencies
@@ -192,7 +170,6 @@ Counts, inline actions, and the nested indicator already ship — see LOC-2. Thi
 
 
 ---
-
 
 
 ### AI-1 — Unified Claude vision call on upload (Epic 3)
@@ -248,14 +225,11 @@ Plant check-ins support **both** staleness (days since last photo, via `photoDat
 ## Gallery rebuild — largest net-new area
 
 
-
 ### GAL-2 (original scope)
 **Status:** ready · **Effort:** medium · **Schema:** category-tagging junction table
 Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, Succulents. Decide photo-level vs. plant-level tagging before building — the two produce different Gallery behavior.
 
 **Re-scope against PD-2.** `plants.plant_type` now holds cactus / agave / aloe / euphorbia / sedum / crassula / echeveria / sempervivum / aeonium, which **is** plant-level category tagging. The open question shrinks to whether GAL-2 additionally needs *photo-level* tags. If not, GAL-2 needs no junction table at all — it becomes a Gallery filter reading `plant_type`. Do not build a second source of truth for the same fact.
-
-
 
 
 ---
@@ -278,6 +252,24 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 ---
 
 ## Completed
+
+### v1.63.0
+
+**PHOTO-1, PL-2 and a sticky Gallery header.** Schema: `photos.focal_x` / `focal_y`.
+
+- **PHOTO-1 — per-photo focal point.** `.card-media img` was hardcoded `object-position:top`, which is right for an upright specimen and wrong for a wide planting. `photoImg()` now takes the photo *row* rather than a bare `drive_file_id` and emits `object-position:{x}% {y}%` when one is set; 30 call sites converted, and the two that only had an id were the ones silently losing the crop. Setting it is a click on a crosshair area in the **edit photo** modal, so it works from anywhere a photo can be opened.
+- **PL-2 — plant pickers lead with a photo and a common name.** The `<select><option>` pickers became a shared `plantPicker()`: thumbnail, common name first with the botanical name demoted to a subtitle, accession number in small mono. Filters by search, species and location, and the filter state resets on every `openModal()` so a picker never opens pre-narrowed from last time.
+- **Gallery controls stick to the top while scrolling.** At 2590 photos, reaching the bottom of a filtered set and wanting to change the filter meant scrolling all the way back up. The top bar still scrolls away — only the search, filter row and result count pin.
+
+```sql
+alter table photos add column if not exists focal_x smallint;
+alter table photos add column if not exists focal_y smallint;
+alter table photos add constraint photos_focal_x_range check (focal_x is null or focal_x between 0 and 100) not valid;
+alter table photos add constraint photos_focal_y_range check (focal_y is null or focal_y between 0 and 100) not valid;
+notify pgrst, 'reload schema';
+```
+
+Null means "unset" and keeps the existing `object-position:top` default, so nothing changes until a photo is deliberately focused.
 
 ### v1.62.0
 

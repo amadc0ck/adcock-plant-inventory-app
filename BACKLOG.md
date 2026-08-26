@@ -371,6 +371,23 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.53.1
+
+**The "photos not fully filed" buckets overlapped.** Schema: none.
+
+"No plant" and "no location" each swallowed everything in "neither", so the same 793 photos were counted in all three. The numbers could not be added up, and working through one bucket meant re-covering photos already handled in another.
+
+Each bucket now describes what is missing **given what is already there**, so they are mutually exclusive and sum to the real total:
+
+| | Was | Now |
+| --- | --- | --- |
+| Needs a plant — filed to a location, not a specimen | 1319 | **526** |
+| Needs a location — attached to a plant, nowhere on the map | 837 | **44** |
+| Needs both | 793 | **793** |
+| | — | **1363 unfiled** |
+
+The section header now carries that total, so the three visibly add up.
+
 ### v1.53.0
 
 **Three scale limits, one of them already losing data.** Schema: none.

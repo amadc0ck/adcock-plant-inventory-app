@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.53.0";
+const APP_VERSION = "1.53.1";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2488,12 +2488,15 @@ function screenReports() {
   // Photo gaps route to the Gallery rather than an inline list — it already has
   // the grid and the lightbox. A photo in none of plant, location or Inbox is
   // invisible everywhere else, which is what happens to archive-marked photos.
+  // Mutually exclusive, so the three add up to the number of photos that are
+  // not fully filed and each can be worked through without re-covering the
+  // others. They previously overlapped, counting the same photos three times.
   const photoBuckets = [
-    { title: "Photos with no plant", sub: "Not attached to any specimen", needs: "no_plant",
-      count: state.photos.filter((p) => !p.plant_id).length },
-    { title: "Photos with no location", sub: "Nowhere on the map", needs: "no_location",
-      count: state.photos.filter((p) => !p.location_id).length },
-    { title: "Photos with neither", sub: "Reachable only from here", needs: "neither",
+    { title: "Needs a plant", sub: "Filed to a location, not to a specimen", needs: "no_plant",
+      count: state.photos.filter((p) => p.location_id && !p.plant_id).length },
+    { title: "Needs a location", sub: "Attached to a plant, nowhere on the map", needs: "no_location",
+      count: state.photos.filter((p) => p.plant_id && !p.location_id).length },
+    { title: "Needs both", sub: "No plant and no location", needs: "neither",
       count: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
   ];
 
@@ -2581,6 +2584,7 @@ function screenReports() {
 
       <div class="row" style="margin-top:26px;margin-bottom:10px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photos not fully filed</h3>
+        <span class="attn-count ${photoBuckets.reduce((n, b) => n + b.count, 0) ? "has" : "clear"}">${photoBuckets.reduce((n, b) => n + b.count, 0)}</span>
       </div>
       <div class="tag-card" style="padding:0;overflow:hidden;">
         ${photoBuckets.map((b) => `
@@ -2658,11 +2662,17 @@ function filteredGalleryPhotos() {
   }
   return state.photos.filter((p) => {
     if (albumIds && !albumIds.has(p.id)) return false;
-    // RPT-2 buckets. A photo with neither a plant nor a location and no
-    // historical marker is in the Inbox; marked historical it is in none of the
-    // Inbox, a location or a plant, so it was previously unreachable anywhere.
-    if (f.needs === "no_plant" && p.plant_id) return false;
-    if (f.needs === "no_location" && p.location_id) return false;
+    // RPT-2 buckets, deliberately mutually exclusive. They used to overlap —
+    // "no plant" and "no location" each swallowed everything in "neither", so
+    // the same 793 photos were counted three times and the numbers could not
+    // be added up or worked through without repeating them.
+    //
+    // Each bucket now describes what is missing given what is already there:
+    //   no_plant     — filed to a location, needs a plant
+    //   no_location  — attached to a plant, needs a location
+    //   neither      — has nothing
+    if (f.needs === "no_plant" && !(p.location_id && !p.plant_id)) return false;
+    if (f.needs === "no_location" && !(p.plant_id && !p.location_id)) return false;
     if (f.needs === "neither" && (p.plant_id || p.location_id)) return false;
     if (highlightIds && !highlightIds.has(p.id)) return false;
     if (f.photoType === "historical" && p.photo_type !== "historical") return false;
@@ -2758,7 +2768,7 @@ function screenGallery() {
   const f = state.galleryFilters;
   const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
   const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs);
-  const NEEDS_LABELS = { no_plant: "No plant attached", no_location: "No location", neither: "No plant and no location" };
+  const NEEDS_LABELS = { no_plant: "Filed to a location, needs a plant", no_location: "Attached to a plant, needs a location", neither: "Needs a plant and a location" };
   const matches = filteredGalleryPhotos();
 
   const tile = (p) => `

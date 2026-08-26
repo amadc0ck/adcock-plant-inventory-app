@@ -204,6 +204,8 @@ Plants, locations, and photos all support many-to-many **on top of** a fast-path
 
 **Why keep a primary column:** the overwhelming majority have exactly one attachment. A direct FK keeps common-case queries (list cards, filters) join-free. Junction tables are consulted only for secondary "also in / also shows" relationships.
 
+**Deleting a photo** must clear four references first, all hard FKs that block the delete: `plants.primary_photo_id`, `locations.primary_photo_id`, `taxa.primary_photo_id`, plus rows in `photo_plants` and `photo_locations`. `deletePhotosByIds()` is the single path for this — before v1.52.0 the delete cleared only plants and `photo_plants`, so removing a location's hero or a species' cover photo failed outright. `taxa.primary_photo_id` arrived with the species split and was never added until that bug was found.
+
 **Deletion / merge cleanup order** — any function deleting or merging a plant must handle, in order:
 1. `photos.plant_id` — unassign, do not delete the photo
 2. `photo_plants`

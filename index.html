@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.51.0";
+const APP_VERSION = "1.52.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -444,6 +444,7 @@ const state = {
   galleryView: "grid",
   gallerySelectMode: false,
   gallerySelected: new Set(),
+  dupeSelected: new Set(),
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
@@ -3473,33 +3474,53 @@ function modalContent() {
 
   if (type === "duplicatePhotos") {
     const groups = findDuplicatePhotoGroups();
+    const extras = groups.reduce((n, g) => n + g.length - 1, 0);
+    const sel = state.dupeSelected;
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Possible duplicate photos</h3>
-      <p class="subtle" style="margin:0 0 14px;">Same capture time to the second, so almost certainly the same shot filed twice — usually a phone upload and a Google Photos import of the same frame. Check before deleting: a burst can share a second.</p>
+      <p class="subtle" style="margin:0 0 12px;">Same capture time to the second, so almost certainly the same shot filed twice. Check before deleting — a burst can share a second.</p>
       ${groups.length === 0 ? `<p class="subtle">No duplicates found.</p>` : `
+        <div class="row" style="margin-bottom:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="selectDuplicateExtras()">
+            ${extras && sel.size === extras ? "Clear selection" : `Select all ${countLabel(extras, "extra", "extras")}`}
+          </button>
+          <button class="btn btn-danger btn-sm icon-btn" ${sel.size ? "" : "disabled"} onclick="deleteSelectedDuplicates()">
+            ${icon("trash")} Delete ${sel.size}
+          </button>
+        </div>
+        <p class="subtle" style="margin:-6px 0 12px;font-size:11.5px;">Selecting extras keeps the best-filed copy of each — the one attached to a plant, then a location, then carrying notes — and marks the rest.</p>
         <div class="stack">
-          ${groups.map((g) => `
+          ${groups.map((g) => {
+            const keepId = bestCopyOf(g).id;
+            return `
             <div class="surface" style="padding:12px;">
               <div class="mono subtle" style="font-size:11px;margin-bottom:8px;">${fmtDate(g[0].taken_at)} · ${countLabel(g.length, "copy", "copies")}</div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
                 ${g.map((p) => {
                   const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
                   const loc = p.location_id ? locationById(p.location_id) : null;
+                  const picked = sel.has(p.id);
                   return `
                   <div>
-                    <div class="card-media ratio-1x1" style="border-radius:6px;cursor:pointer;" onclick="closeModal();openGalleryLightbox('${p.id}')">${photoImg(p.drive_file_id)}</div>
+                    <div class="card-media ratio-1x1" style="border-radius:6px;cursor:pointer;position:relative;${picked ? "outline:3px solid var(--terracotta);" : ""}"
+                         onclick="toggleDupePhotoSelected('${p.id}')">
+                      ${photoImg(p.drive_file_id)}
+                      <div class="select-check ${picked ? "checked" : ""}" style="top:6px;left:6px;z-index:2;${picked ? "background:var(--terracotta);border-color:var(--terracotta);" : ""}">${picked ? icon("check") : ""}</div>
+                      ${p.id === keepId ? `<span class="pill pill-orange" style="position:absolute;bottom:5px;left:5px;z-index:2;font-size:9.5px;">Best</span>` : ""}
+                    </div>
                     <div style="font-size:10.5px;color:#8AA090;margin-top:4px;line-height:1.35;">
                       ${plant ? escapeHtml(plantDisplayName(plant)) : `<span class="value-blank">No plant</span>`}<br/>
                       ${loc ? escapeHtml(loc.name) : `<span class="value-blank">No location</span>`}
                     </div>
-                    <button class="btn-ghost icon-btn" style="padding:4px 0 0;font-size:11px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>
+                    <button class="btn-ghost" style="padding:3px 0 0;font-size:10.5px;" onclick="event.stopPropagation();closeModal();openGalleryLightbox('${p.id}')">View</button>
                   </div>`;
                 }).join("")}
               </div>
-            </div>`).join("")}
+            </div>`;
+          }).join("")}
         </div>`}
-      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
+      <button class="btn-ghost" style="margin-top:16px;" onclick="state.dupeSelected=new Set();closeModal()">Done</button>`;
   }
 
   if (type === "duplicatePlants") {
@@ -4315,17 +4336,72 @@ async function attachPhotoToExistingPlant(photoId, plantId) {
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
+// Four things reference a photo, and every one is a hard FK that blocks the
+// delete. The single-delete path previously cleared only two of them — plants
+// and photo_plants — so deleting a location's hero or a species' cover photo
+// failed outright. taxa.primary_photo_id arrived with the species split and was
+// never added here.
+//
+// Batched: one request per reference table regardless of how many photos, which
+// matters when clearing dozens of duplicates at once.
+async function deletePhotosByIds(ids) {
+  if (!ids.length) return;
+  const list = `(${ids.join(",")})`;
+  await restPatch("plants", `primary_photo_id=in.${list}`, { primary_photo_id: null });
+  await restPatch("locations", `primary_photo_id=in.${list}`, { primary_photo_id: null });
+  await restPatch("taxa", `primary_photo_id=in.${list}`, { primary_photo_id: null });
+  await restDelete("photo_plants", `photo_id=in.${list}`);
+  await restDelete("photo_locations", `photo_id=in.${list}`);
+  await restDelete("photos", `id=in.${list}`);
+}
+
 async function deletePhoto(photoId) {
   if (!confirm("Delete this photo? The record is removed from the app, but the file stays in your Google Drive folder.")) return;
   try {
-    // Clear it as any plant's profile picture first (FK would otherwise block deletion)
-    await restPatch("plants", `primary_photo_id=eq.${photoId}`, { primary_photo_id: null });
-    // Remove any multi-plant tags pointing at this photo
-    await restDelete("photo_plants", `photo_id=eq.${photoId}`);
-    await restDelete("photos", `id=eq.${photoId}`);
+    await deletePhotosByIds([photoId]);
     toast("Photo deleted");
     await loadAll();
     maybeResumeLightbox();
+  } catch (e) { toast(e.message, true); }
+}
+
+// Of a set of identical photos, the one worth keeping is the one already filed:
+// attached to a plant, then to a location, then carrying notes. Ties break to
+// the earliest upload, which is the copy other records are most likely to
+// reference. Everything else in the group becomes a candidate for deletion.
+function bestCopyOf(group) {
+  return group.slice().sort((a, b) => {
+    const score = (p) => (p.plant_id ? 4 : 0) + (p.location_id ? 2 : 0) + (p.notes ? 1 : 0);
+    return score(b) - score(a) || new Date(a.uploaded_at || 0) - new Date(b.uploaded_at || 0);
+  })[0];
+}
+
+function toggleDupePhotoSelected(id) {
+  if (state.dupeSelected.has(id)) state.dupeSelected.delete(id);
+  else state.dupeSelected.add(id);
+  render();
+}
+
+// Preselects every copy except the best one in each group — the usual intent,
+// and the tedious part to do by hand across many groups.
+function selectDuplicateExtras() {
+  const groups = findDuplicatePhotoGroups();
+  const keep = new Set(groups.map((g) => bestCopyOf(g).id));
+  const extras = groups.flatMap((g) => g.map((p) => p.id)).filter((id) => !keep.has(id));
+  const already = extras.length && extras.every((id) => state.dupeSelected.has(id));
+  state.dupeSelected = already ? new Set() : new Set(extras);
+  render();
+}
+
+async function deleteSelectedDuplicates() {
+  const ids = Array.from(state.dupeSelected);
+  if (!ids.length) { toast("Nothing selected", true); return; }
+  if (!confirm(`Delete ${ids.length} photo${ids.length === 1 ? "" : "s"}? The records go, the files stay in your Google Drive folder.`)) return;
+  try {
+    await deletePhotosByIds(ids);
+    toast(`Deleted ${countLabel(ids.length, "photo", "photos")}`);
+    state.dupeSelected = new Set();
+    await loadAll();
   } catch (e) { toast(e.message, true); }
 }
 // Removes just this plant's tag from a photo it doesn't primarily own —

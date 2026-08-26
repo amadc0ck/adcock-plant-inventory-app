@@ -371,6 +371,14 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.52.0
+
+**Batch-delete duplicate photos, and a latent delete bug.** Schema: none.
+
+- **Multi-select in the duplicates report**, with **Select all extras** preselecting every copy except the best-filed one in each group — attached to a plant, then a location, then carrying notes, ties breaking to the earliest upload. That copy is badged "Best". Individual toggles still work, including deselecting the best one if the auto-pick is wrong.
+- **Delete runs as one request per reference table**, not per photo, so clearing dozens of duplicates is a handful of requests rather than hundreds.
+- **Fixed a latent bug found while doing it.** `deletePhoto()` cleared only `plants.primary_photo_id` and `photo_plants`. It never cleared `locations.primary_photo_id`, `photo_locations`, or `taxa.primary_photo_id` — the last added with the species split and never wired in. Deleting a location's hero or a species' cover photo would have failed on a foreign key. Both single and batch delete now share `deletePhotosByIds()`. Recorded in `REFERENCE.md` §6.
+
 ### v1.51.0
 
 **Google Photos imports survive a refresh.** Schema: none · Touched the import loop, `boot()`, `taskBanner()`.

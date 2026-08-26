@@ -227,6 +227,24 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.73.0
+
+**LOC-9 and INB-1 — navigating 157 locations, and the Inbox at 1,929 cards.** Schema: none.
+
+**A real location picker.** One flat list of 157 rows indented with em-dashes, 92 of them near-identical buckets, replaced by a shared `locationPicker()` used by Add location, Move, and bulk assign:
+
+- **Recently used first.** Filing runs in streaks — twenty photos off one shelf, then twenty off the next — so the last six places used sit at the top. Kept in `localStorage`, tolerant of a deleted location or unreadable storage.
+- **One level at a time**, with a breadcrumb. The top level is 2 rows, not 46; the 42 buckets appear only when asked for. A parent row picks on tap and descends on its chevron, so a location that holds things is still a valid target — plus an explicit *"File into X itself"*.
+- **Counts on every row**, because "Bucket 07" identifies nothing on its own.
+- **Search flattens across all levels** and shows each hit's path.
+- **Archived locations are excluded** — the flag means "no longer somewhere you file things".
+
+**The Inbox card.** Six same-weight buttons wrapping to two rows, on 1,929 cards. The two that actually move a photo out of the Inbox — **Plant** and **Location** — are promoted; Identify, Ask Claude, New and Delete become icons pushed to the right.
+
+**And a jump list under each card**: the locations she filed to most recently, one tap each, plus the archive shortcuts that were already there. Recents come from the same store the picker writes, so using the full picker teaches the jump list what to offer.
+
+**The Inbox controls are sticky**, matching the Gallery.
+
 ### v1.72.1
 
 **Leftovers from the v1.56.0 photo-type rename.** Schema: see below — a DB constraint was never updated.

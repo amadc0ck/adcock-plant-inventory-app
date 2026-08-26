@@ -466,7 +466,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.72.1";
+const APP_VERSION = "1.73.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -519,6 +519,8 @@ const state = {
   dupeDelete: null,
   editPhotoPlant: undefined,   // staged plant choice inside the edit-photo form
   editPhotoPickerOpen: false,
+  locPickerParent: null,   // where the location picker is currently standing
+  locPickerSearch: "",
   batchPlant: "",
   batchPickerOpen: false,
   assignSelected: new Set(),
@@ -1396,6 +1398,101 @@ function locationPath(loc) {
 }
 
 // Flat, depth-aware list for building <select> options that show hierarchy via indentation
+// LOC-9. 157 locations in one flat list, indented with em-dashes, is a scroll
+// hunt — and 92 of them are near-identical buckets. Three things fix it, and
+// they compose: the places she just used, a level at a time instead of all of
+// them, and counts so two buckets are distinguishable.
+const RECENT_LOCATIONS_KEY = "abg_recent_locations";
+const RECENT_LOCATIONS_MAX = 6;
+function recentLocationIds() {
+  try {
+    const ids = JSON.parse(localStorage.getItem(RECENT_LOCATIONS_KEY) || "[]");
+    return Array.isArray(ids) ? ids.filter((id) => locationById(id)) : [];
+  } catch (e) { return []; }
+}
+function noteRecentLocation(id) {
+  if (!id) return;
+  try {
+    const next = [id, ...recentLocationIds().filter((x) => x !== id)].slice(0, RECENT_LOCATIONS_MAX);
+    localStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(next));
+  } catch (e) {}
+}
+
+// Archived locations are excluded: the flag means "no longer somewhere you file
+// things". They stay reachable from the Locations tab, just not offered here.
+function pickableChildren(parentId) {
+  return state.locations
+    .filter((l) => (l.parent_location_id || null) === (parentId || null) && !l.archived)
+    .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
+}
+
+function locPickerGo(id) { state.locPickerParent = id || null; render(); }
+function locPickerReset() { state.locPickerParent = null; state.locPickerSearch = ""; }
+
+// onPick is a JS snippet with {id} substituted, matching plantPicker's contract.
+function locationPicker(onPick, opts) {
+  const o = opts || {};
+  const q = (state.locPickerSearch || "").trim().toLowerCase();
+  const pick = (l) => onPick.replace(/\{id\}/g, l.id);
+  const row = (l, showPath) => {
+    const kids = pickableChildren(l.id);
+    const plants = aggregatePlantCount(l.id);
+    const photos = aggregatePhotoCount(l.id);
+    const parent = l.parent_location_id ? locationById(l.parent_location_id) : null;
+    return `
+      <div class="tag-card plant-list-card" style="padding:9px 12px;gap:10px;">
+        <button class="btn-ghost" style="flex:1;min-width:0;text-align:left;padding:0;color:inherit;"
+                onclick="noteRecentLocation('${l.id}');${pick(l)}">
+          <div style="font-size:13.5px;font-weight:500;">${escapeHtml(l.name)}</div>
+          ${showPath && parent ? `<div style="font-size:11px;color:var(--ink-soft);">${escapeHtml(locationPath(parent))}</div>` : ""}
+          <div class="mono" style="font-size:10.5px;color:var(--moss-dim);margin-top:2px;">${locationTypeLabel(l.type)} · ${countLabel(plants, "plant", "plants")} · ${countLabel(photos, "photo", "photos")}</div>
+        </button>
+        ${kids.length ? `
+          <button class="btn-ghost" style="padding:0 2px;flex-shrink:0;font-size:11px;color:var(--blue);display:flex;align-items:center;gap:3px;"
+                  title="Open ${escapeHtml(l.name)}" onclick="locPickerGo('${l.id}')">${kids.length} ${icon("chevronRight")}</button>` : ""}
+      </div>`;
+  };
+
+  if (q) {
+    const hits = state.locations
+      .filter((l) => !l.archived && (l.name.toLowerCase().includes(q) || locationPath(l).toLowerCase().includes(q)))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 40);
+    return `
+      <input class="search-input" id="loc-picker-search" placeholder="Search locations…" style="margin-bottom:10px;"
+             value="${escapeHtml(state.locPickerSearch || "")}" oninput="state.locPickerSearch=this.value;render()" />
+      <div class="subtle" style="font-size:11.5px;margin-bottom:8px;">${countLabel(hits.length, "match", "matches")}${hits.length === 40 ? " (first 40)" : ""}</div>
+      <div class="stack" style="max-height:46vh;overflow-y:auto;">
+        ${hits.length ? hits.map((l) => row(l, true)).join("") : `<p class="subtle">No locations match.</p>`}
+      </div>`;
+  }
+
+  const here = state.locPickerParent ? locationById(state.locPickerParent) : null;
+  const kids = pickableChildren(state.locPickerParent);
+  const recents = state.locPickerParent ? [] : recentLocationIds().map(locationById).filter(Boolean);
+  const crumbs = [];
+  for (let n = here; n; n = n.parent_location_id ? locationById(n.parent_location_id) : null) crumbs.unshift(n);
+
+  return `
+    <input class="search-input" id="loc-picker-search" placeholder="Search locations…" style="margin-bottom:10px;"
+           value="${escapeHtml(state.locPickerSearch || "")}" oninput="state.locPickerSearch=this.value;render()" />
+    <div class="wrap-gap" style="margin-bottom:10px;font-size:12px;">
+      <button class="btn-ghost" style="padding:0;font-size:12px;${here ? "color:var(--blue);" : "font-weight:600;"}" onclick="locPickerGo('')">All locations</button>
+      ${crumbs.map((c, i) => `<span style="color:var(--moss-dim);">/</span>
+        <button class="btn-ghost" style="padding:0;font-size:12px;${i === crumbs.length - 1 ? "font-weight:600;" : "color:var(--blue);"}" onclick="locPickerGo('${c.id}')">${escapeHtml(c.name)}</button>`).join("")}
+    </div>
+    ${here && !o.hideSelf ? `
+      <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;margin-bottom:10px;"
+              onclick="noteRecentLocation('${here.id}');${pick(here)}">${icon("pin")} File into ${escapeHtml(here.name)} itself</button>` : ""}
+    ${recents.length ? `
+      <div class="subtle" style="font-size:11px;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">Recently used</div>
+      <div class="stack" style="margin-bottom:14px;">${recents.map((l) => row(l, true)).join("")}</div>
+      <div class="subtle" style="font-size:11px;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">All locations</div>` : ""}
+    <div class="stack" style="max-height:42vh;overflow-y:auto;">
+      ${kids.length ? kids.map((l) => row(l, false)).join("") : `<p class="subtle">Nothing inside ${here ? escapeHtml(here.name) : "here"}.</p>`}
+    </div>`;
+}
+
 function locationOptionList() {
   const byParent = {};
   state.locations.forEach((l) => {
@@ -1924,6 +2021,7 @@ function openModal(type, data = {}) {
   // Picker filters are per-open, not sticky: a stale species filter from a
   // previous modal reads as "no plants match".
   state.pickerSearch = ""; state.pickerTaxon = ""; state.pickerLocation = "";
+  locPickerReset();
   if (type === "galleryBatch") { state.batchPlant = ""; state.batchPickerOpen = false; }
   if (type === "editPhoto") {
     const ph = state.photos.find((x) => x.id === data.photoId);
@@ -2258,6 +2356,7 @@ function screenInbox() {
       <p class="subtle" style="margin-bottom:12px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Photos land here first — confirm or attach them to a plant."}</p>
 
       ${total === 0 ? "" : `
+        <div class="sticky-controls">
         <div class="wrap-gap" style="margin-bottom:12px;align-items:center;">
           <select style="width:auto;font-size:13px;padding:7px 9px;" onchange="state.inboxSort=this.value;render()">
             <option value="newest" ${state.inboxSort === "newest" ? "selected" : ""}>Newest first</option>
@@ -2282,6 +2381,7 @@ function screenInbox() {
             ${[20, 50, 100, 250].map((n) => `
               <button class="btn-ghost" style="padding:0 2px;font-size:12px;${pageSize === n ? "color:var(--orange);font-weight:700;" : ""}" onclick="setInboxPageSize(${n})">${n}</button>`).join("")}
           </span>
+        </div>
         </div>`}
 
       ${unassigned.length === 0 ? `
@@ -2332,24 +2432,43 @@ function photoRow(p, selectMode) {
       <div style="font-size:13.5px;margin-top:2px;color:var(--ink-soft);cursor:pointer;" onclick="openModal('editPhotoNote',{photoId:'${p.id}'})">${p.notes ? escapeHtml(p.notes) : "No notes — tap to add"}</div>
       ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
       ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
+      ${/* INB-1. Six same-weight buttons on every card, wrapping to two rows,
+           on 1,929 cards. The two that actually move a photo out of the Inbox
+           — a plant or a location — are promoted; identification and the rest
+           become icons. And the location one is a jump list of the places she
+           just used, because filing runs in streaks: twenty photos off the
+           same shelf, then twenty off the next. */""}
       ${!selectMode ? `
-      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px;">
-        ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("photoQuestion")} ${isIdentifying ? "…" : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
-        ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream icon-btn" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : icon("photoQuestion")} ${isIdentifyingClaude ? "…" : "Ask Claude"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${claudeSuggestion.id}')">Dismiss Claude</button>`}
-        <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("link")} Plant</button>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center;">
+        <button class="btn btn-accent btn-sm icon-btn" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("link")} Plant</button>
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
-        <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")} New</button>
-        <button class="btn btn-danger btn-sm icon-btn" onclick="deletePhoto('${p.id}')" aria-label="Delete">${icon("trash")}</button>
+        <div style="display:flex;gap:12px;margin-left:auto;align-items:center;">
+          ${!plantnetSuggestion
+            ? `<button class="btn-ghost on-cream-icon" ${isIdentifying ? "disabled" : ""} title="Identify with Pl@ntNet" onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")}</button>`
+            : `<button class="btn-ghost" style="padding:0;font-size:11.5px;" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
+          ${!claudeSuggestion
+            ? `<button class="btn-ghost on-cream-icon" ${isIdentifyingClaude ? "disabled" : ""} title="Ask Claude what this is" onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : icon("photoQuestion")}</button>`
+            : `<button class="btn-ghost" style="padding:0;font-size:11.5px;" onclick="dismissIdentification('${claudeSuggestion.id}')">Dismiss Claude</button>`}
+          <button class="btn-ghost on-cream-icon" title="Create a new plant from this photo" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")}</button>
+          <button class="btn-ghost on-cream-icon" style="color:var(--terracotta);" title="Delete this photo" onclick="deletePhoto('${p.id}')">${icon("trash")}</button>
+        </div>
       </div>
       ${(() => {
-        // Offered only when archive locations exist, since it is meaningless
-        // otherwise. Filing a photo to a former home is what makes it archival.
-        const archives = state.locations.filter((l) => l.gallery_row === "archives");
-        if (!archives.length) return "";
-        return `<div class="wrap-gap" style="margin-top:8px;">
-          <span class="subtle" style="font-size:11.5px;">From a former home:</span>
-          ${archives.slice(0, 4).map((l) => `<button class="btn-ghost" style="font-size:11.5px;padding:0;" onclick="fileToArchiveLocation('${p.id}','${l.id}')">${escapeHtml(l.name)}</button>`).join("")}
-        </div>`;
+        // The jump list: places she filed to most recently, plus the archives,
+        // one tap each. Recents come from the shared location picker, so using
+        // the full picker teaches this list what to offer.
+        const recents = recentLocationIds().map(locationById).filter(Boolean);
+        const archives = state.locations.filter((l) => l.gallery_row === "archives" && !l.archived);
+        const chip = (l, fn) => `<button class="btn-ghost" style="font-size:11.5px;padding:3px 9px;border:1px solid rgba(37,41,37,0.18);border-radius:20px;" onclick="${fn}">${escapeHtml(l.name)}</button>`;
+        return `
+          ${recents.length ? `<div class="wrap-gap" style="margin-top:9px;align-items:center;">
+            <span class="subtle" style="font-size:11px;letter-spacing:0.3px;text-transform:uppercase;">Recent</span>
+            ${recents.slice(0, 5).map((l) => chip(l, `attachPhotoToLocation('${p.id}','${l.id}')`)).join("")}
+          </div>` : ""}
+          ${archives.length ? `<div class="wrap-gap" style="margin-top:7px;align-items:center;">
+            <span class="subtle" style="font-size:11px;letter-spacing:0.3px;text-transform:uppercase;">Former home</span>
+            ${archives.slice(0, 5).map((l) => chip(l, `fileToArchiveLocation('${p.id}','${l.id}')`)).join("")}
+          </div>` : ""}`;
       })()}` : ""}
     </div>
   </div>`;
@@ -4050,17 +4169,11 @@ function modalContent() {
   }
 
   if (type === "bulkAttachLocation") {
-    const q = (state.attachLocationSearch || "").toLowerCase();
-    const candidates = locationOptionList().filter((o) => !q || o.label.toLowerCase().includes(q));
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location to ${state.inboxSelected.size} photos</h3>
       <p class="subtle" style="margin:0 0 14px;">All selected photos will move out of the Inbox onto that container's page.</p>
-      <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" id="search-attach-location" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
-      <div class="stack" style="max-height:44vh;overflow-y:auto;">
-        ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
-          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="bulkAttachToLocation('${o.id}')">${escapeHtml(o.label)}</button>`).join("")}
-      </div>
+      ${locationPicker("bulkAttachToLocation('{id}')")}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
@@ -4143,8 +4256,6 @@ function modalContent() {
   }
 
   if (type === "attachLocation") {
-    const q = (state.attachLocationSearch || "").toLowerCase();
-    const candidates = locationOptionList().filter((o) => !q || o.label.toLowerCase().includes(q));
     return `
       <div class="modal-handle"></div>
       ${(() => {
@@ -4158,11 +4269,7 @@ function modalContent() {
           ? `Currently filed under <strong>${escapeHtml(from.name)}</strong>. Choosing another moves it — any plant it is attached to is unaffected.`
           : "Sets this photo's primary container. You can still identify or tag plants from it afterward."}</p>`;
       })()}
-      <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" id="search-attach-location" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
-      <div class="stack" style="max-height:44vh;overflow-y:auto;">
-        ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
-          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="attachPhotoToLocation('${data.photoId}','${o.id}')">${escapeHtml(o.label)}</button>`).join("")}
-      </div>
+      ${locationPicker(`attachPhotoToLocation('${data.photoId}','{id}')`)}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 

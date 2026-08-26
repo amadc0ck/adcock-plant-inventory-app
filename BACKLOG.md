@@ -115,17 +115,6 @@ order by location_count desc;
 ```
 
 
-### LOCP-1 — Act on photos from the Location page
-**Status:** ready · **Effort:** medium · **Schema:** none · **Touches:** `screenLocationDetail`
-
-From a location's photos, without navigating away:
-- **Add a plant from this photo** — create a specimen already placed in this location.
-- **Attach or tag to a different plant.**
-- **Unattach.**
-
-Not tagging other *locations* — a location is singular, holding multiple specimens, so cross-tagging containers has no meaning. `photo_locations` stays unused for this.
-
-
 ### PD-4 — Health status needs an urgent tier
 **Status:** ready · **Effort:** low · **Schema:** none (text column) · **Touches:** `HEALTH_LABELS`, `plantRow`, `screenReports`
 
@@ -237,6 +226,17 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 ---
 
 ## Completed
+
+### v1.67.0
+
+**LOCP-1/LOCP-2 — the Location page's photo actions.** Schema: none.
+
+- **Six same-weight buttons became one primary and a ghost row**, matching the specimen timeline so a photo offers the same vocabulary wherever it is seen.
+- **"Add to plant here" and "Attach to any plant" were the same verb at two scopes** — that is a filter, not two buttons. One **Attach to a plant** now opens the PL-2 picker pre-narrowed to this location, which she can widen. The `attachToLocalPlant` modal is deleted.
+- **Move** — change which location a photo is filed under, from the Location page. Previously the only options were unfile or navigate elsewhere. It reuses the `attachLocation` modal, whose copy now adapts: "Add location" with no location, "Move this photo" with one, naming where it currently sits.
+- **Edit**, **Set as cover** and **Delete** added — a photo should be fully actionable wherever it appears.
+- **"Tag other containers" → "Other containers"**, and **"Unattach from here" → "Unfile"**.
+- **"New plant from this photo" only appears where plants are expected** (v1.66.0's predicate). A specimen lives in one place; offering to create one at an archive would record a plant living in a former home.
 
 ### v1.66.0
 

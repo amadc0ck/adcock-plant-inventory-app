@@ -440,7 +440,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.66.0";
+const APP_VERSION = "1.67.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3040,14 +3040,29 @@ function screenLocationDetail() {
                   ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
                 </div>
               </div>
-              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
-                ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
-                ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm btn-on-cream" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : "Ask Claude"}</button>` : `<button class="btn btn-secondary btn-sm btn-on-cream" onclick="dismissIdentification('${claudeSuggestion.id}')">Dismiss Claude</button>`}
-                <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attachToLocalPlant',{photoId:'${p.id}', locationId:'${l.id}'})">Add to plant here</button>
-                <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('attach',{photoId:'${p.id}'})">Attach to any plant</button>
-                <button class="btn btn-secondary btn-sm btn-on-cream" onclick="openModal('tagLocations',{photoId:'${p.id}'})">Tag other containers</button>
-                <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
-                <button class="btn btn-danger btn-sm" onclick="removePhotoFromLocation('${p.id}','${l.id}')">${p.location_id === l.id ? "Unattach from here" : "Remove tag"}</button>
+              ${/* LOCP-2. Was six same-weight buttons whose labels did not say
+                   what they did — two of them the same verb at different
+                   scopes. Now: one primary action, then the same compact ghost
+                   row the specimen timeline uses, so a photo offers the same
+                   vocabulary wherever it is seen. */""}
+              ${locationHoldsPlants(l) ? `
+                <div style="margin-top:10px;">
+                  <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
+                </div>` : ""}
+              <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;">
+                ${!plantnetSuggestion
+                  ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search") + " Identify"}</button>`
+                  : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="dismissIdentification('${plantnetSuggestion.id}')">${icon("close")} Dismiss Pl@ntNet</button>`}
+                ${!claudeSuggestion
+                  ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : icon("photoQuestion") + " Ask Claude"}</button>`
+                  : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="dismissIdentification('${claudeSuggestion.id}')">${icon("close")} Dismiss Claude</button>`}
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attach',{photoId:'${p.id}', locationId:'${l.id}'})">${icon("tag")} Attach to a plant</button>
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Move</button>
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagLocations',{photoId:'${p.id}'})">${icon("map")} Other containers</button>
+                ${l.primary_photo_id !== p.id ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setLocationPhoto('${l.id}','${p.id}')">${icon("photoStar")} Set as cover</button>` : ""}
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="removePhotoFromLocation('${p.id}','${l.id}')">${icon("link")} ${p.location_id === l.id ? "Unfile" : "Remove tag"}</button>
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>
               </div>
             </div>`;
           }).join("")}
@@ -3738,9 +3753,16 @@ function modalContent() {
   const { type, data } = state.modal;
 
   if (type === "attach") {
+    // LOCP-2. "Add to plant here" and "Attach to any plant" were the same verb
+    // at two scopes, which is a filter, not two buttons. Opened from a
+    // location it starts narrowed to that location and she can widen it.
+    const here = data.locationId ? locationById(data.locationId) : null;
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Attach to plant</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach to a plant</h3>
+      <p class="subtle" style="margin:0 0 14px;">${here
+        ? `Showing plants in <strong>${escapeHtml(here.name)}</strong> — switch the location filter to reach any plant in the collection.`
+        : "This photo becomes that plant's, and appears on its timeline."}</p>
       ${plantPicker(`attachPhotoToPlant('${data.photoId}','{id}')`)}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
@@ -3807,23 +3829,6 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Close</button>`;
   }
 
-  if (type === "attachToLocalPlant") {
-    const photo = state.photos.find((p) => p.id === data.photoId);
-    const alreadyTaggedIds = new Set(state.photoPlants.filter((pp) => pp.photo_id === data.photoId).map((pp) => pp.plant_id));
-    const localPlants = plantsAtLocation(data.locationId).filter((pl) => pl.id !== photo?.plant_id && !alreadyTaggedIds.has(pl.id));
-    return `
-      <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add to a plant here</h3>
-      <p class="subtle" style="margin:0 0 14px;">Tags this photo to a plant already in this container — doesn't affect the plant's other photos.</p>
-      ${localPlants.length === 0 ? `<p class="subtle">No other plants assigned to this location to add. Use "New plant from this photo" instead.</p>` : `
-        <div class="stack">
-          ${localPlants.map((pl) => `
-            <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="attachPhotoToExistingPlant('${data.photoId}','${pl.id}')">
-              <span class="mono" style="opacity:0.6;margin-right:6px;">${pl.accession_number}</span>${escapeHtml(plantDisplayName(pl))}
-            </button>`).join("")}
-        </div>`}
-      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
-  }
 
   if (type === "tagLocations") {
     const photo = state.photos.find((p) => p.id === data.photoId);
@@ -3953,8 +3958,17 @@ function modalContent() {
     const candidates = locationOptionList().filter((o) => !q || o.label.toLowerCase().includes(q));
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add Location</h3>
-      <p class="subtle" style="margin:0 0 14px;">Sets this photo's primary container. You can still identify or tag plants from it afterward.</p>
+      ${(() => {
+        // Same action either way — set photos.location_id — but it reads very
+        // differently depending on whether the photo already has one.
+        const ph = state.photos.find((x) => x.id === data.photoId);
+        const from = ph && ph.location_id ? locationById(ph.location_id) : null;
+        return `
+        <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">${from ? "Move this photo" : "Add location"}</h3>
+        <p class="subtle" style="margin:0 0 14px;">${from
+          ? `Currently filed under <strong>${escapeHtml(from.name)}</strong>. Choosing another moves it — any plant it is attached to is unaffected.`
+          : "Sets this photo's primary container. You can still identify or tag plants from it afterward."}</p>`;
+      })()}
       <input placeholder="Search locations…" value="${escapeHtml(state.attachLocationSearch || "")}" id="search-attach-location" oninput="state.attachLocationSearch=this.value;render()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `

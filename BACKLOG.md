@@ -177,6 +177,13 @@ When a specimen is created in a location that already holds photos with no plant
 
 An area with children shows its own photo or nothing. It should fall back to a sub-area's photo — `locationCoverPhoto()` already walks descendants for this, so the card mostly needs to use it.
 
+### EXIF-1 — Parser ignores DateTime in IFD0
+**Status:** ready · **Effort:** trivial · **Touches:** `extractExifDate`
+
+`extractExifDate()` checks for tag `0x0132` (`DateTime`) but only **inside the ExifIFD**, and by spec that tag lives in IFD0. The branch is unreachable, confirmed by test: a JPEG carrying only `DateTime` in IFD0 returns null.
+
+Phone photos are unaffected — they carry `DateTimeOriginal` (`0x9003`) in the ExifIFD. Scans and some edited images are not. Fix is to also scan IFD0's entries for `0x0132` before giving up.
+
 ### NAME-1 — Normalize botanical names into structured parts
 **Status:** ready · **Effort:** low–medium · **Schema:** none · **Depends on:** SPECIES-1
 
@@ -372,6 +379,20 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 ---
 
 ## Completed
+
+### v1.45.2 / v1.46.0
+
+**EXIF capture dates were never being stored.** Edge Function fix + backfill.
+
+556 photos, **zero** with a capture date. The browser had always extracted `DateTimeOriginal` and appended `taken_at` to the upload form; `upload-photo` read only `photo`, `plant_id`, `location_id` and `notes` and never inserted it. **The bug was entirely server-side** — the client parser was verified correct first, against synthetic JPEGs covering little-endian, big-endian, no-EXIF, PNG and HEIC.
+
+- `upload-photo` now reads and stores `taken_at`. Deployed as version 11. Confirmed working: a photo uploaded after the fix carries a capture date three days before its upload.
+- **Settings → Photo capture dates** backfills the rest. Their EXIF was never lost — it is still inside the JPEGs on Drive — so it re-downloads each and parses it the same way the browser does. Idempotent (only null `taken_at`), cancellable, four at a time since each is a Drive fetch through an Edge Function. A fetch failure or a non-JPEG is counted and skipped rather than aborting the run.
+- The Edge Functions directory is now **under version control**, which CLAUDE.md and REFERENCE.md both required before any Edge Function work. `secrets/`, `response*.json` and `supabase/.temp/` excluded — the last caught during review, since `pooler-url` is a Postgres connection string.
+
+Matters for the Gallery: **Recently Photographed** filters on `photoDate()` with a 30-day window, so until the backfill runs it is really "recently uploaded" for every pre-existing photo.
+
+Filed **EXIF-1** for a real parser limitation found while testing.
 
 ### v1.45.1
 

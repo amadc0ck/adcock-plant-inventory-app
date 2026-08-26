@@ -231,7 +231,13 @@ Both aggregate helpers **dedupe by id**. A photo tagged onto a parent and a chil
 
 `photos.taken_at` holds real capture date when available; `uploaded_at` is always the fallback.
 
-`extractExifDate()` is a hand-rolled vanilla-JS parser: reads the first 128KB of a JPEG client-side, walks the APP1/Exif segment, extracts `DateTimeOriginal` (tag `0x9003`) or `DateTime` (`0x0132`). No library, per the no-build-step constraint. **JPEG only** — PNGs and screenshots silently fall back to upload date.
+**The Edge Function silently dropped this for months (fixed v1.45.2).** `upload-photo` read only `photo`, `plant_id`, `location_id` and `notes` from the form — the browser had always sent `taken_at`, and the insert never included it. Result: 556 photos, **zero** with a capture date, every one falling back to upload date. The browser parser was correct throughout; the bug was entirely server-side. Lesson: when a client-side value never appears in the database, check that the receiving end reads it before debugging the sender.
+
+Photos predating the fix are repaired by **Settings → Photo capture dates**, which re-downloads each file from Drive and runs the same parser. Idempotent — it only touches rows where `taken_at` is null.
+
+`extractExifDate()` is a hand-rolled vanilla-JS parser: reads the first 128KB of a JPEG client-side, walks the APP1/Exif segment, extracts `DateTimeOriginal` (tag `0x9003`) or `DateTime` (`0x0132`). No library, per the no-build-step constraint. **JPEG only** — PNGs, screenshots and HEIC silently fall back to upload date.
+
+**Known limitation:** the parser looks for `DateTime` (`0x0132`) only inside the ExifIFD, but by spec that tag lives in IFD0, so that branch never fires. Phone photos carry `DateTimeOriginal` (`0x9003`) in the ExifIFD and are unaffected; scanned or heavily edited images may not be.
 
 `photoDate(p)` (`p.taken_at || p.uploaded_at`) is used everywhere a photo date is displayed or sorted, instead of raw `uploaded_at`.
 

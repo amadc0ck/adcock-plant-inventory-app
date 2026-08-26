@@ -372,7 +372,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.45.1";
+const APP_VERSION = "1.46.0";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -404,6 +404,7 @@ const state = {
   careNotes: [],
   taxa: [],
   listOptions: [],
+  backfill: null,
   currentTaxonId: null,
   taxaSearch: "",
   inboxLimit: 20,
@@ -2575,6 +2576,25 @@ function screenSettings() {
         </p>
       </div>
       <div class="divider"></div>
+      ${(() => {
+        const missing = state.photos.filter((p) => !p.taken_at && p.drive_file_id).length;
+        const b = state.backfill;
+        return `
+        <div class="surface" style="padding:16px;">
+          <div style="font-weight:600;font-size:14.5px;">Photo capture dates</div>
+          <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
+            Photos uploaded before the capture date was being stored show their upload date instead. Their EXIF is still intact in Drive — this reads it back.
+          </p>
+          ${b ? `
+            <div class="mono" style="font-size:12px;">${b.done} of ${b.total} · ${b.found} dated${b.failed ? ` · ${b.failed} unreadable` : ""}</div>
+            <button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="cancelBackfill()">Stop</button>`
+          : missing === 0 ? `<p class="subtle" style="margin:0;">Every photo has a capture date.</p>`
+          : `
+            <div class="mono subtle" style="font-size:12px;">${countLabel(missing, "photo", "photos")} without one</div>
+            <button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="backfillPhotoDates()">Read dates from Drive</button>`}
+        </div>
+        <div class="divider"></div>`;
+      })()}
       <div class="surface" style="padding:16px;">
         <div style="font-weight:600;font-size:14.5px;">Dropdown lists</div>
         <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
@@ -3971,6 +3991,65 @@ async function saveListLabels(listName) {
     toast(changed ? `Saved ${countLabel(changed, "label", "labels")}` : "Nothing changed");
     await loadAll();
   } catch (e) { toast(e.message, true); }
+}
+
+// Backfills taken_at for photos uploaded before the Edge Function was fixed to
+// store it (v1.45.2). Their EXIF was never lost — it is still inside the JPEG
+// on Drive — so this re-reads each file and parses the same way the browser
+// does at upload time.
+//
+// Idempotent: only touches rows where taken_at is null, so it can be stopped
+// and re-run. Concurrency is deliberately low; every photo is a Drive fetch
+// through an Edge Function.
+async function backfillPhotoDates() {
+  if (state.backfill?.running) return;
+  const pending = state.photos.filter((p) => !p.taken_at && p.drive_file_id);
+  if (!pending.length) { toast("Every photo already has a capture date"); return; }
+  if (!confirm(`Read EXIF dates for ${pending.length} photos? This re-downloads each one from Drive and may take a few minutes. You can stop it at any point.`)) return;
+
+  state.backfill = { running: true, done: 0, found: 0, failed: 0, total: pending.length, cancel: false };
+  render();
+
+  const CONCURRENCY = 4;
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < pending.length && !state.backfill.cancel) {
+      const photo = pending[cursor++];
+      try {
+        const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/get-photo?id=${encodeURIComponent(photo.drive_file_id)}`, { headers: apiHeaders() });
+        if (!res.ok) throw new Error("fetch failed");
+        const blob = await res.blob();
+        // get-photo does not always report image/jpeg, and extractExifDate
+        // refuses anything else. Forcing the type is safe because the parser
+        // still verifies the JPEG SOI marker and returns null for non-JPEGs.
+        const taken = await extractExifDate({ type: "image/jpeg", slice: (a, b) => blob.slice(a, b) });
+        if (taken) {
+          await restPatch("photos", `id=eq.${photo.id}`, { taken_at: taken });
+          state.backfill.found++;
+        }
+      } catch (e) {
+        state.backfill.failed++;
+      }
+      state.backfill.done++;
+      if (state.backfill.done % 5 === 0) debouncedRender();
+    }
+  };
+
+  try {
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    const { found, done, failed, cancel } = state.backfill;
+    toast(`${cancel ? "Stopped" : "Done"} — ${found} of ${done} had a capture date${failed ? `, ${failed} could not be read` : ""}`);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    state.backfill = null;
+    await loadAll();
+  }
+}
+
+function cancelBackfill() {
+  if (state.backfill) { state.backfill.cancel = true; toast("Stopping after the photos in flight…"); }
 }
 
 async function setTaxonPhoto(taxonId, photoId) {

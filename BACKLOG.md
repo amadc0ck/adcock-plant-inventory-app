@@ -261,16 +261,6 @@ One-line change: route it through `countLabel()`. Deliberately deferred out of L
 ---
 
 
-### ADM-2 — `plant_location_history` is missing from the backup
-**Status:** ready · **Effort:** trivial · **Touches:** `exportFullBackup`, `handleImportBackup`
-
-`exportFullBackup` fetches eight tables and does not include `plant_location_history`, even though §6 treats it as FK-critical. A restore from backup silently loses every recorded plant move. Add it to the export and to the import chain after plants.
-
-Spotted during PD-3; not folded in to keep that commit scoped.
-
----
-
-## Foundation — unblocks most of the rest
 
 ### AI-1 — Unified Claude vision call on upload (Epic 3)
 **Status:** ready · **Effort:** high · **Schema:** none initially · **Touches:** `identify-plant-claude` Edge Function, `uploadPhoto`, `identifications`
@@ -382,6 +372,20 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 ---
 
 ## Completed
+
+### v1.45.1
+
+**ADM-2 — Backup was missing three tables, not one.** Schema: none · Touched `exportFullBackup`, `handleImportBackup`.
+
+ADM-2 was filed for `plant_location_history` alone. Auditing the export against what `loadAll` fetches turned up two more, both added since the backup was last touched:
+
+- **`plant_location_history`** — the trigger-populated audit trail. A restore silently lost every plant move ever recorded.
+- **`taxa`** — added v1.41.0. **A restore would have lost every species record**, orphaning all 49 specimens. The worst of the three by far.
+- **`list_options`** — added v1.44.0. Fetched defensively, since it may not exist yet.
+
+Restore ordering matters and is now explicit: **taxa before plants** (`plants.taxa_id` is a hard FK), and `taxa.primary_photo_id` gets the same two-pass treatment plants already had, since it points at a photo that does not exist yet on the first pass. History goes after plants and locations.
+
+All 12 data tables are now covered in both directions, verified by diffing the export against every table `loadAll` reads.
 
 ### v1.45.0
 

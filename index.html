@@ -372,7 +372,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.45.0";
+const APP_VERSION = "1.45.1";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -542,7 +542,7 @@ function csvEscape(val) {
 async function exportFullBackup() {
   try {
     toast("Preparing backup…");
-    const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters, careNotes] = await Promise.all([
+    const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions] = await Promise.all([
       restGet("locations", "?select=*"),
       restGet("plants", "?select=*"),
       restGet("photos", "?select=*"),
@@ -552,6 +552,12 @@ async function exportFullBackup() {
       restGet("photo_locations", "?select=*"),
       restGet("accession_counters", "?select=*"),
       restGet("care_notes", "?select=*"),
+      restGet("taxa", "?select=*"),
+      // Trigger-populated audit trail of every plant move. Its absence meant a
+      // restore silently lost all move history (ADM-2).
+      restGet("plant_location_history", "?select=*"),
+      // May not exist yet — the app falls back to built-in lists (ADM-1).
+      restGet("list_options", "?select=*").catch(() => []),
     ]);
     const backup = {
       exported_at: new Date().toISOString(),
@@ -562,6 +568,9 @@ async function exportFullBackup() {
       photo_locations: photoLocations,
       accession_counters: counters,
       care_notes: careNotes,
+      taxa,
+      plant_location_history: plantLocationHistory,
+      list_options: listOptions,
     };
     downloadFile(
       `adcock-botanical-garden-backup-${new Date().toISOString().slice(0, 10)}.json`,
@@ -612,6 +621,12 @@ async function handleImportBackup() {
       await restUpsert("locations", data.locations.map((l) => ({ ...l, parent_location_id: null })));
       await restUpsert("locations", data.locations);
     }
+    // Taxa before plants: plants.taxa_id is a hard FK. Same two-pass trick as
+    // plants, because taxa.primary_photo_id points at a photo that does not
+    // exist yet either.
+    if (data.taxa?.length) {
+      await restUpsert("taxa", data.taxa.map((t) => ({ ...t, primary_photo_id: null })));
+    }
     // Plants: strip primary_photo_id first since photos don't exist yet
     if (data.plants?.length) {
       await restUpsert("plants", data.plants.map((p) => ({ ...p, primary_photo_id: null })));
@@ -619,7 +634,10 @@ async function handleImportBackup() {
     if (data.photos?.length) {
       await restUpsert("photos", data.photos);
     }
-    // Plants pass 2: now that photos exist, restore primary_photo_id
+    // Pass 2 for both: photos exist now, so the cover images can be restored
+    if (data.taxa?.length) {
+      await restUpsert("taxa", data.taxa);
+    }
     if (data.plants?.length) {
       await restUpsert("plants", data.plants);
     }
@@ -630,6 +648,10 @@ async function handleImportBackup() {
     if (data.accession_counters?.length) await restUpsert("accession_counters", data.accession_counters, "year");
     // After plants — care_notes.plant_id is a hard FK.
     if (data.care_notes?.length) await restUpsert("care_notes", data.care_notes);
+    // After plants and locations — both are hard FKs on this table.
+    if (data.plant_location_history?.length) await restUpsert("plant_location_history", data.plant_location_history);
+    // No FKs; order does not matter.
+    if (data.list_options?.length) await restUpsert("list_options", data.list_options);
 
     toast("Backup imported successfully");
     fileInput.value = "";

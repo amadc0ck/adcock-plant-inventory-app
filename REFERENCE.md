@@ -173,6 +173,20 @@ Audit trail for AI suggestions. Never silently overwrites confirmed data.
 - `confirmed_name` text, nullable
 - `created_at` timestamptz
 
+### `suggestions`
+Everything Claude proposes, one row per proposal (v1.80.0). Separate from `identifications`, which stays the Pl@ntNet audit trail: that table has one `status` per row and a row means "a guess at a name", so a bundle holding a plant, a location and a bloom could not be half-accepted there — and half-accepting is the normal case.
+
+- `photo_id` / `taxa_id` — exactly one is set, depending on `kind`
+- `kind` — `plant_tag` · `location_tag` · `new_specimen` · `photo_type` · `bloom` · `health_note` · `species_field`
+- `field` — for `species_field`, which taxon column
+- `value_id` — the plant, location or taxon proposed. **Validated against the catalogue before insert**, so a hallucinated uuid never reaches the table
+- `value_text` — for fields and notes
+- `confidence` — qualitative high/medium/low mapped to 0.85/0.55/0.25, as with Claude identifications. Not a probability
+- `rationale` — one sentence, shown under the suggestion
+- `status` — pending / accepted / dismissed. Accepted and dismissed rows are **kept**: the last 20 are fed back to Claude as examples, which is the only learning available without fine-tuning
+
+**Claude is given the whole collection on every call** — 33 taxa, 58 specimens, 157 locations, about 6KB — rather than being trained, synced or scheduled. It is small enough to ride along, which means it is never stale. The catalogue sits in a `cache_control` block so a batch pays for it once.
+
 ### `google_auth_tokens`
 Single-row table, one Google account ever. `access_token` (~1hr, auto-refreshed by Edge Functions), `refresh_token` (expires ~weekly, see §8), `expires_at`, `updated_at`.
 

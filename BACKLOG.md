@@ -148,33 +148,7 @@ Counts, inline actions, and the nested indicator already ship — see LOC-2. Thi
 ---
 
 
-### AI-1 — Unified Claude vision call on upload (Epic 3)
-**Status:** ready · **Effort:** high · **Schema:** none initially · **Touches:** `identify-plant-claude` Edge Function, `uploadPhoto`, `identifications`
-
-One Claude vision call returns a single structured JSON payload containing:
-- plant identification
-- health notes
-- bloom detection
-- location suggestion
-
-Design constraints:
-- Existing `identifications` audit-trail behavior is preserved: suggestions are **pending**, never silently applied to confirmed data.
-- A bloom suggestion may never set bloom state automatically. It proposes; Amanda confirms.
-- Watch the base64 chunking gotcha documented in `REFERENCE.md` §8. Do not use spread-operator conversion.
-- Decide and document where the non-identification fields (health, bloom, location) are stored. `identifications.raw_response` is the cheap path; a dedicated column or table is the durable one. Propose both with tradeoffs before building.
-
-Unblocks: BLOOM-1, RPT-3, RPT-4, AI-2, AI-3.
-
-**Interaction model changed 2026-08-25.** Amanda wants Claude to stop being a button she presses and become a background process whose suggestions surface for confirmation on Plant Detail. That means: drop the per-photo "Ask Claude" action from the Inbox card, run the call automatically on upload, and design where pending suggestions appear. The audit-trail rule is unchanged and matters more under this model, not less — suggestions stay **pending** and are never silently applied.
-
-### AI-2 — Claude fills the horticultural fields
-**Status:** blocked by AI-1 · **Effort:** medium · **Schema:** depends on AI-1's storage decision
-
-Extend the single vision call beyond identification to propose the fields Amanda would otherwise research by hand: `botanical_name`, `family`, `genus`, `species`, `native_range`, `hardy_to`, `light_conditions`, `water_needs`, and the PD-2 fields `plant_type`, `growth_habit`, `mature_size`, `bloom_season`.
-
-- Every field is a **suggestion pending confirmation**, shown on Plant Detail with accept / reject per field. Never written directly.
-- Most of these are **species-level facts, not observations of this specimen** — Claude can answer them from the identified name without the photo. Worth deciding whether they come from the vision call or a cheaper follow-up text call once identification is confirmed.
-- Confirming an identification could offer "also fill in what Claude knows about this species" as one action.
+### AI-1, AI-2 — **shipped v1.80.0.** See the entry under Completed.
 
 ### AI-3 — Duplicate plant detection when adding
 **Status:** partly blocked by AI-1 · **Effort:** medium
@@ -226,6 +200,45 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 ---
 
 ## Completed
+
+### v1.80.0
+
+**AI-1 and AI-2 — Claude suggests filing, and fills species blanks.** Schema: new `suggestions` table. Deploy: two Edge Functions.
+
+**The change that makes this work: Claude gets the catalogue.** The old call sent one image and asked "what species is this?", which can only ever return a *guess at a name* — never a specimen she owns. Every call now carries the whole collection (33 taxa, 58 specimens, 157 locations — about 6KB) and Claude answers with **ids copied from it**. That is what turns a suggestion into one tap instead of a name to match by hand. Anything not in the catalogue is discarded before it reaches the database, so a hallucinated uuid can never render as a row she cannot act on.
+
+**Deliberately not an agent, not trained, not synced.** The collection is small enough to ride along with every request, which means it is never stale — a specimen created a minute ago is in the next call. A scheduled sync would be strictly worse. Two things do accumulate: the catalogue sits in a `cache_control` block so a batch pays for it once, and her last 20 accepted/dismissed decisions are fed back as examples, which is the only honest form of "learning" available here.
+
+- **`suggest-photo`** (vision) → specimen to tag, location to file to, photo type, bloom, health note, or an offer to **create** a specimen of a known species when none matches.
+- **`suggest-species`** (text, no image) → fills only the **blank** fields on a species record. Never asks about a field she has filled, so it cannot propose overwriting an established fact. A tenth of the cost, because these follow from the name rather than the photograph.
+- **"Ask Claude" changed job rather than going away**: it answers "where does this belong?" Species identification stays with Pl@ntNet, which is cheaper, purpose-built and returns reference images to compare. Existing pending Claude identifications still render and can be confirmed or dismissed; no new ones are created.
+- **Accept / Dismiss per line**, on the photo card, in the edit modal, in the lightbox and on the species record. Accepting writes the record **then** marks the suggestion, so a failed write leaves it pending rather than vanishing having done nothing. A suggestion whose target was since deleted shows "out of date" and offers dismiss only.
+- **Batch on a selection**, never on upload — at 1,605 unfiled photos an automatic call would run on every duplicate and blurry shot. Confirms with the count first, runs sequentially so a rate limit does not take out a whole run, and a failure mid-batch is counted rather than fatal.
+- **A To Do group, "Claude is waiting on you"**, plus a Gallery filter for photos carrying suggestions.
+
+```sql
+create table if not exists suggestions (
+  id uuid primary key default gen_random_uuid(),
+  photo_id uuid references photos(id) on delete cascade,
+  taxa_id  uuid references taxa(id)   on delete cascade,
+  kind text not null,
+  field text,
+  value_id uuid,
+  value_text text,
+  confidence numeric,
+  rationale text,
+  status text not null default 'pending',
+  raw_response jsonb,
+  created_at timestamptz not null default now()
+);
+alter table suggestions enable row level security;
+create policy "suggestions all" on suggestions for all to authenticated using (true) with check (true);
+create index if not exists suggestions_photo_idx on suggestions (photo_id) where status = 'pending';
+create index if not exists suggestions_taxa_idx  on suggestions (taxa_id)  where status = 'pending';
+notify pgrst, 'reload schema';
+```
+
+Chose a table over `identifications.raw_response`, which AI-1 asked to be weighed: that table has **one status per row** and a row means "a guess at a name". A bundle holding a plant, a location and a bloom cannot be half-accepted there — and half-accepting is the normal case.
 
 ### v1.79.1
 

@@ -512,7 +512,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.79.1";
+const APP_VERSION = "1.80.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -538,7 +538,6 @@ const state = {
   photoPlants: [],
   identifications: [],
   identifyingPhotoId: null,
-  identifyingPhotoIdClaude: null,
   lightbox: null,
   plantLocations: [],
   photoLocations: [],
@@ -568,6 +567,10 @@ const state = {
   editPhotoLocation: "",
   editPhotoLocPickerOpen: false,
   locPickerNewOpen: false,
+  suggestions: [],
+  suggestingPhotoId: null,
+  suggestingTaxaId: null,
+  suggestBatch: null,     // {done,total,failed} while a batch runs
   locPickerParent: null,   // where the location picker is currently standing
   locPickerSearch: "",
   batchPlant: "",
@@ -738,7 +741,7 @@ function csvEscape(val) {
 async function exportFullBackup() {
   try {
     toast("Preparing backup…");
-    const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions] = await Promise.all([
+    const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions, suggestionsAll] = await Promise.all([
       restGetAll("locations", "?select=*"),
       restGetAll("plants", "?select=*"),
       restGetAll("photos", "?select=*"),
@@ -754,6 +757,7 @@ async function exportFullBackup() {
       restGetAll("plant_location_history", "?select=*"),
       // May not exist yet — the app falls back to built-in lists (ADM-1).
       restGetAll("list_options", "?select=*").catch(() => []),
+      restGetAll("suggestions", "?select=*").catch(() => []),
     ]);
     const backup = {
       exported_at: new Date().toISOString(),
@@ -767,6 +771,7 @@ async function exportFullBackup() {
       taxa,
       plant_location_history: plantLocationHistory,
       list_options: listOptions,
+      suggestions: suggestionsAll,
     };
     downloadFile(
       `adcock-botanical-garden-backup-${new Date().toISOString().slice(0, 10)}.json`,
@@ -1146,7 +1151,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions, bloomEvents] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -1163,6 +1168,8 @@ async function loadAll() {
       // Resilient like list_options: the app works before the migration runs,
       // it just has no bloom history to show.
       restGetAll("bloom_events", "?select=*&order=started_on.desc").catch(() => null),
+      // Same again: AI-1 ships ahead of its table.
+      restGetAll("suggestions", "?status=eq.pending&select=*&order=created_at.desc").catch(() => null),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -1176,6 +1183,7 @@ async function loadAll() {
     state.taxa = taxa;
     state.listOptions = listOptions || [];
     state.bloomEvents = bloomEvents || [];
+    state.suggestions = suggestions || [];
   } catch (e) {
     toast(e.message, true);
   }
@@ -1675,6 +1683,10 @@ function listChoicesFor(listName, currentValue) {
 //                    the reason a plant's history across former homes could not
 //                    be recorded (v1.56.0)
 // Archive-ness now comes from the photo's location being an archive location.
+const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Species", description: "Description",
+  plant_type: "Type", growth_habit: "Growth habit", mature_size: "Mature size", bloom_season: "Bloom season",
+  origin: "Origin", native_range: "Native range", hardy_to: "Hardy to", water_needs: "Water needs",
+  frost_tender: "Frost tender" };
 const PHOTO_TYPE_LABELS = { general: "General", bloom: "Bloom", detail: "Detail", condition: "Condition" };
 
 // A photo is archival because of where it was taken, not because of a flag.
@@ -2221,6 +2233,13 @@ function taskBanner() {
       <button class="btn-ghost" style="padding:0 4px;font-size:12px;color:#0E2320;flex-shrink:0;" onclick="event.stopPropagation();dismissResumableImport()">Discard</button>
     </div>`;
   }
+  const sb = state.suggestBatch;
+  if (sb) {
+    return `<div class="task-banner">
+      <div class="task-spin"></div>
+      <div class="task-banner-text">Asking Claude<div class="task-banner-sub">${sb.done} of ${sb.total}${sb.failed ? ` · ${sb.failed} failed` : ""}</div></div>
+    </div>`;
+  }
   const dd = state.dupeDelete;
   if (dd) {
     const label = dd.phase === "linking"
@@ -2275,6 +2294,12 @@ function showGalleryHighlight(plantType) {
 }
 function showGalleryInBloom() {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: true };
+  state.tab = "gallery";
+  state.reportView = null;
+  render();
+}
+function showGalleryHasSuggestions() {
+  state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "has_suggestions" };
   state.tab = "gallery";
   state.reportView = null;
   render();
@@ -2594,6 +2619,7 @@ function screenInbox() {
         <span class="mono" style="font-size:12.5px;color:var(--cream);">${selectedCount} selected</span>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add Location</button>
+        <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("photoQuestion")} Ask Claude</button>
         <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos()">${icon("trash")} Delete</button>
       </div>
     </div>` : ""}`;
@@ -2604,7 +2630,6 @@ function photoRow(p, selectMode) {
   const plantnetSuggestion = suggestions.find((s) => s.source === "PlantNet");
   const claudeSuggestion = suggestions.find((s) => s.source === "Claude");
   const isIdentifying = state.identifyingPhotoId === p.id;
-  const isIdentifyingClaude = state.identifyingPhotoIdClaude === p.id;
   const isSelected = state.inboxSelected.has(p.id);
 
   function suggestionBadge(s) {
@@ -2626,6 +2651,7 @@ function photoRow(p, selectMode) {
       <div style="font-size:13.5px;margin-top:2px;color:var(--ink-soft);cursor:pointer;" onclick="openModal('editPhotoNote',{photoId:'${p.id}'})">${p.notes ? escapeHtml(p.notes) : "No notes — tap to add"}</div>
       ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
       ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
+      ${suggestionBlock(p.id)}
       ${/* INB-1. Six same-weight buttons on every card, wrapping to two rows,
            on 1,929 cards. The two that actually move a photo out of the Inbox
            — a plant or a location — are promoted; identification and the rest
@@ -2640,9 +2666,7 @@ function photoRow(p, selectMode) {
           ${!plantnetSuggestion
             ? `<button class="btn-ghost on-cream-icon" ${isIdentifying ? "disabled" : ""} title="Identify with Pl@ntNet" onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")}</button>`
             : `<button class="btn-ghost" style="padding:0;font-size:11.5px;" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
-          ${!claudeSuggestion
-            ? `<button class="btn-ghost on-cream-icon" ${isIdentifyingClaude ? "disabled" : ""} title="Ask Claude what this is" onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : icon("photoQuestion")}</button>`
-            : `<button class="btn-ghost" style="padding:0;font-size:11.5px;" onclick="dismissIdentification('${claudeSuggestion.id}')">Dismiss Claude</button>`}
+          <button class="btn-ghost on-cream-icon" ${state.suggestingPhotoId === p.id ? "disabled" : ""} title="Ask Claude where this belongs" onclick="askClaudeAboutPhoto('${p.id}')">${state.suggestingPhotoId === p.id ? '<span class="spinner"></span>' : icon("photoQuestion")}</button>
           <button class="btn-ghost on-cream-icon" title="Create a new plant from this photo" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")}</button>
           <button class="btn-ghost on-cream-icon" style="color:var(--terracotta);" title="Delete this photo" onclick="deletePhoto('${p.id}')">${icon("trash")}</button>
         </div>
@@ -2788,6 +2812,18 @@ function screenTaxonDetail() {
             <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}${t.family ? " · " + escapeHtml(t.family) : ""}</div>
             <div class="display" style="font-size:25px;font-weight:600;margin-top:4px;line-height:1.2;">${taxonDisplayHtml(t)}</div>
             ${isFrostTender(t) ? `<div style="margin-top:6px;">${frostBadge("full")}</div>` : ""}
+            ${(() => {
+              const rows = suggestionsForTaxon(t.id);
+              if (!rows.length) return "";
+              return `
+                <div style="margin-top:12px;">
+                  <div class="row" style="margin-bottom:2px;">
+                    <span class="subtle" style="font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;">Claude suggests ${countLabel(rows.length, "value", "values")}</span>
+                    <button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--blue);" onclick="acceptAllSpeciesSuggestions('${t.id}')">Accept all</button>
+                  </div>
+                  ${rows.map(suggestionLine).join("")}
+                </div>`;
+            })()}
             ${taxonSecondaryName(t) ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(taxonSecondaryName(t))}</div>` : ""}
             ${t.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(t.description)}</div>` : ""}
             <div style="margin-top:12px;font-size:13px;color:var(--ink);">
@@ -2797,6 +2833,13 @@ function screenTaxonDetail() {
           <div class="detail-actions">
             <div class="action-card">
               <button class="action-row" onclick="openModal('editTaxon',{taxonId:'${t.id}'})">${icon("edit")}<span class="action-label">Edit species record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+              ${/* AI-2. No photograph: every field here follows from the name,
+                   so a text call answers it for a tenth of the cost. */""}
+              <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}')">
+                ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("photoQuestion")}
+                <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Ask Claude to fill the blanks"}</span>
+                <span class="action-chevron">${icon("chevronRight")}</span>
+              </button>
               <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
               <button class="action-row" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${icon("photoStar")}<span class="action-label">Set species photo</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             </div>
@@ -3486,7 +3529,6 @@ function screenLocationDetail() {
             const plantnetSuggestion = suggestions.find((s) => s.source === "PlantNet");
             const claudeSuggestion = suggestions.find((s) => s.source === "Claude");
             const isIdentifying = state.identifyingPhotoId === p.id;
-            const isIdentifyingClaude = state.identifyingPhotoIdClaude === p.id;
             const claimedBy = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
             const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
             const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
@@ -3507,6 +3549,7 @@ function screenLocationDetail() {
                   })()}
                   ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
                   ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
+                  ${suggestionBlock(p.id)}
                 </div>
               </div>
               ${/* LOCP-2. Was six same-weight buttons whose labels did not say
@@ -3522,9 +3565,7 @@ function screenLocationDetail() {
                 ${!plantnetSuggestion
                   ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search") + " Identify"}</button>`
                   : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="dismissIdentification('${plantnetSuggestion.id}')">${icon("close")} Dismiss Pl@ntNet</button>`}
-                ${!claudeSuggestion
-                  ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${isIdentifyingClaude ? "disabled" : ""} onclick="identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : icon("photoQuestion") + " Ask Claude"}</button>`
-                  : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="dismissIdentification('${claudeSuggestion.id}')">${icon("close")} Dismiss Claude</button>`}
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${state.suggestingPhotoId === p.id ? "disabled" : ""} onclick="askClaudeAboutPhoto('${p.id}')">${state.suggestingPhotoId === p.id ? '<span class="spinner"></span>' : icon("photoQuestion") + " Ask Claude"}</button>
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attach',{photoId:'${p.id}', locationId:'${l.id}'})">${icon("tag")} Attach to a plant</button>
                 <button class="btn-ghost" style="padding:0;" title="Edit this photo" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Move</button>
@@ -3674,6 +3715,16 @@ function workQueue() {
   const photoTotal = photoBuckets.filter((b) => !b.muted).reduce((n, b) => n + b.count, 0);
 
   return `
+    ${(() => {
+      const photoSugs = new Set(state.suggestions.filter((x) => x.photo_id).map((x) => x.photo_id));
+      const taxaSugs = new Set(state.suggestions.filter((x) => x.taxa_id).map((x) => x.taxa_id));
+      if (!photoSugs.size && !taxaSugs.size) return "";
+      return group("Claude is waiting on you", state.suggestions.length, [
+        photoSugs.size ? tile(photoSugs.size, "Photos with suggestions", "Filing Claude proposed — accept or dismiss", "showGalleryHasSuggestions()") : "",
+        taxaSugs.size ? tile(taxaSugs.size, "Species with suggestions", "Blank fields Claude filled in", "goTab('plants')") : "",
+      ]);
+    })()}
+
     ${group("Needs you now", null, [
       sect("frostTender", true),
       sect("plantsAttention", true),
@@ -3827,6 +3878,7 @@ function filteredGalleryPhotos() {
     //   neither         — has nothing
     if (f.needs === "no_plant" && !photoAwaitsPlant(p)) return false;
     if (f.needs === "area_no_plant" && !photoIsUntaggedArchiveOrArea(p)) return false;
+    if (f.needs === "has_suggestions" && !suggestionsForPhoto(p.id).length) return false;
     if (f.needs === "no_location" && !(p.plant_id && !p.location_id)) return false;
     if (f.needs === "neither" && (p.plant_id || p.location_id)) return false;
     if (highlightIds && !highlightIds.has(p.id)) return false;
@@ -3924,7 +3976,7 @@ function screenGallery() {
   const f = state.galleryFilters;
   const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
   const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs || f.inBloom || f.favorites);
-  const NEEDS_LABELS = { no_plant: "Filed to a container or bed, needs a plant", no_location: "Attached to a plant, needs a location", neither: "Needs a plant and a location", area_no_plant: "Archive and area photos, not yet tagged to a plant" };
+  const NEEDS_LABELS = { no_plant: "Filed to a container or bed, needs a plant", no_location: "Attached to a plant, needs a location", neither: "Needs a plant and a location", has_suggestions: "Photos Claude has suggestions for", area_no_plant: "Archive and area photos, not yet tagged to a plant" };
   const matches = filteredGalleryPhotos();
 
   const tile = (p) => `
@@ -4031,6 +4083,7 @@ function screenGallery() {
         <button class="btn btn-accent btn-sm" onclick="openModal('galleryBatch')">Edit</button>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add location</button>
+        <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("photoQuestion")} Ask Claude</button>
         <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos('gallery')">${icon("trash")} Delete</button>
         <button class="btn-ghost" style="margin-left:auto;font-size:12.5px;" onclick="toggleGallerySelectMode()">Cancel</button>
       </div>
@@ -5488,6 +5541,7 @@ function modalContent() {
           <span class="focal-prev-cap">4:3<br/>cards, heroes</span>
         </div>
       </div>
+      ${suggestionBlock(ph.id)}
       <div class="row" style="margin:10px 0 14px;">
         <span class="subtle" style="font-size:11.5px;">Tap the photo to set what every crop centres on.</span>
         ${ph.focal_x != null ? `<button class="btn-ghost" style="font-size:11.5px;padding:0;" onclick="clearFocal('${ph.id}')">Reset</button>` : ""}
@@ -5675,30 +5729,199 @@ async function identifyPhoto(photoId) {
     render();
   }
 }
-async function identifyPhotoClaude(photoId) {
-  state.identifyingPhotoIdClaude = photoId;
-  render();
+// AI-1. "Ask Claude" stopped being a second opinion on species — Pl@ntNet does
+// that, cheaper and purpose-built — and became "where does this belong?". The
+// answers are ids from her own catalogue, so each one is a single tap rather
+// than a name to match by hand.
+// One shape for every suggestion, so accept and dismiss mean the same thing
+// wherever they appear.
+function suggestionLine(sg) {
+  const pl = sg.value_id ? state.plants.find((x) => x.id === sg.value_id) : null;
+  const loc = sg.value_id ? locationById(sg.value_id) : null;
+  const tx = sg.value_id ? taxonById(sg.value_id) : null;
+  let ic = "info", label = sg.value_text || "";
+  if (sg.kind === "plant_tag") { ic = "link"; label = pl ? `${plantDisplayName(pl)} · ${pl.accession_number}` : "a plant that no longer exists"; }
+  else if (sg.kind === "new_specimen") { ic = "plus"; label = tx ? `Create a new ${taxonDisplayName(tx)} here` : "a species that no longer exists"; }
+  else if (sg.kind === "location_tag") { ic = "pin"; label = loc ? locationPath(loc) : "a location that no longer exists"; }
+  else if (sg.kind === "photo_type") { ic = "photo"; label = `Type: ${listOptionsFor("photo_type")[sg.value_text] || PHOTO_TYPE_LABELS[sg.value_text] || sg.value_text}`; }
+  else if (sg.kind === "bloom") { ic = "plant2"; label = "Looks like it is in bloom — record a bloom"; }
+  else if (sg.kind === "health_note") { ic = "alertTriangle"; label = sg.value_text; }
+  else if (sg.kind === "species_field") { ic = "leaf"; label = `${FIELD_LABELS[sg.field] || sg.field}: ${sg.value_text}`; }
+  const stale = (sg.kind === "plant_tag" && !pl) || (sg.kind === "location_tag" && !loc) || (sg.kind === "new_specimen" && !tx);
+  return `
+    <div class="suggestion-row" style="margin-top:6px;">
+      <span class="suggestion-icon">${icon(ic)}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12.5px;color:var(--cream);line-height:1.35;">${escapeHtml(label)}</div>
+        ${sg.rationale ? `<div style="font-size:11px;color:#8AA090;margin-top:2px;">${escapeHtml(sg.rationale)}</div>` : ""}
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0;align-items:center;">
+        ${stale ? `<span class="subtle" style="font-size:11px;">out of date</span>`
+          : `<button type="button" class="btn btn-accent btn-sm" onclick="event.stopPropagation();acceptSuggestion('${sg.id}')">Accept</button>`}
+        <button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="event.stopPropagation();dismissSuggestion('${sg.id}')">Dismiss</button>
+      </div>
+    </div>`;
+}
+function suggestionBlock(photoId) {
+  const rows = suggestionsForPhoto(photoId);
+  if (!rows.length) return "";
+  return `
+    <div style="margin-top:10px;">
+      <div class="subtle" style="font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;">Claude suggests</div>
+      ${rows.map(suggestionLine).join("")}
+    </div>`;
+}
+
+function suggestionsForPhoto(photoId) {
+  return state.suggestions.filter((x) => x.photo_id === photoId && x.status === "pending");
+}
+function suggestionsForTaxon(taxaId) {
+  return state.suggestions.filter((x) => x.taxa_id === taxaId && x.status === "pending");
+}
+
+async function askClaudeAboutPhoto(photoId, opts) {
+  const quiet = opts && opts.quiet;
+  if (!quiet) { state.suggestingPhotoId = photoId; render(); }
   try {
-    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/identify-plant-claude`, {
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-photo`, {
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ photo_id: photoId }),
     });
     const data = await res.json();
-    state.identifyingPhotoIdClaude = null;
-    if (data.error) {
-      toast(driveErrorMessage(res.status, data.error), true);
-      render();
-      return;
+    if (data.error) throw new Error(data.error);
+    state.suggestions = state.suggestions.filter((x) => x.photo_id !== photoId);
+    (data.suggestions || []).forEach((row) => state.suggestions.unshift(row));
+    if (!quiet) {
+      toast(data.suggestions && data.suggestions.length
+        ? `${countLabel(data.suggestions.length, "suggestion", "suggestions")} from Claude`
+        : (data.note || "Nothing Claude could match"), !(data.suggestions || []).length);
     }
-    state.identifications.unshift(data.identification);
-    render();
+    return true;
   } catch (e) {
-    state.identifyingPhotoIdClaude = null;
+    if (!quiet) toast(e.message, true);
+    return false;
+  } finally {
+    if (!quiet) { state.suggestingPhotoId = null; render(); }
+  }
+}
+
+async function askClaudeAboutSpecies(taxaId) {
+  state.suggestingTaxaId = taxaId;
+  render();
+  try {
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-species`, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ taxa_id: taxaId }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    state.suggestions = state.suggestions.filter((x) => x.taxa_id !== taxaId);
+    (data.suggestions || []).forEach((row) => state.suggestions.unshift(row));
+    toast(data.suggestions && data.suggestions.length
+      ? `Claude filled in ${countLabel(data.suggestions.length, "field", "fields")} — review below`
+      : (data.note || "Nothing to suggest"), !(data.suggestions || []).length);
+  } catch (e) {
     toast(e.message, true);
+  } finally {
+    state.suggestingTaxaId = null;
     render();
   }
 }
+
+// Batch, on a selection she made — never automatic on upload. At 1,605 unfiled
+// photos an automatic call would run on every duplicate and every blurry shot,
+// which is both expensive and useless. Sequential on purpose: three concurrent
+// vision calls is how you meet a rate limit halfway through a run.
+async function askClaudeAboutSelection() {
+  const ids = Array.from(activeBulkSelection());
+  if (!ids.length) { toast("Select some photos first", true); return; }
+  if (!confirm(`Ask Claude about ${ids.length} photo${ids.length === 1 ? "" : "s"}? This calls the API once per photo.`)) return;
+  state.suggestBatch = { done: 0, total: ids.length, failed: 0 };
+  render();
+  for (const id of ids) {
+    const okRun = await askClaudeAboutPhoto(id, { quiet: true });
+    state.suggestBatch.done += 1;
+    if (!okRun) state.suggestBatch.failed += 1;
+    refreshImportProgress();
+  }
+  const { done, failed } = state.suggestBatch;
+  state.suggestBatch = null;
+  toast(`Asked about ${done} photo${done === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`);
+  await loadAll();
+}
+
+async function dismissSuggestion(id) {
+  try {
+    await restPatch("suggestions", `id=eq.${id}`, { status: "dismissed" });
+    state.suggestions = state.suggestions.filter((x) => x.id !== id);
+    render();
+  } catch (e) { toast(e.message, true); }
+}
+
+// Accepting writes the record AND marks the suggestion, in that order: if the
+// write fails the suggestion stays pending rather than vanishing having done
+// nothing.
+async function acceptSuggestion(id) {
+  const sg = state.suggestions.find((x) => x.id === id);
+  if (!sg) return;
+  try {
+    if (sg.kind === "plant_tag") {
+      await restPatch("photos", `id=eq.${sg.photo_id}`, { plant_id: sg.value_id });
+    } else if (sg.kind === "location_tag") {
+      await restPatch("photos", `id=eq.${sg.photo_id}`, { location_id: sg.value_id });
+    } else if (sg.kind === "photo_type") {
+      await restPatch("photos", `id=eq.${sg.photo_id}`, { photo_type: sg.value_text });
+    } else if (sg.kind === "new_specimen") {
+      const ph = state.photos.find((x) => x.id === sg.photo_id);
+      const locId = ph && ph.location_id && locationHoldsPlants(locationById(ph.location_id)) ? ph.location_id : null;
+      const [created] = await restPost("plants", {
+        taxa_id: sg.value_id, location_id: locId,
+        identification_status: "tentative", collection_category: "current",
+        status: "active", health_status: "healthy",
+      });
+      if (!created) throw new Error("Could not create the specimen");
+      await restPatch("photos", `id=eq.${sg.photo_id}`, { plant_id: created.id });
+      toast(`Created ${created.accession_number}`);
+    } else if (sg.kind === "bloom") {
+      const ph = state.photos.find((x) => x.id === sg.photo_id);
+      if (!ph || !ph.plant_id) { toast("Attach the photo to a plant first, then record the bloom", true); return; }
+      await restPost("bloom_events", {
+        plant_id: ph.plant_id,
+        started_on: String(photoDate(ph) || new Date().toISOString()).slice(0, 10),
+      });
+      await restPatch("photos", `id=eq.${sg.photo_id}`, { photo_type: "bloom" });
+    } else if (sg.kind === "health_note") {
+      const ph = state.photos.find((x) => x.id === sg.photo_id);
+      if (!ph || !ph.plant_id) { toast("Attach the photo to a plant first, then keep the note", true); return; }
+      await restPost("care_notes", {
+        plant_id: ph.plant_id,
+        noted_on: String(photoDate(ph) || new Date().toISOString()).slice(0, 10),
+        body: `Claude, from a photo: ${sg.value_text}`,
+      });
+    } else if (sg.kind === "species_field") {
+      const v = sg.field === "frost_tender" ? String(sg.value_text) === "true" : sg.value_text;
+      await restPatch("taxa", `id=eq.${sg.taxa_id}`, { [sg.field]: v, updated_at: new Date().toISOString() });
+    }
+    await restPatch("suggestions", `id=eq.${id}`, { status: "accepted" });
+    state.suggestions = state.suggestions.filter((x) => x.id !== id);
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function acceptAllSpeciesSuggestions(taxaId) {
+  const rows = suggestionsForTaxon(taxaId);
+  if (!rows.length) return;
+  if (!confirm(`Accept all ${rows.length} suggested values for this species?`)) return;
+  for (const r of rows) await acceptSuggestion(r.id);
+}
+
+// Retired in v1.80.0. Species guessing belongs to Pl@ntNet — cheaper, purpose
+// built, and it returns reference images to compare against. "Ask Claude" now
+// answers a question Pl@ntNet cannot: which of HER records this photo belongs
+// to. Existing pending Claude identifications still render and can be confirmed
+// or dismissed; no new ones are created.
 async function dismissIdentification(id) {
   try {
     await restPatch("identifications", `id=eq.${id}`, { status: "rejected" });
@@ -7204,7 +7427,6 @@ function renderLightbox() {
   const plantnetSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "PlantNet") : null;
   const claudeSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "Claude") : null;
   const isIdentifying = state.identifyingPhotoId === p.id;
-  const isIdentifyingClaude = state.identifyingPhotoIdClaude === p.id;
 
   const titleLine = isInbox
     ? `<div style="font-size:13.5px;">Unfiled photo</div>`
@@ -7226,7 +7448,7 @@ function renderLightbox() {
     ${claudeSuggestion ? lightboxSuggestionLine(claudeSuggestion) : ""}
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px;">
       ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifying ? "disabled" : ""} onclick="event.stopPropagation();identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : ""}
-      ${!claudeSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifyingClaude ? "disabled" : ""} onclick="event.stopPropagation();identifyPhotoClaude('${p.id}')">${isIdentifyingClaude ? '<span class="spinner"></span>' : "Ask Claude"}</button>` : ""}
+      <button class="btn btn-secondary btn-sm" ${state.suggestingPhotoId === p.id ? "disabled" : ""} onclick="event.stopPropagation();askClaudeAboutPhoto('${p.id}')">${state.suggestingPhotoId === p.id ? '<span class="spinner"></span>' : "Ask Claude"}</button>
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attach',{photoId:'${p.id}'${p.location_id ? `, locationId:'${p.location_id}'` : ""}})">Attach to plant</button>
       <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Add Location</button>
       <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>

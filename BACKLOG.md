@@ -227,6 +227,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.73.2
+
+**Two sticky layers were fighting for the same 0px.** Schema: none.
+
+`.sticky-header-group` (brand bar + Inbox sub-bar) has been `position:sticky; top:0` all along. `.sticky-controls`, added in v1.63.0, used `top:0` as well — so scrolling slid the filter row **over** the brand bar instead of under it. It only became obvious once the Inbox got sticky controls too, since the Gallery has no sub-bar to collide with.
+
+The controls now pin to `top: var(--sticky-top)`, measured in `render()` rather than hardcoded — the group's height changes with the Inbox sub-bar, the task banner and the breakpoint, so no constant is correct. `z-index` drops to 19, one below the group, so any overlap resolves the right way round.
+
+Also fixed while in there: the header group had no task-banner offset, so a running import pinned it *underneath* the banner.
+
 ### v1.73.1
 
 **The Gallery's bulk actions were unreachable, and the archive shortcuts took three rows.** Schema: none.

@@ -52,6 +52,9 @@
   .container{max-width:640px;margin:0 auto;padding:0 16px;}
 
   .sticky-header-group{position:sticky;top:0;z-index:20;background:var(--bg);}
+  /* The task banner is fixed over the top 46px, so the header group has to
+     start below it or it pins underneath and disappears. */
+  body.has-task-banner .sticky-header-group{top:46px;}
   .topbar{padding:22px 0 14px;border-bottom:1px solid var(--line);}
   .topbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .topbar-right-group{display:flex;align-items:center;gap:4px;flex-shrink:0;}
@@ -343,10 +346,15 @@
      The top bar scrolls away normally, so top:0 is correct; the task banner
      sits above everything and pushes the page down via body padding, so this
      needs no offset for it. */
-  .sticky-controls{position:sticky;top:0;z-index:20;background:var(--bg);
+  /* Pins BELOW the sticky header group, not on top of it — both were at
+     top:0, so scrolling slid the filter row over the brand bar. The offset is
+     measured in render() rather than hardcoded, because the group's height
+     changes with the Inbox sub-bar, the task banner and the breakpoint.
+     z-index is one below the header group so any overlap resolves the right
+     way round. */
+  .sticky-controls{position:sticky;top:var(--sticky-top, 0px);z-index:19;background:var(--bg);
     padding-top:10px;margin:0 -16px;padding-left:16px;padding-right:16px;
     box-shadow:0 8px 12px -10px rgba(0,0,0,0.55);}
-  body.has-task-banner .sticky-controls{top:46px;}
 
   /* Gallery browse rows. Horizontal scrollers rather than grids, so a row is
      a glance and a whole screen is a survey of the collection. */
@@ -466,7 +474,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.73.1";
+const APP_VERSION = "1.73.2";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -6852,11 +6860,24 @@ function render() {
     ${state.lightbox ? renderLightbox() : ""}
   `;
   document.body.classList.toggle("has-task-banner", !!taskBanner());
+  measureStickyOffset();
   wireModalForms();
   restoreFocus(focusSnapshot);
   if (sameView) restoreScroll(scrollSnapshot);
   lastRenderKey = currentViewKey();
   observeLazyPhotos();
+}
+
+// Two sticky layers, one on top of the other: the brand bar and its sub-bar,
+// then the screen's own filter row. The second has to start where the first
+// ends, and that height is not a constant — the Inbox sub-bar appears and
+// disappears, the task banner shifts everything down 46px, and the brand bar
+// changes with the breakpoint. Measured rather than guessed.
+function measureStickyOffset() {
+  const group = document.querySelector(".sticky-header-group");
+  const banner = document.body.classList.contains("has-task-banner") ? 46 : 0;
+  const h = group ? Math.round(group.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty("--sticky-top", (h + banner) + "px");
 }
 
 function renderLightbox() {

@@ -358,6 +358,15 @@ Cactus icon. Manual per-photo or per-plant category tags: Cacti, Agaves, Aloes, 
 
 ## Completed
 
+### v1.60.0
+
+**Timeline as a journey; edit a photo from anywhere.** Schema: none.
+
+- **The specimen timeline is chronological, split where the location changes.** Per-location columns made sense when one plant record stood for several physical plants; since SPECIES-2 a specimen lives in one place at a time, and what actually varies is *when it moved*. Amanda's Santa Rita has photos across four former homes — read in order, that is the plant's life story, which columns hid.
+- Each run is headed with the location and its date span. A plant that moved away and came back shows **two separate stays**, not one merged block.
+- A **Newest / Oldest first** toggle: newest for a plant you are tending, oldest for the story.
+- **Editing a photo is now reachable from six places** — Inbox compact rows, the specimen timeline, both Gallery views, and the lightbox. It previously existed only in the Gallery, which is why it felt like the app had no photo editing at all.
+
 ### v1.59.0
 
 **BLOOM-1, RPT-4 and GAL-5 — bloom tracking end to end.** Schema: yes, new `bloom_events` table.

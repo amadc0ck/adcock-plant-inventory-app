@@ -403,7 +403,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.59.0";
+const APP_VERSION = "1.60.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -439,6 +439,7 @@ const state = {
   bloomEvents: [],
   backfill: null,
   reportView: null,
+  timelineOldestFirst: false,
   photosImport: null,
   resumableImport: null,
   attachPhotoLimit: 24,
@@ -1072,6 +1073,32 @@ function suggestedLocationsForPlant(pl) {
 }
 // Groups a list of photos by the location(s) they're tagged to, for
 // rendering separate per-location sub-timelines on the plant detail view.
+// A specimen's photos in date order, split wherever the location changes.
+// Columns-per-location made sense when one plant record stood for several
+// physical plants; since SPECIES-2 a specimen lives in one place at a time, and
+// what actually varies is WHEN it moved. Amanda's Santa Rita has photos across
+// four former homes — read chronologically that is the plant's life story,
+// which per-location columns hid.
+function photoRunsByLocation(photosList, oldestFirst) {
+  const sorted = photosList.slice().sort((a, b) => {
+    const d = new Date(photoDate(a)) - new Date(photoDate(b));
+    return oldestFirst ? d : -d;
+  });
+  const runs = [];
+  sorted.forEach((p) => {
+    const key = p.location_id || "none";
+    const last = runs[runs.length - 1];
+    // Only a CHANGE starts a new run, so a plant that moved away and came back
+    // shows two separate stays rather than one merged block.
+    if (!last || last.key !== key) {
+      runs.push({ key, location: p.location_id ? locationById(p.location_id) : null, photos: [p] });
+    } else {
+      last.photos.push(p);
+    }
+  });
+  return runs;
+}
+
 function groupPhotosByLocation(photosList) {
   const groups = new Map();
   photosList.forEach((p) => {
@@ -2404,16 +2431,21 @@ function screenPlantDetail() {
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
         <div style="display:flex;align-items:center;gap:12px;">
           <span class="subtle">${timelinePhotos.length} total</span>
+          <button class="btn-ghost" style="font-size:12px;" onclick="state.timelineOldestFirst=!state.timelineOldestFirst;render()">
+            ${state.timelineOldestFirst ? "Oldest first ↑" : "Newest first ↓"}
+          </button>
           <button class="btn btn-secondary btn-sm" onclick="openModal('attachInboxPhoto',{plantId:'${pl.id}'})">+ Add photos</button>
         </div>
       </div>
 
       ${timelinePhotos.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>No photos attached yet.</div></div>` : `
-        <div class="timeline-cols">
-        ${groupPhotosByLocation(timelinePhotos).map((group) => `
-          <div class="timeline-col">
-          <div class="timeline-col-head">${icon("pin")}<span>${group.location ? escapeHtml(locationPath(group.location)) : "No location tagged"}</span></div>
-          <div class="stack">
+        <div class="stack">
+        ${photoRunsByLocation(timelinePhotos, state.timelineOldestFirst).map((group) => `
+          <div>
+          <div class="timeline-col-head">${icon("pin")}<span>${group.location ? escapeHtml(locationPath(group.location)) : "No location tagged"}</span>
+            <span class="mono subtle" style="font-size:10.5px;">${fmtDate(photoDate(group.photos[0]))}${group.photos.length > 1 ? ` – ${fmtDate(photoDate(group.photos[group.photos.length - 1]))}` : ""} · ${countLabel(group.photos.length, "photo", "photos")}</span>
+          </div>
+          <div class="card-grid">
             ${group.photos.map((p) => {
               const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
               const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
@@ -2442,6 +2474,7 @@ function screenPlantDetail() {
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
+                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
                   ${!isPrimary ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">${icon("photoStar")} Set as profile</button>` : ""}
                   ${isDirectAttachment
                     ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('movePhoto',{photoId:'${p.id}',fromPlantId:'${pl.id}'})">${icon("seedling")} Move</button>
@@ -5760,7 +5793,8 @@ function renderLightbox() {
       <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
         ${pl ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openPlant('${pl.id}')">View plant</button>` : ""}
         ${galleryLocs[0] ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openLocation('${galleryLocs[0].id}')">View location</button>` : ""}
-        <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>
+        <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
+            <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>
       </div>`;
   } else {
     bottomActions = `

@@ -118,7 +118,10 @@ One row per individual accessioned specimen.
 - `taken_at` timestamptz, nullable — real capture date from EXIF when available (§7)
 - `uploaded_at` timestamptz — fallback display date
 - `is_primary` boolean — **legacy, effectively unused.** Superseded by `plants.primary_photo_id` / `locations.primary_photo_id`
-- `photo_type` text, default `general` — general / identification / flower / detail / condition / **historical** (§10)
+- `photo_type` text, default `general` — **general / bloom / detail / condition** (v1.56.0). Describes **what the photo shows**, never how it is filed; filing is `plant_id` and `location_id`.
+  - `identification` was removed: it existed only to keep a reference shot out of a timeline, a distinction obscure enough that nobody could say when to use it, and moot once AI-1 identifies from any photo.
+  - `historical` was removed, and it was actively harmful: it meant *"needs no plant or location"*, so an archive photo and a specimen-tagged photo were **mutually exclusive**. A plant's history across former homes could not be recorded. **Archive-ness now comes from the photo's location being an archive location** (`locations.gallery_row = 'archives'`), which is both true and compatible with a plant link. See `isArchivePhoto()`.
+  - `flower` renamed `bloom`, matching BLOOM-1's vocabulary.
 - `notes` text, nullable — editable directly from the Inbox before assigning
 - `google_photos_id` text, nullable, unique where set (v1.54.0) — the Picker media item id for photos imported from Google Photos. Stable across picking sessions, so it is what lets a later import skip items already brought in instead of creating second copies. **Only set from v1.54.0 onward**; anything imported before that has null and cannot be matched this way — the capture-time duplicate report covers those.
 
@@ -285,7 +288,9 @@ One system (`state.lightbox = { mode, photoId, plantId?/locationId? }`) covering
 
 ## 10. Archive / Historical Photos
 
-`photo_type = 'historical'` marks a photo as deliberately **not** needing a plant or container — collection history kept for posterity. Excluded from the Inbox alongside the normal plant_id/location_id check, surfaced through the Gallery's Archive filter, which is their permanent home.
+**Superseded v1.56.0.** `photo_type = 'historical'` no longer exists. A photo is archival because its **location** is an archive location (`gallery_row = 'archives'`), so a photo of the Santa Rita taken at Vallejo Apartment appears in that specimen's timeline **and** in the Gallery's From the Archives row — both derived from the same row. Under the old model those were mutually exclusive, because `historical` meant the photo needed no plant.
+
+The Inbox rule simplifies accordingly: a photo is in the Inbox when it has **neither** a plant nor a location. There is no longer a type that excuses it from being filed.
 
 ---
 

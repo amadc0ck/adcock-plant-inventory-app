@@ -227,6 +227,18 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.75.0
+
+**Create a specimen from inside the plant picker.** Schema: none.
+
+The picker is exactly where you find out the plant is not recorded yet — most sharply when a species filter returns **one** specimen and the photo clearly shows a second of the same kind. Until now that meant closing the modal, losing everything staged, and starting again from another screen.
+
+`plantPicker()` takes an optional `onNew`, rendered as a full-width button under the results. Wired into the edit-photo form and the attach modal.
+
+**The handoff does not throw away staged edits.** The new-plant modal attaches the photo itself, so the plant field resolves on its own — but Type, Location and Notes live in the edit form and would vanish silently. They are written first, and the toast says so. Saving without a Save press is mildly surprising; losing what she typed is worse. Nothing staged means no write and no toast.
+
+The container carries across as the new specimen's home **only when it holds plants** — an Area or Archive is saved on the photo but not offered as somewhere a plant lives.
+
 ### v1.74.1
 
 **The location suggestion was invisible, and modals were a bottom sheet on a 1400px screen.** Schema: none.

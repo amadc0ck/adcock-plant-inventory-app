@@ -488,7 +488,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.76.0";
+const APP_VERSION = "1.77.0";
 const APP_UPDATED = "2026-08-26";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -542,6 +542,8 @@ const state = {
   editPhotoPlant: undefined,   // staged plant choice inside the edit-photo form
   editPhotoPickerOpen: false,
   editPhotoLocation: "",
+  editPhotoLocPickerOpen: false,
+  locPickerNewOpen: false,
   locPickerParent: null,   // where the location picker is currently standing
   locPickerSearch: "",
   batchPlant: "",
@@ -1475,7 +1477,7 @@ function pickableChildren(parentId) {
 }
 
 function locPickerGo(id) { state.locPickerParent = id || null; render(); }
-function locPickerReset() { state.locPickerParent = null; state.locPickerSearch = ""; }
+function locPickerReset() { state.locPickerParent = null; state.locPickerSearch = ""; state.locPickerNewOpen = false; }
 
 // onPick is a JS snippet with {id} substituted, matching plantPicker's contract.
 function locationPicker(onPick, opts) {
@@ -1538,7 +1540,21 @@ function locationPicker(onPick, opts) {
       <div class="subtle" style="font-size:11px;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">All locations</div>` : ""}
     <div class="stack" style="max-height:42vh;overflow-y:auto;">
       ${kids.length ? kids.map((l) => row(l, false)).join("") : `<p class="subtle">Nothing inside ${here ? escapeHtml(here.name) : "here"}.</p>`}
-    </div>`;
+    </div>
+    ${o.onCreatePick ? `
+      ${state.locPickerNewOpen ? `
+        <div class="tag-card" style="margin-top:10px;padding:12px;">
+          <div class="subtle" style="font-size:11.5px;margin-bottom:8px;">New location ${here ? `inside <strong>${escapeHtml(here.name)}</strong>` : "at the top level"}</div>
+          <input id="qa-loc-name" placeholder="e.g. Large Teal Ribbed Pot 2" style="margin-bottom:8px;" />
+          <select id="qa-loc-type" style="margin-bottom:10px;">
+            ${Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${k === "container" ? "selected" : ""}>${v}</option>`).join("")}
+          </select>
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="btn btn-accent btn-sm" style="flex:1;justify-content:center;" onclick="quickAddLocation('${o.onCreatePick}')">Create and use</button>
+            <button type="button" class="btn-ghost" style="padding:0 8px;font-size:12.5px;" onclick="state.locPickerNewOpen=false;render()">Cancel</button>
+          </div>
+        </div>`
+      : `<button type="button" class="btn btn-secondary btn-sm" style="margin-top:10px;width:100%;justify-content:center;" onclick="state.locPickerNewOpen=true;render()">New location ${here ? `inside ${escapeHtml(here.name)}` : "at the top level"}</button>`}` : ""}`;
 }
 
 function locationOptionList() {
@@ -2099,6 +2115,7 @@ function openModal(type, data = {}) {
     const ph = state.photos.find((x) => x.id === data.photoId);
     state.editPhotoPlant = ph ? (ph.plant_id || "") : "";
     state.editPhotoLocation = ph ? (ph.location_id || "") : "";
+    state.editPhotoLocPickerOpen = false;
     state.editPhotoPickerOpen = !!ph && !ph.plant_id;
     // The photo's own container is very nearly always where the plant is, and
     // it cuts 52 specimens down to the two or three actually standing there.
@@ -5401,7 +5418,25 @@ function modalContent() {
         <div class="field-help">What the photo shows, never how it is filed. Archive photos are archive photos because of where they are filed, not their type.</div>
 
         <label>Location</label>
-        <select id="eph-location" onchange="state.editPhotoLocation=this.value;render()">${locationSelectOptions(state.editPhotoLocation || null)}</select>
+        ${(() => {
+          const chosen = state.editPhotoLocation ? locationById(state.editPhotoLocation) : null;
+          const parent = chosen && chosen.parent_location_id ? locationById(chosen.parent_location_id) : null;
+          return `
+          <div class="tag-card plant-list-card" style="padding:8px 10px;margin-bottom:8px;">
+            <span class="suggestion-icon" style="color:var(--moss-dim);">${icon("pin")}</span>
+            <div style="flex:1;min-width:0;">
+              ${chosen ? `
+                <div style="font-size:13.5px;font-weight:500;">${escapeHtml(chosen.name)}</div>
+                <div style="font-size:11.5px;color:var(--ink-soft);">${parent ? escapeHtml(locationPath(parent)) : locationTypeLabel(chosen.type)}</div>`
+              : `<div class="value-blank" style="font-size:13px;">Not filed to a location</div>`}
+            </div>
+            <div style="display:flex;gap:10px;flex-shrink:0;">
+              <button type="button" class="btn-ghost" style="padding:0;font-size:12px;" onclick="state.editPhotoLocPickerOpen=!state.editPhotoLocPickerOpen;state.locPickerNewOpen=false;render()">${state.editPhotoLocPickerOpen ? "Close" : (chosen ? "Change" : "Choose")}</button>
+              ${chosen ? `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="setEditPhotoLocation('')">Clear</button>` : ""}
+            </div>
+          </div>
+          ${state.editPhotoLocPickerOpen ? locationPicker("setEditPhotoLocation('{id}')", { onCreatePick: "setEditPhotoLocation" }) : ""}`;
+        })()}
         ${(() => {
           // The specimen already knows where it stands, and a photo of it was
           // almost certainly taken there. Offered rather than applied: a photo
@@ -5418,7 +5453,7 @@ function modalContent() {
                 <div style="font-size:12.5px;color:var(--cream);"><strong>${escapeHtml(plantPickerName(chosen).primary)}</strong> lives in</div>
                 <div style="font-size:13px;color:var(--blue);font-weight:600;">${escapeHtml(locationPath(loc))}</div>
               </div>
-              <button type="button" class="btn btn-accent btn-sm" style="flex-shrink:0;" onclick="state.editPhotoLocation='${loc.id}';render()">File it here</button>
+              <button type="button" class="btn btn-accent btn-sm" style="flex-shrink:0;" onclick="setEditPhotoLocation('${loc.id}')">File it here</button>
             </div>`;
         })()}
 
@@ -6690,6 +6725,40 @@ async function newPlantFromEditPhoto(photoId) {
       ...(body.location_id && locationHoldsPlants(locationById(body.location_id))
         ? { locationId: body.location_id } : {}),
     });
+  } catch (e) { toast(e.message, true); }
+}
+
+function setEditPhotoLocation(locationId) {
+  state.editPhotoLocation = locationId || "";
+  state.editPhotoLocPickerOpen = false;
+  state.locPickerNewOpen = false;
+  if (locationId) noteRecentLocation(locationId);
+  render();
+}
+
+// Quick add, parented to wherever the picker is standing. She is looking at
+// "Front Yard > Below Wall" and needs a second pot in it — sending her to the
+// Locations tab and back would lose everything staged in the form.
+// pickFn is a function NAME so the new location can be selected straight away
+// by whichever picker asked for it.
+async function quickAddLocation(pickFn) {
+  const nameEl = document.getElementById("qa-loc-name");
+  const typeEl = document.getElementById("qa-loc-type");
+  const name = (nameEl && nameEl.value || "").trim();
+  if (!name) { toast("Give the location a name", true); return; }
+  try {
+    const [created] = await restPost("locations", {
+      name,
+      type: (typeEl && typeEl.value) || "container",
+      parent_location_id: state.locPickerParent || null,
+      holds_plants: ((typeEl && typeEl.value) || "container") === "container",
+    });
+    if (!created) throw new Error("Could not create the location");
+    await loadAll();
+    state.locPickerNewOpen = false;
+    toast(`Created ${created.name}`);
+    const fn = globalThis[pickFn];
+    if (typeof fn === "function") fn(created.id); else render();
   } catch (e) { toast(e.message, true); }
 }
 

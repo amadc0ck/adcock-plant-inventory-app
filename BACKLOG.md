@@ -227,6 +227,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.77.0
+
+**Location gets the same treatment as Plant.** Schema: none.
+
+The edit-photo form had a thumbnail card with Change / Clear for the plant and a flat `<select>` of 157 rows for the location — the two halves of the same question, answered two different ways.
+
+- **Location is a card now**: name, its parent path, Change and Clear, with the shared `locationPicker()` opening inline. So it arrives with recently-used first, one level at a time, counts on every row and a search that flattens.
+- **New location, in place.** A quick-add form at the bottom of the picker, **parented to whatever level the picker is standing on** — "New location inside Below Wall" — with a name, a type, and a Create-and-use that selects it immediately. Sending her to the Locations tab and back would have discarded everything staged in the form. Type defaults to container, and `holds_plants` follows the type.
+- Choosing a location — including accepting the "lives in" suggestion — now records it as **recently used**, so it feeds the Inbox jump list too.
+
 ### v1.76.0
 
 **Same species, new specimen — and the button was an icon the size of the modal.** Schema: none.

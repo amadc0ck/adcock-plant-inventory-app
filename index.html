@@ -348,7 +348,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.43.0";
+const APP_VERSION = "1.43.1";
 const APP_UPDATED = "2026-08-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2701,6 +2701,24 @@ function modalContent() {
         <select id="nl-parent">${locationSelectOptions(null)}</select>
         <label>Code (optional)</label>
         <input id="nl-code" placeholder="e.g. W-T-12" />
+        <div class="checkbox-row">
+          <input type="checkbox" id="nl-holdsplants" />
+          <label for="nl-holdsplants">Plants are assigned directly to this location</label>
+        </div>
+        <div class="field-help">Leave off for areas whose photos are views of the whole space. Turn on for buckets, pots, and ground beds. Containers get this automatically.</div>
+        <label>Show in the Gallery as</label>
+        <select id="nl-galleryrow">
+          ${Object.entries(GALLERY_ROW_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+        </select>
+
+        <div class="section-label">If this is a former location</div>
+        <p class="subtle" style="margin:0 0 8px;">Somewhere the collection used to live. Fills in the Archives row of the Gallery.</p>
+        <label>Locality</label>
+        <input id="nl-locality" placeholder="e.g. SF, CA" />
+        <div class="row" style="gap:10px;align-items:flex-end;">
+          <div style="flex:1;"><label>From</label><input type="date" id="nl-activefrom" /></div>
+          <div style="flex:1;"><label>Until</label><input type="date" id="nl-activeto" /></div>
+        </div>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Add location</button>
       </form>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
@@ -3119,6 +3137,19 @@ function modalContent() {
             `<option value="${k}" ${(l.gallery_row || "none") === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <div class="field-help">Areas become Garden Albums. Somewhere the collection used to live — an old flat or office — becomes an Archive.</div>
+
+        <div class="section-label">If this is a former location</div>
+        <label>Locality</label>
+        <input id="el-locality" placeholder="e.g. SF, CA" value="${escapeHtml(l.locality || "")}" />
+        <div class="row" style="gap:10px;align-items:flex-end;">
+          <div style="flex:1;"><label>From</label><input type="date" id="el-activefrom" value="${l.active_from || ""}" /></div>
+          <div style="flex:1;"><label>Until</label><input type="date" id="el-activeto" value="${l.active_to || ""}" /></div>
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="el-archived" ${l.archived ? "checked" : ""} />
+          <label for="el-archived">Archived — hide from location pickers</label>
+        </div>
+        <div class="field-help">For a container that no longer exists (repotted) or a place the collection has left. History is kept either way. Separate from the Gallery setting above.</div>
         <label>Parent location</label>
         <select id="el-parent">
           <option value="">— None (top-level) —</option>
@@ -4082,6 +4113,11 @@ async function ensureTaxonForName(botanicalName, commonName) {
         const body = {
           name: document.getElementById("nl-name").value,
           type: document.getElementById("nl-type").value || null,
+          holds_plants: document.getElementById("nl-holdsplants").checked,
+          gallery_row: document.getElementById("nl-galleryrow").value || "none",
+          locality: document.getElementById("nl-locality").value.trim() || null,
+          active_from: document.getElementById("nl-activefrom").value || null,
+          active_to: document.getElementById("nl-activeto").value || null,
           parent_location_id: document.getElementById("nl-parent").value || null,
           code: document.getElementById("nl-code").value || null,
         };
@@ -4133,6 +4169,10 @@ async function ensureTaxonForName(botanicalName, commonName) {
           type: document.getElementById("el-type").value || null,
           holds_plants: document.getElementById("el-holdsplants").checked,
           gallery_row: document.getElementById("el-galleryrow").value || "none",
+          locality: document.getElementById("el-locality").value.trim() || null,
+          active_from: document.getElementById("el-activefrom").value || null,
+          active_to: document.getElementById("el-activeto").value || null,
+          archived: document.getElementById("el-archived").checked,
           parent_location_id: document.getElementById("el-parent").value || null,
           sort_order: sortVal === "" ? null : Number(sortVal),
           code: document.getElementById("el-code").value || null,

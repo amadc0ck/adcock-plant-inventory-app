@@ -398,6 +398,12 @@ Group `photo_type = 'historical'` photos by former collection location and date 
 
 ## Completed
 
+### v1.43.1
+
+**Finish LOC-6's controls.** v1.43.0 put `holds_plants` and `gallery_row` on the **edit** location modal but not on **create**, so a new archive location had to be made and then immediately reopened to be flagged. The archive detail fields — `locality`, `active_from`, `active_to` — and `archived` had columns but no UI at all.
+
+Both modals now carry the full set, with the former-location fields grouped under their own heading so creating an ordinary bucket stays short.
+
 ### v1.43.0
 
 **LOC-6 — Location types reworked, plus gallery and plant-holding flags.** Schema: yes · Touched `locationTypeLabel`, both type dropdowns, `screenLocationDetail`, `editLocation`.

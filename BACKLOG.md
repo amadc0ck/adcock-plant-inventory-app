@@ -247,6 +247,62 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.85.0
+**The consistency audit, and the refactor it demanded.** Amanda asked whether
+she gets the same ability to manage the collection from anywhere in the app.
+She does not, and the audit said why: **every surface had grown its own button
+set**, so each fix was local and the next gap was structural rather than
+accidental.
+
+What the audit found, before fixing:
+- **Favourite existed on 3 of 11 photo surfaces** — and favourites are not
+  cosmetic here. They are the highlight mechanism (v1.62.0) and the intended
+  source of taxon galleries (SPECIES-1). Not on the Gallery grid, the Inbox, a
+  plant's photo list, or a location's feed.
+- **The Location lightbox had two actions**, one of which — "Edit location" —
+  edited the location record rather than the photo. The *identical* mislabel the
+  plant lightbox carried until v1.84.0. Fixed there, missed here, because the
+  two modes did not share code.
+- **"Tag plants" was missing from the location feed**, which is exactly where a
+  mixed planter lives. This was Amanda's original observation #1.
+- **The Plants list card had no inline actions at all**, while the Locations
+  list card has had Edit and Add-photos since LOC-2.
+- Location detail turned out to have **two** photo feeds and the Gallery **two**
+  card layouts, each with their own buttons.
+
+**Fix: `photoActionList()` / `photoActionsHtml()` — one row, every surface.**
+Gating lives in one function, so "does Favourite appear here?" has exactly one
+answer. Amanda's rule applied: minimal on cards, everything in the lightbox.
+Each surface passes its own button classes so the row still looks native.
+Deliberate exceptions, all commented: the Inbox keeps INB-1's two promoted
+primaries, and the location feed keeps its own Unfile.
+
+**Vocabulary, per Amanda:**
+- **Assign / Unassign, not attach / detach / tag / move.** Four verbs for one
+  relationship became one modal. The storage split stays — `photos.plant_id` is
+  the specimen that owns the timeline, `photo_plants` is everything else in
+  frame — but she is no longer asked to care which is which: the first plant
+  assigned becomes the owner, "Make owner" promotes another, and `movePhoto` is
+  gone because moving is just reassigning.
+- **Set / Change / Move location were already the same modal**, wearing three
+  labels. Now one label everywhere.
+- **"Other containers" removed entirely** — it did not make sense. Note:
+  existing `photo_locations` extra rows still *display*; there is no longer a UI
+  to add or remove them. Say so if that ever matters.
+
+**Also:** `uploadPhoto()` has always taken a `plantId` and nothing ever passed
+one, so the only way to get a photo onto a specimen was to upload to the Inbox
+and file it back. The Plants list card now has Edit and Add-photo inline, and
+Add-photo lands straight on the specimen.
+
+Dead code removed: `tagPlants`, `tagLocations`, `movePhoto` modals;
+`saveTaggedPlants`, `saveTaggedLocations`, `untagPlantFromPhoto`,
+`detachPhotoFromPlant`, `movePhotoToSpecimen`, `attachPhotoToPlant`,
+`diagnoseButton`, `identifyBtn`, `newPlantBtn`.
+
+14 gating assertions on the shared row, run under node.
+
+
 ### v1.84.0
 Amanda's six observations from a day using the app, plus RPT-3. Shipped
 together at her request rather than staged.

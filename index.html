@@ -270,6 +270,8 @@
     background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.5);color:var(--ink);}
   .checkin-bar svg{width:16px;height:16px;flex-shrink:0;color:var(--terracotta);}
   .checkin-bar .checkin-text{flex:1;min-width:140px;}
+  .assigned-row{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:9px 11px;}
+  .assigned-row svg{width:13px;height:13px;flex-shrink:0;}
   .checkin-quiet{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);}
   /* AI-3. Two different messages: linking to an existing species is correct and
      just needs saying; a near miss is a warning. They must not look alike. */
@@ -565,7 +567,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.84.1";
+const APP_VERSION = "1.85.0";
 const APP_UPDATED = "2026-08-27";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2982,15 +2984,14 @@ function photoRow(p, selectMode) {
            same shelf, then twenty off the next. */""}
       ${!selectMode ? `
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center;">
-        <button class="btn btn-accent btn-sm icon-btn" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("link")} Plant</button>
+        ${/* INB-1's two promoted primaries stay promoted — they are the pair
+             that actually moves a photo out of the Inbox. Everything else now
+             comes from the shared row so the Inbox cannot drift from the rest
+             of the app again. */""}
+        <button class="btn btn-accent btn-sm icon-btn" onclick="openModal('assignPlants',{photoId:'${p.id}'})">${icon("link")} Plant</button>
         <button class="btn btn-secondary btn-sm btn-on-cream icon-btn" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
         <div style="display:flex;gap:12px;margin-left:auto;align-items:center;">
-          ${!plantnetSuggestion
-            ? `<button class="btn-ghost on-cream-icon" ${isIdentifying ? "disabled" : ""} title="Identify with Pl@ntNet" onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search")}</button>`
-            : `<button class="btn-ghost" style="padding:0;font-size:11.5px;" onclick="dismissIdentification('${plantnetSuggestion.id}')">Dismiss Pl@ntNet</button>`}
-          <button class="btn-ghost on-cream-icon" ${state.suggestingPhotoId === p.id ? "disabled" : ""} title="Ask Claude where this belongs" onclick="askClaudeAboutPhoto('${p.id}')">${state.suggestingPhotoId === p.id ? '<span class="spinner"></span>' : icon("photoQuestion")}</button>
-          <button class="btn-ghost on-cream-icon" title="Create a new plant from this photo" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'})">${icon("plus")}</button>
-          <button class="btn-ghost on-cream-icon" style="color:var(--terracotta);" title="Delete this photo" onclick="deletePhoto('${p.id}')">${icon("trash")}</button>
+          ${photoActionsHtml(p, { mode: "inbox", variant: "card", cls: "btn-ghost on-cream-icon", style: "", iconOnly: true, omit: ["plants", "location"] })}
         </div>
       </div>
       ${(() => {
@@ -3270,10 +3271,8 @@ function screenTaxonDetail() {
                 <div class="tag-id">${fmtDate(photoDate(photo))}${photo.photo_type && photo.photo_type !== "general" ? " · " + escapeHtml(PHOTO_TYPE_LABELS[photo.photo_type] || photo.photo_type) : ""}</div>
                 <div class="mono" style="font-size:11px;color:var(--moss-dim);margin-top:2px;cursor:pointer;" onclick="openPlant('${specimen.id}')">${specimen.accession_number}</div>
                 <div style="font-size:11px;color:var(--ink-soft);">${loc ? escapeHtml(loc.name) : `<span class="value-blank">No location</span>`}</div>
-                <div style="display:flex;gap:8px;margin-top:6px;">
-                  <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;${photo.is_favorite ? "color:var(--pink);" : ""}" onclick="toggleFavorite('${photo.id}')">${icon("heartStar")}</button>
-                                    <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;" onclick="openModal('movePhoto',{photoId:'${photo.id}',fromPlantId:'${specimen.id}'})">${icon("seedling")} Move</button>
-                  <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;" onclick="openModal('editPhoto',{photoId:'${photo.id}'})">${icon("edit")} Edit</button>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
+                  ${photoActionsHtml(photo, { mode: "taxon", plantId: specimen.id, variant: "card", style: "padding:0;font-size:11.5px;", iconOnly: true })}
                 </div>
               </div>
             </div>`;
@@ -3351,7 +3350,15 @@ function plantRow(pl) {
         ${pl.original_collection ? `<span class="pill-solid pill-solid-pink">Original</span>` : ""}
         ${pl.status !== "active" ? `<span class="pill-solid pill-solid-terracotta">${STATUS_LABELS[pl.status]}</span>` : ""}
       </div>
-      <div class="row" style="margin-top:8px;justify-content:flex-end;">
+      ${/* The Locations list card has carried inline Edit and Add-photos since
+           LOC-2; the Plants list — the one she uses most — had no inline action
+           at all, so every change meant opening the record first. Same two
+           affordances, same place. */""}
+      <div class="row" style="margin-top:8px;">
+        <div style="display:flex;gap:14px;">
+          <button class="btn-ghost on-cream-icon" title="Edit this plant" onclick="event.stopPropagation();openModal('editPlant',{plantId:'${pl.id}'})">${icon("edit")}</button>
+          <button class="btn-ghost on-cream-icon" title="Add a photo of this plant" onclick="event.stopPropagation();openModal('upload',{plantId:'${pl.id}'})">${icon("photoPlus")}</button>
+        </div>
         <div class="mono" style="font-size:11px;color:var(--moss-dim);flex-shrink:0;">${countLabel(photos.length, "photo", "photos")}</div>
       </div>
     </div>
@@ -3588,16 +3595,7 @@ function screenPlantDetail() {
                   ${isPrimary ? `<span class="pill pill-orange">Profile</span>` : !isDirectAttachment ? `<span class="pill">Tagged</span>` : ""}
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
-                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
-                  <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
-                  ${diagnoseButton(p, "btn-ghost icon-btn")}
-                  ${!isPrimary ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">${icon("photoStar")} Set as profile</button>` : ""}
-                  ${isDirectAttachment
-                    ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('movePhoto',{photoId:'${p.id}',fromPlantId:'${pl.id}'})">${icon("seedling")} Move</button>
-                       <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="detachPhotoFromPlant('${p.id}')">${icon("link")} Detach</button>
-                       <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="deletePhoto('${p.id}')">${icon("trash")} Delete</button>`
-                    : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="untagPlantFromPhoto('${p.id}','${pl.id}')">${icon("trash")} Remove tag</button>`}
+                  ${photoActionsHtml(p, { mode: "plant", plantId: pl.id, variant: "card" })}
                 </div>
               </div>`;
             }).join("")}
@@ -3889,13 +3887,8 @@ function screenLocationDetail() {
               </div>
               <div class="photo-feed-body">
                 <div class="photo-feed-actions" style="${state.gallerySelectMode ? "display:none;" : ""}">
-                  <button class="icon-only" title="Tag a plant shown in this photo" onclick="openModal('attach',{photoId:'${p.id}'})">${icon("tag")}</button>
-                  <button class="icon-only" title="Edit this photo" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
-                  <button class="icon-only" title="Move to another location" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")}</button>
-                  ${l.primary_photo_id !== p.id
-                    ? `<button class="icon-only" title="Use as this location's cover" onclick="setLocationPhoto('${l.id}','${p.id}')">${icon("photoStar")}</button>`
-                    : `<span class="pill pill-orange" style="font-size:9.5px;">Cover</span>`}
-                  <button class="icon-only danger spacer" title="Delete this photo" onclick="deletePhoto('${p.id}')">${icon("trash")}</button>
+                  ${photoActionsHtml(p, { mode: "location", locationId: l.id, variant: "card", cls: "icon-only", style: "", iconOnly: true })}
+                  ${l.primary_photo_id === p.id ? `<span class="pill pill-orange" style="font-size:9.5px;">Cover</span>` : ""}
                 </div>
                 ${p.notes
                   ? `<div class="photo-feed-cap">${escapeHtml(p.notes)}</div>`
@@ -3945,24 +3938,8 @@ function screenLocationDetail() {
                   <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
                 </div>` : ""}
               <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;${state.gallerySelectMode ? "display:none;" : ""}">
-                ${/* A photo already filed to a specimen has been identified —
-                     offering "Identify" there invites re-asking Pl@ntNet a
-                     settled question. The Gallery has always gated this
-                     (identifyBtn returns "" when p.plant_id is set); this feed
-                     never did. */""}
-                ${p.plant_id
-                  ? ""
-                  : !plantnetSuggestion
-                  ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search") + " Identify"}</button>`
-                  : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="dismissIdentification('${plantnetSuggestion.id}')">${icon("close")} Dismiss Pl@ntNet</button>`}
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${state.suggestingPhotoId === p.id ? "disabled" : ""} onclick="askClaudeAboutPhoto('${p.id}')">${state.suggestingPhotoId === p.id ? '<span class="spinner"></span>' : icon("photoQuestion") + " Ask Claude"}</button>
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attach',{photoId:'${p.id}', locationId:'${l.id}'})">${icon("tag")} Attach to a plant</button>
-                ${diagnoseButton(p, "btn-ghost icon-btn")}
-                <button class="btn-ghost" style="padding:0;" title="Edit this photo" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Move</button>
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagLocations',{photoId:'${p.id}'})">${icon("map")} Other containers</button>
-                ${l.primary_photo_id !== p.id ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setLocationPhoto('${l.id}','${p.id}')">${icon("photoStar")} Set as cover</button>` : ""}
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="removePhotoFromLocation('${p.id}','${l.id}')">${icon("link")} ${p.location_id === l.id ? "Unfile" : "Remove tag"}</button>
+                ${photoActionsHtml(p, { mode: "location", locationId: l.id, variant: "card" })}
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="event.stopPropagation();removePhotoFromLocation('${p.id}','${l.id}')">${icon("link")} ${p.location_id === l.id ? "Unfile" : "Remove tag"}</button>
                 <button class="btn-ghost" style="padding:0;color:var(--terracotta);" title="Delete this photo" onclick="deletePhoto('${p.id}')">${icon("trash")}</button>
               </div>
             </div>`;
@@ -4526,10 +4503,8 @@ function screenGallery() {
             ${plant ? `<div style="font-size:13px;margin-top:1px;">${plantDisplayHtml(plant)}</div>` : ""}
             ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}</div>` : `<div class="value-blank" style="font-size:11px;margin-top:1px;">No location</div>`}
           </div>
-          <div style="display:flex;gap:10px;flex-shrink:0;">
-            ${identifyBtn(p, "12px")}
-            ${newPlantBtn(p, "12px")}
-            <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" title="Edit this photo" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;flex-shrink:0;">
+            ${photoActionsHtml(p, { mode: "gallery", plantId: plant ? plant.id : null, variant: "card", iconOnly: true })}
           </div>
         </div>`;
       }).join("")}
@@ -4538,18 +4513,6 @@ function screenGallery() {
   // Working the "Needs a plant" bucket means looking at a photo and asking what
   // it is. Pl@ntNet only — Ask Claude is a per-photo cost and belongs where the
   // decision is deliberate, not on every tile in a 317-photo grid.
-  const identifyBtn = (p, size) => {
-    if (p.plant_id) return "";
-    const pending = pendingIdentifications(p.id).find((x) => x.source !== "Claude");
-    if (pending) {
-      return `<button class="btn-ghost icon-btn" style="padding:0;font-size:${size};color:var(--blue);" title="Pl@ntNet suggested ${escapeHtml(pending.suggested_name)} — compare"
-              onclick="event.stopPropagation();openModal('identificationDetail',{identificationId:'${pending.id}'})">${icon("photoQuestion")}</button>`;
-    }
-    const busy = state.identifyingPhotoId === p.id;
-    return `<button class="btn-ghost icon-btn" style="padding:0;font-size:${size};" ${busy ? "disabled" : ""} title="Identify with Pl@ntNet"
-            onclick="event.stopPropagation();identifyPhoto('${p.id}')">${busy ? '<span class="spinner"></span>' : icon("search")}</button>`;
-  };
-
   // Working "Needs a plant" often ends in "this is a plant I have not recorded
   // yet" — which is a species AND a specimen. newPlantFromPhoto creates both
   // and attaches the photo, so the answer is one tap from the tile that raised
@@ -4558,13 +4521,6 @@ function screenGallery() {
   // The photo's own location is offered as the default only when that location
   // actually holds plants: pre-filling an Area or an Archive would record a
   // specimen living in a former home.
-  const newPlantBtn = (p, size) => {
-    if (p.plant_id) return "";
-    const here = photoAwaitsPlant(p) ? `, locationId:'${p.location_id}'` : "";
-    return `<button class="btn-ghost icon-btn" style="padding:0;font-size:${size};" title="Create a new plant from this photo"
-            onclick="event.stopPropagation();openModal('newPlantFromPhoto',{photoId:'${p.id}'${here}})">${icon("plus")}</button>`;
-  };
-
   const grid = (photos) => `
     <div class="card-grid">
       ${photos.map((p) => {
@@ -4578,10 +4534,8 @@ function screenGallery() {
           <div style="padding:10px 12px;">
             <div class="row">
               <div class="tag-id">${fmtDate(photoDate(p))}${isArchivePhoto(p) ? " · Archive" : ""}</div>
-              <div style="display:flex;gap:10px;flex-shrink:0;">
-                ${identifyBtn(p, "12px")}
-                ${newPlantBtn(p, "12px")}
-                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" title="Edit this photo" onclick="event.stopPropagation();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
+              <div style="display:flex;flex-wrap:wrap;gap:10px;flex-shrink:0;">
+                ${photoActionsHtml(p, { mode: "gallery", plantId: plant ? plant.id : null, variant: "card", iconOnly: true })}
               </div>
             </div>
             ${plant ? `<div style="font-size:12.5px;margin-top:2px;">${plantDisplayHtml(plant)}</div>` : ""}
@@ -4843,26 +4797,52 @@ function modalContent() {
   if (!state.modal) return "";
   const { type, data } = state.modal;
 
-  if (type === "attach") {
-    // LOCP-2. "Add to plant here" and "Attach to any plant" were the same verb
-    // at two scopes, which is a filter, not two buttons. Opened from a
-    // location it starts narrowed to that location and she can widen it.
+  if (type === "attach" || type === "assignPlants") {
+    // v1.85.0. Was two modals for one question. "Attach to a plant" set
+    // photos.plant_id; "Tag plants in this photo" managed photo_plants; "Move"
+    // was attach to a different one. Amanda's vocabulary is Assign / Unassign,
+    // and a photo showing three plants in a planter is one question, not three
+    // verbs. The storage split stays — the primary owns the timeline, the rest
+    // are also-visible — but she is no longer asked to care which is which.
+    //
+    // LOCP-2, preserved: opened from a location it starts narrowed to that
+    // location and she can widen it. Reads the live filter rather than the
+    // opening intent, so widening does not leave the sentence asserting
+    // something that stopped being true.
     const here = data.locationId ? locationById(data.locationId) : null;
-    // Reads the live filter rather than the opening intent, so widening it does
-    // not leave the sentence asserting something that stopped being true.
     const narrowed = here && state.pickerLocation === here.id;
+    const assigned = plantsAssignedToPhoto(data.photoId);
+    const ph = state.photos.find((x) => x.id === data.photoId);
+    const primaryId = ph ? ph.plant_id : null;
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Attach to a plant</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">${assigned.length ? "Plants in this photo" : "Assign a plant"}</h3>
       <p class="subtle" style="margin:0 0 14px;">${narrowed
         ? `Showing the plants in <strong>${escapeHtml(here.name)}</strong> — widen the location filter to reach any plant in the collection.`
         : here
         ? `Showing every plant. Set the location filter back to <strong>${escapeHtml(here.name)}</strong> to see just what is here.`
-        : "This photo becomes that plant's, and appears on its timeline."}</p>
-      ${plantPicker(`attachPhotoToPlant('${data.photoId}','{id}')`, {
+        : "Assign every plant visible in the frame. The first one owns the photo's timeline; the rest are recorded as also showing in it."}</p>
+
+      ${assigned.length ? `
+        <div class="section-label">Assigned</div>
+        <div class="stack" style="margin-bottom:14px;">
+          ${assigned.map((pl) => `
+            <div class="assigned-row">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13.5px;">${escapeHtml(plantPickerName(pl).primary)}</div>
+                <div class="mono" style="font-size:10.5px;color:var(--moss-dim);">${pl.accession_number}${pl.id === primaryId ? " · owns this photo" : ""}</div>
+              </div>
+              ${pl.id !== primaryId ? `<button class="btn-ghost" style="padding:0;font-size:11.5px;" onclick="makePrimaryPlantForPhoto('${data.photoId}','${pl.id}')">Make owner</button>` : ""}
+              <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;color:var(--terracotta);" title="Unassign this plant" onclick="unassignPlantFromPhoto('${data.photoId}','${pl.id}')">${icon("close")} Unassign</button>
+            </div>`).join("")}
+        </div>
+        <div class="section-label">Assign another</div>` : ""}
+
+      ${plantPicker(`assignPlantToPhoto('${data.photoId}','{id}')`, {
+        excludeIds: assigned.map((pl) => pl.id),
         onNew: `openModal('newPlantFromPhoto',{photoId:'${data.photoId}'${data.locationId ? `, locationId:'${data.locationId}'` : ""}})`,
       })}
-      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
   }
 
   if (type === "identificationDetail") {
@@ -4941,27 +4921,6 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Close</button>`;
   }
 
-
-  if (type === "tagLocations") {
-    const photo = state.photos.find((p) => p.id === data.photoId);
-    const taggedIds = new Set(additionalLocationRowsForPhoto(data.photoId).map((r) => r.location_id));
-    const q = (state.tagLocationSearch || "").toLowerCase();
-    const candidates = locationOptionList().filter((o) => o.id !== photo.location_id && (!q || o.label.toLowerCase().includes(q)));
-    return `
-      <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Tag other containers</h3>
-      <p class="subtle" style="margin:0 0 14px;">Check every container visible in this photo, besides its primary attachment.</p>
-      <input placeholder="Search locations…" value="${escapeHtml(state.tagLocationSearch || "")}" id="search-tag-location" oninput="state.tagLocationSearch=this.value;render()" style="margin-bottom:14px;" />
-      <div class="stack" style="max-height:44vh;overflow-y:auto;">
-        ${candidates.length === 0 ? `<p class="subtle">No locations match.</p>` : candidates.map((o) => `
-          <label class="checkbox-row" style="margin-top:0;background:var(--bg);padding:10px 12px;border-radius:8px;">
-            <input type="checkbox" class="tag-location-checkbox" value="${o.id}" ${taggedIds.has(o.id) ? "checked" : ""} />
-            <span style="white-space:pre">${escapeHtml(o.label)}</span>
-          </label>`).join("")}
-      </div>
-      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="saveTaggedLocations('${data.photoId}')">Save containers</button>
-      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
-  }
 
   if (type === "bulkAttachPlant") {
     return `
@@ -5781,51 +5740,6 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
-  if (type === "movePhoto") {
-    const from = state.plants.find((p) => p.id === data.fromPlantId);
-    const photo = state.photos.find((p) => p.id === data.photoId);
-    if (!from || !photo) return `<p>Not found.</p>`;
-    // Siblings first: photos almost always move between specimens of the same
-    // species, and that list is short and obviously correct. Everything else
-    // is available underneath for the rarer case of a misidentified photo.
-    const siblings = from.taxa_id
-      ? specimensOfTaxon(from.taxa_id).filter((p) => p.id !== from.id)
-      : [];
-    const others = state.plants
-      .filter((p) => p.id !== from.id && !siblings.some((s2) => s2.id === p.id))
-      .sort((a, b) => (a.accession_number || "").localeCompare(b.accession_number || ""));
-    const photoLoc = photo.location_id ? locationById(photo.location_id) : null;
-    const row = (sp) => {
-      const loc = sp.location_id ? locationById(sp.location_id) : null;
-      // The photo's own location is the strongest clue about which specimen it
-      // shows, so call the match out rather than making her cross-reference.
-      const match = loc && photo.location_id === sp.location_id;
-      return `
-        <button onclick="movePhotoToSpecimen('${photo.id}','${sp.id}')" class="tag-card plant-list-card" style="width:100%;padding:10px 12px;border:none;text-align:left;cursor:pointer;${match ? "outline:2px solid var(--moss);" : ""}">
-          <div class="plant-list-thumb" style="width:48px;height:48px;">
-            ${plantCoverPhoto(sp) ? photoImg(plantCoverPhoto(sp)) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
-          </div>
-          <div style="flex:1;min-width:0;">
-            <div class="mono tag-id">${sp.accession_number}</div>
-            <div style="font-size:13px;color:var(--ink);margin-top:2px;">${loc ? escapeHtml(locationPath(loc)) : `<span class="value-blank">No location</span>`}</div>
-            ${match ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:2px;">Same location as this photo</div>` : ""}
-          </div>
-        </button>`;
-    };
-    return `
-      <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Move photo to another specimen</h3>
-      <p class="subtle" style="margin:0 0 14px;">Currently on ${from.accession_number}${photoLoc ? ` · photo taken at ${escapeHtml(photoLoc.name)}` : " · photo has no location"}.</p>
-      ${siblings.length ? `
-        <div class="section-label" style="margin-top:0;">Other specimens of this species</div>
-        <div class="stack">${siblings.map(row).join("")}</div>` : `
-        <p class="subtle">This is the only specimen of its species.</p>`}
-      ${others.length ? `
-        <div class="section-label">Every other plant</div>
-        <div class="stack" style="max-height:34vh;overflow-y:auto;">${others.map(row).join("")}</div>` : ""}
-      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
-  }
-
   if (type === "assignLocationPhotos") {
     const l = locationById(data.locationId);
     if (!l) return `<p>Not found.</p>`;
@@ -6103,38 +6017,21 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
-  if (type === "tagPlants") {
-    const photo = state.photos.find((p) => p.id === data.photoId);
-    const taggedIds = new Set(state.photoPlants.filter((pp) => pp.photo_id === data.photoId).map((pp) => pp.plant_id));
-    const q = (state.tagSearch || "").toLowerCase();
-    const candidates = state.plants.filter((p) => p.id !== photo.plant_id && (!q || plantSearchText(p).includes(q)));
-    return `
-      <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Tag plants in this photo</h3>
-      <p class="subtle" style="margin:0 0 14px;">Check every plant visible in this photo, besides the one it's already attached to.</p>
-      <input placeholder="Search accession #, name…" value="${escapeHtml(state.tagSearch || "")}" id="search-tag" oninput="state.tagSearch=this.value;render()" style="margin-bottom:14px;" />
-      <div class="stack" style="max-height:44vh;overflow-y:auto;">
-        ${candidates.length === 0 ? `<p class="subtle">No other plants match.</p>` : candidates.map((p) => `
-          <label class="checkbox-row" style="margin-top:0;background:var(--bg);padding:10px 12px;border-radius:8px;">
-            <input type="checkbox" class="tag-plant-checkbox" value="${p.id}" ${taggedIds.has(p.id) ? "checked" : ""} />
-            <span class="mono" style="opacity:0.6;margin-right:6px;">${p.accession_number}</span>${escapeHtml(plantDisplayName(p))}
-          </label>`).join("")}
-      </div>
-      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="saveTaggedPlants('${data.photoId}')">Save tags</button>
-      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
-  }
-
   if (type === "upload") {
     const loc = data.locationId ? locationById(data.locationId) : null;
+    // v1.85.0: uploading straight onto a specimen. uploadPhoto() has always
+    // taken a plantId; nothing ever passed one, so the only way to get a photo
+    // onto a plant was to upload to the Inbox and file it afterwards.
+    const upl = data.plantId ? state.plants.find((x) => x.id === data.plantId) : null;
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">${loc ? `Add photo — ${escapeHtml(loc.name)}` : "Add photos"}</h3>
-      <p class="subtle" style="margin:0 0 14px;">${loc ? "Photo of this location/container — won't need attaching to a plant." : "Select multiple to upload them all at once — each lands in To Do separately."}</p>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">${upl ? `Add photo — ${escapeHtml(plantPickerName(upl).primary)}` : loc ? `Add photo — ${escapeHtml(loc.name)}` : "Add photos"}</h3>
+      <p class="subtle" style="margin:0 0 14px;">${upl ? "Lands straight on this specimen's timeline — no filing step." : loc ? "Photo of this location/container — won't need attaching to a plant." : "Select multiple to upload them all at once — each lands in To Do separately."}</p>
       <form id="upload-form">
-        <input type="file" id="upload-file" accept="image/*" ${loc ? "" : "multiple"} required style="padding:10px;" />
-        <label>Notes (optional${loc ? "" : ", applied to all selected"})</label>
+        <input type="file" id="upload-file" accept="image/*" ${loc || upl ? "" : "multiple"} required style="padding:10px;" />
+        <label>Notes (optional${loc || upl ? "" : ", applied to all selected"})</label>
         <textarea id="upload-notes" rows="2" placeholder="e.g. new growth on the west side"></textarea>
-        <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn">${loc ? "Upload" : "Upload to Inbox"}</button>
+        <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn">${loc || upl ? "Upload" : "Upload to Inbox"}</button>
       </form>
       <div class="divider"></div>
       <button class="btn btn-secondary btn-block" onclick="openModal('photosPicker',${loc ? `{locationId:'${loc.id}'}` : "{}"})">${icon("photo")} Import from Google Photos</button>
@@ -6372,11 +6269,89 @@ async function identifyPhoto(photoId) {
 // #4. Diagnosing health is only worth asking once the photo is filed: the read
 // is against what THIS species should look like, which needs the specimen. So
 // the button appears only when there is a plant behind the photo.
-function diagnoseButton(p, cls) {
-  if (!p.plant_id) return "";
-  const busy = state.suggestingPhotoId === p.id;
-  return `<button class="${cls}" ${busy ? "disabled" : ""} title="Ask Claude how this plant is doing"
-    onclick="event.stopPropagation();askClaudeAboutPhoto('${p.id}',{focus:'health'})">${busy ? '<span class="spinner"></span>' : icon("ambulance") + " How is it doing?"}</button>`;
+/* ------------------------------------------------------------
+   ONE photo action row for every surface (v1.85.0).
+
+   The audit found the same photo offering different powers depending on which
+   screen you reached it from: Favourite existed on 3 of 11 surfaces, "tag the
+   other plants in this planter" was missing from the location feed where mixed
+   planters actually live, and the location lightbox had two actions where the
+   gallery had five. Each surface had grown its own button set, so each fix was
+   local and the next gap was inevitable.
+
+   Amanda's rule: minimal on cards, everything in the lightbox. Gating lives
+   here and nowhere else, so "does Favourite show up here?" has one answer.
+   ------------------------------------------------------------ */
+function photoActionList(p, ctx) {
+  const c = ctx || {};
+  const full = c.variant === "full";
+  const assigned = plantsAssignedToPhoto(p.id);
+  const plantnet = pendingIdentifications(p.id).find((x) => x.source !== "Claude");
+  const busyId = state.identifyingPhotoId === p.id;
+  const busyAsk = state.suggestingPhotoId === p.id;
+  const isPrimary = (c.mode === "location" && c.locationId && locationById(c.locationId)?.primary_photo_id === p.id)
+    || (c.mode === "plant" && c.plantId && state.plants.find((x) => x.id === c.plantId)?.primary_photo_id === p.id);
+  const A = [];
+  const add = (o) => { if (o.show !== false) A.push(o); };
+
+  // --- identification: only while the photo is still unplaced ---
+  if (full || !p.plant_id) {
+    if (plantnet) {
+      add({ key: "dismissId", label: "Dismiss Pl@ntNet", ic: "close",
+            onclick: `dismissIdentification('${plantnet.id}')`, show: full });
+    } else {
+      add({ key: "identify", label: "Identify", ic: "search", busy: busyId,
+            onclick: `identifyPhoto('${p.id}')`, show: !p.plant_id });
+    }
+    add({ key: "ask", label: "Ask Claude", ic: "photoQuestion", busy: busyAsk,
+          onclick: `askClaudeAboutPhoto('${p.id}')`, show: !p.plant_id || !p.location_id });
+  }
+  // Diagnosing needs the specimen — the read is against what THIS species
+  // should look like, not against cacti in general.
+  add({ key: "health", label: "How is it doing?", ic: "ambulance", busy: busyAsk,
+        onclick: `askClaudeAboutPhoto('${p.id}',{focus:'health'})`, show: !!p.plant_id && full });
+
+  // --- the relationships ---
+  add({ key: "plants", ic: "link",
+        label: assigned.length ? `Plants (${assigned.length})` : "Assign plant",
+        onclick: `openModal('assignPlants',{photoId:'${p.id}'${c.locationId ? `, locationId:'${c.locationId}'` : ""}})`,
+        show: full || !p.plant_id });
+  add({ key: "location", label: "Location", ic: "pin",
+        onclick: `openModal('attachLocation',{photoId:'${p.id}'})`,
+        show: full || c.mode === "inbox" });
+  add({ key: "newPlant", label: "New plant", ic: "plus",
+        onclick: `openModal('newPlantFromPhoto',{photoId:'${p.id}'${c.mode === "location" && c.locationId ? `, locationId:'${c.locationId}'` : ""}})`,
+        show: !p.plant_id });
+
+  // --- the photo itself: available everywhere, which was the whole finding ---
+  add({ key: "primary", ic: "photoStar",
+        label: c.mode === "location" ? "Set as main photo" : "Set as profile",
+        onclick: c.mode === "location" ? `setLocationPhoto('${c.locationId}','${p.id}')` : `setPrimaryPhoto('${c.plantId}','${p.id}')`,
+        show: full && !isPrimary && (c.mode === "plant" || c.mode === "location") && !!(c.plantId || c.locationId) });
+  add({ key: "favourite", label: p.is_favorite ? "Favourited" : "Favourite", ic: "heartStar",
+        onclick: `toggleFavorite('${p.id}')`, tint: p.is_favorite ? "var(--pink)" : "" });
+  add({ key: "edit", label: "Edit photo", ic: "edit",
+        onclick: `openModal('editPhoto',{photoId:'${p.id}'})` });
+  add({ key: "delete", label: "Delete", ic: "trash", danger: true,
+        onclick: `deletePhoto('${p.id}')` });
+  return A;
+}
+
+// Rendered in each surface's own button language, so the row looks native
+// wherever it lands. `modalFirst` closes the lightbox before opening a modal.
+function photoActionsHtml(p, ctx) {
+  const c = ctx || {};
+  const cls = c.cls || "btn-ghost icon-btn";
+  const style = c.style || "padding:0;font-size:12px;";
+  const pre = c.fromLightbox ? "prepareLightboxResume();closeLightbox();" : "";
+  const omit = c.omit || [];
+  return photoActionList(p, c).filter((a) => !omit.includes(a.key)).map((a) => {
+    const guard = a.onclick.startsWith("openModal") ? pre : "";
+    const tint = a.danger ? "color:var(--terracotta);" : a.tint ? `color:${a.tint};` : "";
+    const body = a.busy ? '<span class="spinner"></span>' : `${icon(a.ic)}${c.iconOnly ? "" : " " + a.label}`;
+    return `<button class="${cls}" style="${style}${tint}" ${a.busy ? "disabled" : ""} title="${escapeHtml(a.label)}"
+      onclick="event.stopPropagation();${guard}${a.onclick}">${body}</button>`;
+  }).join("");
 }
 
 function suggestionLine(sg) {
@@ -6985,30 +6960,71 @@ async function fileToArchiveLocation(photoId, locationId) {
   } catch (e) { toast(e.message, true); }
 }
 
-async function attachPhotoToPlant(photoId, plantId) {
+/* ---------- Photo → plant assignment (v1.85.0) ----------
+   Was four verbs for one relationship: attach (set photos.plant_id), tag
+   (photo_plants), detach, untag — plus "move", which is attach to a different
+   plant. Amanda's vocabulary is Assign / Unassign, and she is right: a photo
+   shows some number of plants, and which ones is a single question.
+
+   The two storage mechanisms stay, because they mean different things —
+   photos.plant_id is the specimen the photo BELONGS to (its timeline), and
+   photo_plants is everything else visible in the frame. The UI no longer makes
+   her care which is which: the first plant assigned becomes the primary, the
+   rest become tags, and promoting one is a single tap. */
+
+function plantsAssignedToPhoto(photoId) {
+  const ph = state.photos.find((x) => x.id === photoId);
+  const ids = [];
+  if (ph && ph.plant_id) ids.push(ph.plant_id);
+  state.photoPlants.filter((pp) => pp.photo_id === photoId).forEach((pp) => {
+    if (!ids.includes(pp.plant_id)) ids.push(pp.plant_id);
+  });
+  return ids.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
+}
+
+async function assignPlantToPhoto(photoId, plantId) {
+  const ph = state.photos.find((x) => x.id === photoId);
+  if (!ph) return;
   try {
-    await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
-    toast("Photo attached");
-    closeModal();
+    if (!ph.plant_id) {
+      await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
+    } else if (ph.plant_id !== plantId && !state.photoPlants.some((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
+      await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
+    }
+    toast("Plant assigned");
     await loadAll();
-    maybeResumeLightbox();
   } catch (e) { toast(e.message, true); }
 }
-async function saveTaggedLocations(photoId) {
-  const checked = Array.from(document.querySelectorAll(".tag-location-checkbox:checked")).map((el) => el.value);
-  const current = additionalLocationRowsForPhoto(photoId).map((r) => r.location_id);
-  const toAdd = checked.filter((id) => !current.includes(id));
-  const toRemove = current.filter((id) => !checked.includes(id));
+
+async function unassignPlantFromPhoto(photoId, plantId) {
+  const ph = state.photos.find((x) => x.id === photoId);
+  if (!ph) return;
   try {
-    for (const locationId of toAdd) {
-      await restPost("photo_locations", { photo_id: photoId, location_id: locationId });
+    if (ph.plant_id === plantId) {
+      // Unassigning the primary promotes the next assigned plant rather than
+      // dropping the photo back to the Inbox while other plants are still on it.
+      const next = state.photoPlants.find((pp) => pp.photo_id === photoId);
+      await restPatch("photos", `id=eq.${photoId}`, { plant_id: next ? next.plant_id : null });
+      if (next) await restDelete("photo_plants", `id=eq.${next.id}`);
+    } else {
+      const row = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id === plantId);
+      if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
     }
-    for (const locationId of toRemove) {
-      const row = state.photoLocations.find((r) => r.photo_id === photoId && r.location_id === locationId);
-      if (row) await restDelete("photo_locations", `id=eq.${row.id}`);
-    }
-    toast("Containers updated");
-    closeModal();
+    toast("Plant unassigned");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// "Move to another plant" was a separate modal for what is really this.
+async function makePrimaryPlantForPhoto(photoId, plantId) {
+  const ph = state.photos.find((x) => x.id === photoId);
+  if (!ph || ph.plant_id === plantId) return;
+  try {
+    const row = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id === plantId);
+    if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
+    if (ph.plant_id) await restPost("photo_plants", { photo_id: photoId, plant_id: ph.plant_id });
+    await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
+    toast("Now this plant's photo");
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
@@ -7943,60 +7959,6 @@ async function setTaxonPhoto(taxonId, photoId) {
 // Detach-and-attach in one step. The four-step version — detach, navigate,
 // find it again, re-attach — is the common case when a plant record that stood
 // for several physical plants gets split into real specimens.
-async function movePhotoToSpecimen(photoId, toPlantId) {
-  const photo = state.photos.find((p) => p.id === photoId);
-  const target = state.plants.find((p) => p.id === toPlantId);
-  if (!photo || !target) return;
-  try {
-    const body = { plant_id: toPlantId };
-    // Same snapshot rule as attaching: fill a missing location from the target,
-    // never overwrite one the photo already carries.
-    if (!photo.location_id && target.location_id) body.location_id = target.location_id;
-    await restPatch("photos", `id=eq.${photoId}`, body);
-    toast(`Moved to ${target.accession_number}`);
-    closeModal();
-    await loadAll();
-  } catch (e) { toast(e.message, true); }
-}
-
-async function detachPhotoFromPlant(photoId) {
-  const photo = state.photos.find((p) => p.id === photoId);
-  if (!photo) return;
-  try {
-    await restPatch("photos", `id=eq.${photoId}`, { plant_id: null });
-    const loc = photo.location_id ? locationById(photo.location_id) : null;
-    toast(loc ? `Detached — still filed under ${loc.name}` : "Detached — back in the Inbox");
-    await loadAll();
-  } catch (e) { toast(e.message, true); }
-}
-
-async function untagPlantFromPhoto(photoId, plantId) {
-  if (!confirm("Remove this plant's tag from the photo? The photo itself won't be deleted.")) return;
-  try {
-    const row = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id === plantId);
-    if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
-    toast("Tag removed");
-    await loadAll();
-  } catch (e) { toast(e.message, true); }
-}
-async function saveTaggedPlants(photoId) {
-  const checked = Array.from(document.querySelectorAll(".tag-plant-checkbox:checked")).map((el) => el.value);
-  const current = state.photoPlants.filter((pp) => pp.photo_id === photoId).map((pp) => pp.plant_id);
-  const toAdd = checked.filter((id) => !current.includes(id));
-  const toRemove = current.filter((id) => !checked.includes(id));
-  try {
-    for (const plantId of toAdd) {
-      await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
-    }
-    for (const plantId of toRemove) {
-      const row = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id === plantId);
-      if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
-    }
-    toast("Tags updated");
-    closeModal();
-    await loadAll();
-  } catch (e) { toast(e.message, true); }
-}
 function logout() {
   clearStoredSession();
   Object.values(state.photoUrlCache).forEach((url) => URL.revokeObjectURL(url));
@@ -8286,18 +8248,17 @@ function renderLightbox() {
     ${plantnetSuggestion ? lightboxSuggestionLine(plantnetSuggestion) : ""}
     ${claudeSuggestion ? lightboxSuggestionLine(claudeSuggestion) : ""}
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px;">
-      ${!plantnetSuggestion ? `<button class="btn btn-secondary btn-sm" ${isIdentifying ? "disabled" : ""} onclick="event.stopPropagation();identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : "Identify"}</button>` : ""}
-      <button class="btn btn-secondary btn-sm" ${state.suggestingPhotoId === p.id ? "disabled" : ""} onclick="event.stopPropagation();askClaudeAboutPhoto('${p.id}')">${state.suggestingPhotoId === p.id ? '<span class="spinner"></span>' : "Ask Claude"}</button>
-      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attach',{photoId:'${p.id}'${p.location_id ? `, locationId:'${p.location_id}'` : ""}})">Attach to plant</button>
-      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">Add Location</button>
-      <button class="btn btn-accent btn-sm" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('newPlantFromPhoto',{photoId:'${p.id}'})">New plant</button>
-      <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>
+      ${photoActionsHtml(p, { mode: "inbox", variant: "full", fromLightbox: true, cls: "btn btn-secondary btn-sm icon-btn", style: "" })}
     </div>`;
   } else if (isLocation) {
+    // The audit's worst finding: two actions, one of which ("Edit location")
+    // edited the LOCATION RECORD rather than the photo — the same mislabel the
+    // plant lightbox carried until v1.84.0. Fixed there and not here, because
+    // each surface owned its own buttons. Now they share one.
     bottomActions = `
       <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
-        ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setLocationPhoto('${locationId}','${p.id}')">Set as main photo</button>` : `<span class="pill pill-orange">Main photo</span>`}
-        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('editLocation',{locationId:'${locationId}'})">Edit location</button>
+        ${isPrimary ? `<span class="pill pill-orange">Main photo</span>` : ""}
+        ${photoActionsHtml(p, { mode: "location", locationId, variant: "full", fromLightbox: true, cls: "btn btn-secondary btn-sm icon-btn", style: "" })}
       </div>`;
   } else if (isGallery) {
     const galleryLocs = allLocationsForPhoto(p);
@@ -8305,9 +8266,7 @@ function renderLightbox() {
       <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
         ${pl ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openPlant('${pl.id}')">View plant</button>` : ""}
         ${galleryLocs[0] ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openLocation('${galleryLocs[0].id}')">View location</button>` : ""}
-        <button class="btn btn-secondary btn-sm icon-btn" style="${p.is_favorite ? "color:var(--pink);" : ""}" onclick="event.stopPropagation();toggleFavorite('${p.id}')">${icon("heartStar")} ${p.is_favorite ? "Favourited" : "Favourite"}</button>
-            <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
-            <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>
+        ${photoActionsHtml(p, { mode: "gallery", plantId: pl ? pl.id : null, variant: "full", fromLightbox: true, cls: "btn btn-secondary btn-sm icon-btn", style: "" })}
       </div>`;
   } else {
     // Plant mode was the poorest of the four: "Set as profile picture" and a
@@ -8319,12 +8278,8 @@ function renderLightbox() {
     // every other mode has.
     bottomActions = `
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
-      ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setPrimaryPhoto('${plantId}','${p.id}')">Set as profile picture</button>` : `<span class="pill pill-orange">Profile picture</span>`}
-      <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
-      <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit photo</button>
-      <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
-      <button class="btn btn-secondary btn-sm icon-btn" style="${p.is_favorite ? "color:var(--pink);" : ""}" onclick="event.stopPropagation();toggleFavorite('${p.id}')">${icon("heartStar")} ${p.is_favorite ? "Favourited" : "Favourite"}</button>
-      ${diagnoseButton(p, "btn btn-secondary btn-sm icon-btn")}
+      ${isPrimary ? `<span class="pill pill-orange">Profile picture</span>` : ""}
+      ${photoActionsHtml(p, { mode: "plant", plantId, variant: "full", fromLightbox: true, cls: "btn btn-secondary btn-sm icon-btn", style: "" })}
     </div>
   `;
   }
@@ -8382,6 +8337,9 @@ function wireModalForms() {
       const files = Array.from(document.getElementById("upload-file").files);
       const notes = document.getElementById("upload-notes").value;
       const locationId = state.modal?.data?.locationId || null;
+      // Opened from a specimen, the photo lands on that specimen rather than in
+      // the Inbox to be filed back to where it started.
+      const uploadPlantId = state.modal?.data?.plantId || null;
       if (!files.length) return;
       const btn = document.getElementById("upload-submit-btn");
       btn.disabled = true;
@@ -8389,7 +8347,7 @@ function wireModalForms() {
       for (let i = 0; i < files.length; i++) {
         btn.innerHTML = `<span class="spinner"></span> ${i + 1} / ${files.length}`;
         try {
-          await uploadPhoto(files[i], null, locationId, notes);
+          await uploadPhoto(files[i], uploadPlantId, locationId, notes);
           succeeded++;
         } catch (e) {
           toast(`Failed on ${files[i].name}: ${e.message}`, true);

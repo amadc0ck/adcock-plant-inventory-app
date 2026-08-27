@@ -385,6 +385,20 @@ Scroll is preserved the same way (v1.52.2), for both the page and the modal — 
 
 ---
 
+## 11b. Photo actions — one row, every surface (v1.85.0)
+
+`photoActionList(photo, ctx)` decides **what** a photo offers; `photoActionsHtml()` renders it in the calling surface's own button language. Every photo surface calls it: the Inbox card, Plant Detail's row, both of Location Detail's feeds, the Taxon grid, both Gallery card layouts, and all four lightbox modes.
+
+**Why it exists.** Before it, each surface owned its buttons. The audit that prompted this found Favourite on 3 of 11 surfaces, "tag the other plants in this planter" missing from the location feed where mixed planters actually live, and the Location lightbox offering two actions — one of which edited the *location record* rather than the photo, the same mislabel the plant lightbox had until v1.84.0. That one was fixed in plant mode and missed in location mode **because the two did not share code**. Drift was structural, not accidental.
+
+**The rule** (Amanda, 2026-08-27): minimal on cards, everything in the lightbox. `ctx.variant` is `"card"` or `"full"`. A filed photo's card shows Favourite / Edit / Delete; its lightbox adds health, assignment, location and set-as-primary. An *unfiled* photo keeps its filing actions on the card, because progressing it is the card's job.
+
+**Add a new photo action here and nowhere else.** Surfaces pass `cls`, `style`, `iconOnly` and `omit`; they do not add buttons of their own. Two deliberate exceptions, both commented in place: the Inbox keeps INB-1's promoted Plant/Location pair, and the location feed keeps its own Unfile.
+
+**Assign / Unassign is the vocabulary** (Amanda, 2026-08-27). There were four verbs for one relationship — attach, tag, detach, move. There are now two, and one modal. The storage split remains and still means something: `photos.plant_id` is the specimen whose timeline the photo belongs to; `photo_plants` is everything else visible in frame. The UI hides the distinction — the first plant assigned becomes the owner, "Make owner" promotes another. `movePhoto` is gone: moving a photo is reassigning it.
+
+**"Other containers" was removed**, not hidden — `tagLocations` did not map to anything Amanda recognised. `photo_locations` rows created before v1.85.0 still display via `allLocationsForPhoto()`; there is no UI to add or remove them.
+
 ## 12. Brand / Design System
 
 Approved palette. Do not deviate without a new brand sheet.

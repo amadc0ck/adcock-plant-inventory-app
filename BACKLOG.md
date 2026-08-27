@@ -201,6 +201,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.81.0
+
+**"Claude thinks these are *Opuntia santa-rita*" on the species page.** Schema: none.
+
+A section listing every unfiled photo Claude has proposed for this species — either onto one of its specimens, or by offering to create a new one. Derived entirely from suggestions already stored, so opening a species page costs nothing extra.
+
+This is the Santa Rita workflow end to end: run a batch over the archive photos, open the species, and see every shot Claude believes belongs to it across four former homes — newest first, each with its location, its reasoning, and Accept / Dismiss.
+
+Proposals pointing at other species are excluded, as are location-only proposals, dismissed ones, and any whose photo has since been deleted.
+
 ### v1.80.5
 
 **"Species with suggestions" dropped you on all 33 of them.** Schema: none.

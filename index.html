@@ -2917,6 +2917,39 @@ function screenTaxonDetail() {
         : `<div class="stack">${roots.map((sp) => specimenRow(sp, 0)).join("")}</div>`}
 
       ${(() => {
+        const proposed = suggestedPhotosForTaxon(t.id);
+        if (!proposed.length) return "";
+        return `
+        <div class="row" style="margin-top:26px;margin-bottom:8px;">
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Claude thinks these are ${taxonDisplayHtml(t)}</h3>
+          <span class="subtle">${countLabel(proposed.length, "photo", "photos")}</span>
+        </div>
+        <p class="subtle" style="margin:-4px 0 12px;font-size:12.5px;">Not filed yet. Accept to attach the photo, or dismiss and file it yourself.</p>
+        <div class="card-grid">
+          ${proposed.map(({ sg, photo }) => {
+            const sp = sg.kind === "plant_tag" ? state.plants.find((x) => x.id === sg.value_id) : null;
+            const loc = photo.location_id ? locationById(photo.location_id) : null;
+            return `
+            <div class="tag-card" style="padding:0;overflow:hidden;border-color:rgba(124,167,161,0.5);">
+              <div class="card-media ratio-1x1" style="cursor:pointer;" onclick="openGalleryLightbox('${photo.id}')">${photoImg(photo)}</div>
+              <div style="padding:9px 11px;">
+                <div class="tag-id">${fmtDate(photoDate(photo))}</div>
+                <div style="font-size:12px;margin-top:2px;">${sp
+                  ? `${escapeHtml(sp.accession_number)}`
+                  : `<span style="color:var(--blue);">New specimen</span>`}</div>
+                <div style="font-size:11px;color:var(--ink-soft);">${loc ? escapeHtml(locationPath(loc)) : `<span class="value-blank">No location</span>`}</div>
+                ${sg.rationale ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:4px;line-height:1.3;">${escapeHtml(sg.rationale)}</div>` : ""}
+                <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+                  <button class="btn btn-accent btn-sm" onclick="acceptSuggestion('${sg.id}')">Accept</button>
+                  <button class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="dismissSuggestion('${sg.id}')">Dismiss</button>
+                </div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>`;
+      })()}
+
+      ${(() => {
         const shots = taxonPhotos(t.id);
         if (!shots.length) return "";
         const limit = state.taxonPhotoLimit || 24;
@@ -5816,6 +5849,21 @@ function suggestionsForPhoto(photoId) {
     .filter((x) => x.photo_id === photoId && x.status === "pending")
     .sort((a, b) => SUGGESTION_ORDER.indexOf(a.kind) - SUGGESTION_ORDER.indexOf(b.kind));
 }
+// Photos Claude has proposed for this species — either onto one of its
+// specimens, or by offering to create a new one. Derived from suggestions
+// already stored, so opening a species page costs nothing: run a batch over the
+// archives, then come here and see everything Claude thinks belongs to it.
+function suggestedPhotosForTaxon(taxaId) {
+  const specimenIds = new Set(specimensOfTaxon(taxaId).map((sp) => sp.id));
+  return state.suggestions
+    .filter((sg) => sg.status === "pending" && sg.photo_id &&
+      ((sg.kind === "plant_tag" && specimenIds.has(sg.value_id)) ||
+       (sg.kind === "new_specimen" && sg.value_id === taxaId)))
+    .map((sg) => ({ sg, photo: state.photos.find((p) => p.id === sg.photo_id) }))
+    .filter((x) => x.photo)
+    .sort((a, b) => new Date(photoDate(b.photo)) - new Date(photoDate(a.photo)));
+}
+
 function suggestionsForTaxon(taxaId) {
   return state.suggestions.filter((x) => x.taxa_id === taxaId && x.status === "pending");
 }

@@ -4915,6 +4915,28 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "askClaude") {
+    const n = activeBulkSelection().size;
+    const opt = (focus, title, sub) => `
+      <button class="attn-row" onclick="runClaudeBatch('${focus}')">
+        <div style="flex:1;min-width:0;">
+          <div class="attn-title">${title}</div>
+          <div class="attn-sub">${sub}</div>
+        </div>
+        <span class="action-chevron">${icon("chevronRight")}</span>
+      </button>`;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Ask Claude about ${countLabel(n, "photo", "photos")}</h3>
+      <p class="subtle" style="margin:0 0 14px;">One API call per photo. A narrower question is cheaper and more accurate — ask only what you need.</p>
+      <div class="tag-card" style="padding:0;overflow:hidden;">
+        ${opt("location", "Where was this taken?", "Location only. Weighs the capture date against when the collection lived where.")}
+        ${opt("plant", "Which plant is this?", "Specimen only. Leaves any location suggestion alone.")}
+        ${opt("all", "Everything", "Plant, location, type, bloom and any health concern.")}
+      </div>
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "galleryBatch") {
     const n = state.gallerySelected.size;
     return `
@@ -5870,12 +5892,13 @@ function suggestionsForTaxon(taxaId) {
 
 async function askClaudeAboutPhoto(photoId, opts) {
   const quiet = opts && opts.quiet;
+  const focus = (opts && opts.focus) || "all";
   if (!quiet) { state.suggestingPhotoId = photoId; render(); }
   try {
     const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-photo`, {
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ photo_id: photoId }),
+      body: JSON.stringify({ photo_id: photoId, focus }),
     });
     // A function that is not deployed answers with an HTML 404, which is not
     // JSON — and res.json() throwing looked identical to "Claude failed".
@@ -5935,15 +5958,23 @@ async function askClaudeAboutSpecies(taxaId) {
 // photos an automatic call would run on every duplicate and every blurry shot,
 // which is both expensive and useless. Sequential on purpose: three concurrent
 // vision calls is how you meet a rate limit halfway through a run.
-async function askClaudeAboutSelection() {
+function askClaudeAboutSelection() {
+  if (!activeBulkSelection().size) { toast("Select some photos first", true); return; }
+  openModal("askClaude");
+}
+
+// One question at a time beats all of them at once: a narrower prompt is
+// cheaper and the model is not splitting attention across five answers. With
+// 932 photos needing only a location, that difference is the whole feature.
+async function runClaudeBatch(focus) {
   const ids = Array.from(activeBulkSelection());
   if (!ids.length) { toast("Select some photos first", true); return; }
-  if (!confirm(`Ask Claude about ${ids.length} photo${ids.length === 1 ? "" : "s"}? This calls the API once per photo.`)) return;
+  closeModal();
   state.suggestBatch = { done: 0, total: ids.length, failed: 0 };
   render();
   let firstError = null;
   for (const id of ids) {
-    const err = await askClaudeAboutPhoto(id, { quiet: true });
+    const err = await askClaudeAboutPhoto(id, { quiet: true, focus });
     state.suggestBatch.done += 1;
     if (err) {
       state.suggestBatch.failed += 1;

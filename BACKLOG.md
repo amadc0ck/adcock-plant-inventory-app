@@ -201,6 +201,22 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.82.0
+
+**Ask one question instead of all of them.** Schema: none. Deploy: `suggest-photo`.
+
+"Where was this taken?" is a different job from "what plant is this?", and it is the one with **932 photos** behind it. Selecting photos and pressing Ask Claude now asks which question first:
+
+- **Where was this taken?** — location only
+- **Which plant is this?** — specimen only, leaving any location suggestion untouched
+- **Everything** — as before
+
+A narrower prompt is cheaper *and* better: the model is not splitting attention across five answers, and `max_tokens` drops from 1400 to 400 for the location pass.
+
+**Locations now carry their period in the catalogue** — "2018-2021, Concord, CA" — and the location prompt is told to weigh the capture date first. For an archive photo that is the strongest evidence available and needs no image at all: a 2019 photo cannot be in a bucket built in 2026, and very probably *is* the place the collection lived in 2019. The prompt then falls back to flooring, walls, fencing and staging, and is told explicitly that a close-up with no surroundings should be a **null** rather than a guess.
+
+A focused ask **replaces only what it can answer** — asking "where?" no longer discards a plant suggestion from an earlier full pass.
+
 ### v1.81.0
 
 **"Claude thinks these are *Opuntia santa-rita*" on the species page.** Schema: none.

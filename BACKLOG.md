@@ -11,42 +11,74 @@ Item IDs are permanent. Never renumber.
 
 Written so a session with no memory of the conversation can continue without asking. Everything below is either **waiting on Amanda** or **decided but unbuilt**. Delete an entry when it is resolved.
 
-### SQL she may not have run yet
+### Schema state — VERIFIED against the live database 2026-08-27
 
-Ask before assuming. Each is idempotent, so re-running is safe.
+No longer guesswork. Probed `fsckwgicmvviefuivgza` via PostgREST (an unknown
+column returns `42703`, a known one returns a row set), so these are facts:
 
-**1. `taxa.frost_tender` — v1.78.0.** The feature shipped; unknown whether the column exists. The app degrades on `PGRST204` and says so, which is the tell.
-```sql
-alter table taxa add column if not exists frost_tender boolean not null default false;
-create index if not exists taxa_frost_tender_idx on taxa (frost_tender) where frost_tender;
-notify pgrst, 'reload schema';
-```
+| Column | Live? | Meaning |
+| --- | --- | --- |
+| `taxa.frost_tender` | **exists** | v1.78.0 SQL was run. Nothing pending. |
+| `taxa.infraspecific` | **exists** | Run at some point, but **no app code reads or writes it** (0 hits in `index.html`). Column without a feature. |
+| `taxa.parentage` | **exists** | Same — column exists, **0 hits in `index.html`**. |
+| `taxa.dormancy` | does not exist | Still an open decision. |
+| `plants.species` | **still exists** | **SPECIES-1 Phase 3 drop has NOT been run.** |
+| `locations.period` | does not exist | Not a gap — `archivePeriod()` (index.html:4034) derives it from `active_from` / `active_to` / `locality`. v1.82.0 is fine. |
 
-**2. `suggestions` — v1.80.0. Confirmed run**: species suggestions are working in the app.
+**What this changes.** Two of the three "decisions offered, never answered"
+below were in fact answered — Amanda added `infraspecific` and `parentage` to
+the database. The build never followed. Those are now **implementation work,
+not decisions**: the storage is there and the app ignores it, so the
+silently-dropped-variety trap the entries describe is still live.
 
-**3. NAME-1 leftovers.** The parse ran and the check query came back clean. Two tidies were offered and not confirmed:
+**Still to run: the SPECIES-1 Phase 3 drop.** Statement is in the v1.65.0 entry
+under Completed. Checked and safe: the only remaining `species` string in
+`index.html` is a **CSV header label** (line 797), whose value already comes
+from `tv("species_epithet")` off the taxon. **Take a JSON backup from Settings
+immediately before running it** — irreversible, no migration tool.
+
+### NAME-1 leftovers — still unconfirmed
+
 ```sql
 -- lowercase cultivar in the free text, already correct in the cultivar column
 update taxa set botanical_name = replace(botanical_name, 'fuzzy navel', 'Fuzzy Navel')
 where botanical_name like '%fuzzy navel%';
 ```
-And the **Echeveria 'Purple Perle'** rename — its `botanical_name` still holds the cross formula rather than the name. The statement is in the conversation history but not here; regenerate it from the `parentage` note below if she wants it.
-
-**4. SPECIES-1 Phase 3 — the column drop.** The code pass shipped in v1.65.0 and **nothing reads or writes a species column on `plants` any more**. The drop is deliberately unrun so the app could be exercised first. It has now been exercised for a day. The statement is in the v1.65.0 entry under Completed. **Take a JSON backup from Settings immediately before running it** — irreversible, no migration tool.
+And the **Echeveria 'Purple Perle'** rename — its `botanical_name` still holds
+the cross formula rather than the name. Now that `taxa.parentage` exists, the
+fix is to move the pedigree there rather than discard it.
 
 ### Decisions offered, never answered
 
-**`taxa.infraspecific`** — for `var. erinacea`, `f. monstruosa`, `subsp. horrida`. Raised when profiling *Opuntia polyacantha var. erinacea* 'Snow Fuzzy' from plantlust. There is nowhere to put an infraspecific rank, and since v1.65.0 composition prefers the parts, so the variety would be **silently dropped from the displayed name**. Same shape as the hybrid `×` trap. Would also close the open question on `Austrocylindropuntia subulata monstrose`, which NAME-1 flagged as EXTRA WORD and nobody resolved.
+**`taxa.dormancy`** — the only one of the three still undecided. Raised by
+*Kalanchoe* 'Roseleaf' being **summer-dormant**, which matters practically: it
+looks half dead in July and that is correct. Same kind of seasonal trait as
+`bloom_season`, and currently has no home but `description`, which is for
+appearance.
 ```sql
-alter table taxa add column if not exists infraspecific text;
+alter table taxa add column if not exists dormancy text;
 notify pgrst, 'reload schema';
 ```
 
-**`taxa.parentage`** — two records now want it: *Echeveria* 'Purple Perle' (*E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina') and *Kalanchoe* 'Roseleaf' (*K. tomentosa* × *K. beharensis*). In both cases the vendor put the pedigree in the name field, and recording the real name discards the parentage unless there is somewhere for it.
+**`infraspecific` and `parentage` are no longer decisions — see the verified
+table above.** Both columns are live and unused. What is unbuilt:
+- `infraspecific` — for `var. erinacea`, `f. monstruosa`, `subsp. horrida`.
+  Since v1.65.0 name composition prefers the parts, so a variety is **silently
+  dropped from the displayed name**. Needs: the field in the taxon form, and
+  inclusion in `taxonDisplayName`. Would also close the open question on
+  *Austrocylindropuntia subulata monstrose*, which NAME-1 flagged as EXTRA WORD.
+- `parentage` — two records want it: *Echeveria* 'Purple Perle'
+  (*E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina') and *Kalanchoe*
+  'Roseleaf' (*K. tomentosa* × *K. beharensis*). Needs: the field in the taxon
+  form and on the taxon detail screen.
 
-**`taxa.dormancy`** — raised by *Kalanchoe* 'Roseleaf' being **summer-dormant**, which matters practically: it looks half dead in July and that is correct. Same kind of seasonal trait as `bloom_season`, and currently has no home but `description`, which is for appearance.
-
-**Time-cluster location filing — not AI, and probably the biggest single win available.** Amanda has **932 photos needing a location**. Photos taken within minutes of each other are almost always the same place, and her archive imports cluster hard by capture time. Proposed as a one-tap "file the N other photos taken within 10 minutes of this one". Costs nothing to run, and would leave Claude only the genuinely ambiguous remainder. She was asked and had not answered when the session ended.
+**Time-cluster location filing — not AI, and probably the biggest single win
+available.** Amanda has **932 photos needing a location**. Photos taken within
+minutes of each other are almost always the same place, and her archive imports
+cluster hard by capture time. Proposed as a one-tap "file the N other photos
+taken within 10 minutes of this one". Costs nothing to run, and would leave
+Claude only the genuinely ambiguous remainder. She was asked and had not
+answered when the session ended.
 
 ### AI — where the tuning stands
 
@@ -176,14 +208,15 @@ order by location_count desc;
 
 
 ### PD-4 — Health status needs an urgent tier
-**Status:** ready · **Effort:** low · **Schema:** none (text column) · **Touches:** `HEALTH_LABELS`, `plantRow`, `screenReports`
+**Status:** ready · **Effort:** low · **Schema:** none (text column) · **Touches:** `HEALTH_LABELS`, the two `needsAttention` sites, `moveToHospital`
 
 `healthy` / `watch` / `recovery` / `unknown` has no level above `watch`. Add an urgent tier.
 
-`health_status` is free text standardized by the dropdown, so no migration — but **three places branch on the exact values** and must be updated together, or an urgent plant silently reads as healthy:
-- `index.html:1301` — `needsAttention` on the plant card badge
-- `index.html:1729` — `plantsNeedingAttention` in Reports
-- `moveToHospital` sets `watch` — should it set the new tier instead?
+`health_status` is free text standardized by the dropdown, so no migration — but places branch on the exact values and must be updated together, or an urgent plant silently reads as healthy. **Re-verified 2026-08-27 — cheaper than this item used to say:** `plantsNeedingAttention` no longer exists (Reports was retired in v1.79.0), so there are **two** branch sites, not three:
+- `index.html:2813` — `needsAttention` on the taxon/specimen pill
+- `index.html:3032` — `needsAttention` on the plant card status badge
+- `HEALTH_LABELS` at `index.html:2012` — drives four `<option>` lists (4666, 4725, 5255, 5288), so adding the tier there populates every dropdown at once
+- `moveToHospital` (`index.html:6235`) sets `watch` — should it set the new tier instead?
 
 Name to confirm: `urgent` / "Urgent care".
 
@@ -260,6 +293,24 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 ---
 
 ## Completed
+
+### v1.82.1
+**Version drift and a stale map.** Housekeeping, no behaviour change.
+
+`APP_VERSION` had been left at `1.80.1` / `2026-08-26` while `v1.81.0` and
+`v1.82.0` both shipped — neither commit touched the constant. The running app
+reported 1.80.1 while serving 1.82.0 code, which defeats the one mechanism for
+telling a real deploy from a stale cache. Now `1.82.1` / `2026-08-27`.
+
+`CLAUDE.md`'s map of `index.html` claimed ~3,200 lines / 180KB; the file is
+**8,077 lines / 448KB**, and every line range in the table was off by 2–3×. It
+listed a `screenReports` that no longer exists and omitted `screenTaxa` /
+`screenTaxonDetail`. Rebuilt from the file's own `/* ==== NAME ==== */` section
+banners, with a note on how to re-derive it.
+
+Also recorded the verified live schema state at the top of this file, replacing
+the guesswork in "SQL she may not have run yet".
+
 
 ### v1.82.0
 

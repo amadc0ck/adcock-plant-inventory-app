@@ -5784,8 +5784,14 @@ function suggestionBlock(photoId, onCream) {
     </div>`;
 }
 
+// Ordered by what she acts on first, not by insertion. They arrive newest-first
+// from the API and are unshifted into state, so the raw order put the photo
+// type above the identification that justifies it.
+const SUGGESTION_ORDER = ["plant_tag", "new_specimen", "location_tag", "bloom", "photo_type", "health_note"];
 function suggestionsForPhoto(photoId) {
-  return state.suggestions.filter((x) => x.photo_id === photoId && x.status === "pending");
+  return state.suggestions
+    .filter((x) => x.photo_id === photoId && x.status === "pending")
+    .sort((a, b) => SUGGESTION_ORDER.indexOf(a.kind) - SUGGESTION_ORDER.indexOf(b.kind));
 }
 function suggestionsForTaxon(taxaId) {
   return state.suggestions.filter((x) => x.taxa_id === taxaId && x.status === "pending");

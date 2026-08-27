@@ -201,6 +201,14 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.80.4
+
+**The same paragraph three times per card.** Schema: none. Deploy: `suggest-photo`.
+
+Claude returns one rationale explaining the **identification** — why this photo is that plant. I attached it to every row it produced, so a card showed the plant's reasoning again under the photo type, and again under a health note it did not describe. It now goes on the identification only; a health note explains itself, and "Type: Detail" needs no paragraph.
+
+**Order.** Suggestions arrive newest-first and are unshifted into state, so they rendered upside down — the photo type above the identification that justifies it. Sorted now by what she acts on first: plant, location, bloom, type, health.
+
 ### v1.80.3
 
 **The suggestions were unreadable on the cream cards.** Schema: none.

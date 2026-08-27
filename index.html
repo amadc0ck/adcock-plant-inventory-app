@@ -152,8 +152,18 @@
   .modal-handle{width:36px;height:4px;background:var(--line);border-radius:3px;margin:0 auto 16px;}
   /* A one-tap answer the record already knows. It was a grey help-text link
      under a grey help-text line and read as more explanation. */
+  /* Appears on BOTH grounds — the dark modal and the cream detail card — so it
+     inherits its colour instead of assuming one. Hardcoding var(--cream) put
+     light text on the parchment panel and made every suggestion unreadable. */
   .suggestion-row{display:flex;align-items:center;gap:10px;margin-top:8px;padding:10px 12px;
-    background:rgba(124,167,161,0.12);border:1px solid rgba(124,167,161,0.35);border-radius:10px;}
+    background:rgba(124,167,161,0.12);border:1px solid rgba(124,167,161,0.35);border-radius:10px;color:inherit;}
+  .suggestion-row .sg-label{font-size:12.5px;line-height:1.35;color:inherit;}
+  .suggestion-row .sg-why{font-size:11px;line-height:1.3;margin-top:2px;color:inherit;opacity:0.68;}
+  .suggestion-head{font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:inherit;opacity:0.65;}
+  /* On parchment the tint and the blue are both too light to read against. */
+  .on-cream-ground{color:var(--ink);}
+  .on-cream-ground .suggestion-row{background:rgba(58,90,84,0.10);border-color:rgba(58,90,84,0.30);}
+  .on-cream-ground .suggestion-icon{color:var(--ink-soft);}
   /* The queue as a dashboard rather than a settings list. A row of title,
      subtitle and a small pill reads as a menu; the number is the thing she is
      actually scanning for, so it leads. */
@@ -2651,7 +2661,7 @@ function photoRow(p, selectMode) {
       <div style="font-size:13.5px;margin-top:2px;color:var(--ink-soft);cursor:pointer;" onclick="openModal('editPhotoNote',{photoId:'${p.id}'})">${p.notes ? escapeHtml(p.notes) : "No notes — tap to add"}</div>
       ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
       ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
-      ${suggestionBlock(p.id)}
+      ${suggestionBlock(p.id, true)}
       ${/* INB-1. Six same-weight buttons on every card, wrapping to two rows,
            on 1,929 cards. The two that actually move a photo out of the Inbox
            — a plant or a location — are promoted; identification and the rest
@@ -2816,9 +2826,9 @@ function screenTaxonDetail() {
               const rows = suggestionsForTaxon(t.id);
               if (!rows.length) return "";
               return `
-                <div style="margin-top:12px;">
+                <div class="on-cream-ground" style="margin-top:12px;">
                   <div class="row" style="margin-bottom:2px;">
-                    <span class="subtle" style="font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;">Claude suggests ${countLabel(rows.length, "value", "values")}</span>
+                    <span class="suggestion-head">Claude suggests ${countLabel(rows.length, "value", "values")}</span>
                     <button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--blue);" onclick="acceptAllSpeciesSuggestions('${t.id}')">Accept all</button>
                   </div>
                   ${rows.map(suggestionLine).join("")}
@@ -3549,7 +3559,7 @@ function screenLocationDetail() {
                   })()}
                   ${plantnetSuggestion ? suggestionBadge(plantnetSuggestion) : ""}
                   ${claudeSuggestion ? suggestionBadge(claudeSuggestion) : ""}
-                  ${suggestionBlock(p.id)}
+                  ${suggestionBlock(p.id, true)}
                 </div>
               </div>
               ${/* LOCP-2. Was six same-weight buttons whose labels did not say
@@ -5752,8 +5762,8 @@ function suggestionLine(sg) {
     <div class="suggestion-row" style="margin-top:6px;">
       <span class="suggestion-icon">${icon(ic)}</span>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:12.5px;color:var(--cream);line-height:1.35;">${escapeHtml(label)}</div>
-        ${sg.rationale ? `<div style="font-size:11px;color:#8AA090;margin-top:2px;">${escapeHtml(sg.rationale)}</div>` : ""}
+        <div class="sg-label">${escapeHtml(label)}</div>
+        ${sg.rationale ? `<div class="sg-why">${escapeHtml(sg.rationale)}</div>` : ""}
       </div>
       <div style="display:flex;gap:8px;flex-shrink:0;align-items:center;">
         ${stale ? `<span class="subtle" style="font-size:11px;">out of date</span>`
@@ -5762,12 +5772,14 @@ function suggestionLine(sg) {
       </div>
     </div>`;
 }
-function suggestionBlock(photoId) {
+// onCream: the Inbox and Location photo cards are parchment; the edit-photo
+// modal and the lightbox are not.
+function suggestionBlock(photoId, onCream) {
   const rows = suggestionsForPhoto(photoId);
   if (!rows.length) return "";
   return `
-    <div style="margin-top:10px;">
-      <div class="subtle" style="font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;">Claude suggests</div>
+    <div class="${onCream ? "on-cream-ground" : ""}" style="margin-top:10px;">
+      <div class="suggestion-head">Claude suggests</div>
       ${rows.map(suggestionLine).join("")}
     </div>`;
 }

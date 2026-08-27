@@ -201,6 +201,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.80.3
+
+**The suggestions were unreadable on the cream cards.** Schema: none.
+
+`suggestionLine()` hardcoded `color:var(--cream)` — right in the edit-photo modal, which is dark, and wrong everywhere else. The Inbox card, the Location card and the species record are all **parchment**, so it rendered light text on a light panel.
+
+Colour now comes from the container: the row is `color:inherit`, the sub-line uses opacity rather than a fixed grey, and an `.on-cream-ground` wrapper switches the tint and the icon to their dark equivalents. The blue used for the icon is also too light against parchment, so it drops to `--ink-soft` there.
+
+`suggestionBlock(photoId, onCream)` makes the caller state its ground rather than the component guessing.
+
 ### v1.80.2
 
 **"Could not parse Claude's response" — `content[0]` is not reliably the text block.** Schema: none. Deploy: both functions.

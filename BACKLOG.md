@@ -201,6 +201,16 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.80.5
+
+**"Species with suggestions" dropped you on all 33 of them.** Schema: none.
+
+The tile called `goTab('plants')`, so a count of 1 landed on the full species list with nothing indicating which one it meant.
+
+- **One waiting species opens that species**, with back going to To Do.
+- **Several open the list filtered to them**, with a line saying why it is short and a **Show all** to leave. The filter clears on any tab change, so it cannot strand you on a short list you have forgotten the reason for.
+- **Taxon cards say how many are waiting**, so the filtered list is scannable and the count is visible while browsing normally too.
+
 ### v1.80.4
 
 **The same paragraph three times per card.** Schema: none. Deploy: `suggest-photo`.

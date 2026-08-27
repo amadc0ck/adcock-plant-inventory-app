@@ -588,6 +588,7 @@ const state = {
   assignSelected: new Set(),
   currentTaxonId: null,
   taxaSearch: "",
+  taxaOnlySuggestions: false,
   inboxLimit: 20,
   inboxSort: "newest",
   inboxPageSize: 20,
@@ -2107,7 +2108,7 @@ function icon(name) {
 /* ============================================================
    ROUTER / NAV
    ============================================================ */
-function goTab(tab) { state.tab = tab; state.modal = null; state.reportView = null; state.backTo = null; render(); }
+function goTab(tab) { state.tab = tab; state.modal = null; state.reportView = null; state.backTo = null; state.taxaOnlySuggestions = false; render(); }
 function toggleInboxSelectMode() {
   state.inboxSelectMode = !state.inboxSelectMode;
   state.inboxSelected = new Set();
@@ -2308,6 +2309,18 @@ function showGalleryInBloom() {
   state.reportView = null;
   render();
 }
+// One waiting species should land on that species, not on a list of 33 where
+// nothing says which one it meant.
+function showTaxaWithSuggestions() {
+  const ids = [...new Set(state.suggestions.filter((x) => x.taxa_id).map((x) => x.taxa_id))];
+  if (ids.length === 1) { state.backTo = { tab: "inbox", reportView: null, label: "To Do" }; openTaxon(ids[0]); return; }
+  state.taxaOnlySuggestions = true;
+  state.taxaSearch = "";
+  state.tab = "plants";
+  state.reportView = null;
+  render();
+}
+
 function showGalleryHasSuggestions() {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "has_suggestions" };
   state.tab = "gallery";
@@ -2723,6 +2736,10 @@ function taxonCard(t) {
       <div style="flex:1;min-width:0;">
         <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}</div>
         <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-top:2px;line-height:1.25;">${taxonDisplayHtml(t)}${isFrostTender(t) ? " " + frostBadge() : ""}</div>
+        ${(() => {
+          const n = suggestionsForTaxon(t.id).length;
+          return n ? `<div style="font-size:11px;color:var(--blue);margin-top:3px;">${countLabel(n, "suggestion", "suggestions")} waiting</div>` : "";
+        })()}
         ${secondary ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(secondary)}</div>` : ""}
         <div class="row" style="margin-top:8px;">
           <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(specimens.length, "specimen", "specimens")}</div>
@@ -2735,6 +2752,7 @@ function taxonCard(t) {
 function screenTaxa() {
   const q = (state.taxaSearch || "").toLowerCase();
   const list = state.taxa.filter((t) => {
+    if (state.taxaOnlySuggestions && !suggestionsForTaxon(t.id).length) return false;
     if (!q) return true;
     const hay = [taxonDisplayName(t), t.common_name, t.botanical_name, t.genus, t.family, t.working_label]
       .filter(Boolean).join(" ").toLowerCase();
@@ -2745,6 +2763,11 @@ function screenTaxa() {
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
+      ${state.taxaOnlySuggestions ? `
+        <div class="row" style="margin-bottom:12px;">
+          <span class="subtle">Showing only species Claude has suggestions for</span>
+          <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaOnlySuggestions=false;render()">Show all</button>
+        </div>` : ""}
       <input class="search-input" placeholder="Search name, genus, family…" value="${escapeHtml(state.taxaSearch || "")}" id="search-taxa" oninput="state.taxaSearch=this.value;render()" />
       <div class="row" style="margin-bottom:16px;">
         <span class="subtle">${q ? `${list.length} of ${state.taxa.length}` : countLabel(state.taxa.length, "kind", "kinds")} · ${countLabel(state.plants.length, "specimen", "specimens")}</span>
@@ -3731,7 +3754,7 @@ function workQueue() {
       if (!photoSugs.size && !taxaSugs.size) return "";
       return group("Claude is waiting on you", state.suggestions.length, [
         photoSugs.size ? tile(photoSugs.size, "Photos with suggestions", "Filing Claude proposed — accept or dismiss", "showGalleryHasSuggestions()") : "",
-        taxaSugs.size ? tile(taxaSugs.size, "Species with suggestions", "Blank fields Claude filled in", "goTab('plants')") : "",
+        taxaSugs.size ? tile(taxaSugs.size, "Species with suggestions", "Blank fields Claude filled in", "showTaxaWithSuggestions()") : "",
       ]);
     })()}
 

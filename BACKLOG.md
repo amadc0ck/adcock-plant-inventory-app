@@ -201,6 +201,14 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.80.2
+
+**"Could not parse Claude's response" — `content[0]` is not reliably the text block.** Schema: none. Deploy: both functions.
+
+Both functions read `content[0].text`. A response can lead with a **thinking block**, where `text` is undefined — so `JSON.parse("")` threw and every call failed identically, for the photo and the species paths alike. `textFromResponse()` now collects every block of type `text` and joins them.
+
+Parse failures also carry **the first 300 characters of what Claude actually said**. "Could not parse" with nothing attached is the least useful error in the app; it cost two rounds to work out, and a truncated payload or a plain-English refusal would have been obvious from the text. `max_tokens` raised on both, so a long rationale cannot truncate the JSON either.
+
 ### v1.80.1
 
 **"Failed 9" with no reason was my bug.** Schema: none. Deploy: both functions again.

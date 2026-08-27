@@ -237,6 +237,17 @@
   .loc-child{margin-left:16px;}
 
   .plant-list-card{display:flex;gap:14px;cursor:pointer;padding:14px;}
+  /* LOC-1. A media card, not a list row: the image is the identifying thing for
+     a place. Padding lives on the body so the photo goes edge to edge. */
+  .loc-card{padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;}
+  .loc-card-body{padding:12px 14px 14px;}
+  /* AI-3. Two different messages: linking to an existing species is correct and
+     just needs saying; a near miss is a warning. They must not look alike. */
+  .dupe-note{border-radius:8px;padding:9px 11px;margin:8px 0 4px;font-size:12.5px;line-height:1.45;}
+  .dupe-note.is-link{background:rgba(124,167,161,0.16);border:1px solid rgba(124,167,161,0.5);color:var(--ink);}
+  .dupe-note.is-warn{background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.55);color:var(--ink);}
+  .dupe-note strong{font-weight:700;}
+  .dupe-note .dupe-pick{background:none;border:none;padding:0;margin-top:6px;font-size:12.5px;text-decoration:underline;cursor:pointer;color:var(--ink);font-family:inherit;display:block;}
   .plant-list-thumb{width:92px;height:92px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--parchment-dim);}
   .plant-list-thumb-empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--moss-dim);}
   .plant-list-thumb-empty svg{width:26px;height:26px;}
@@ -248,6 +259,7 @@
   .status-badge svg{width:14px;height:14px;}
   .status-badge.status-active{background:var(--moss);color:#12200F;}
   .status-badge.status-attention{background:var(--terracotta);color:#3A1608;}
+  .status-badge.status-urgent{background:var(--terracotta);color:#3A1608;box-shadow:0 0 0 3px rgba(217,116,116,0.45);}
 
   .select-check{position:absolute;top:-6px;left:-6px;width:22px;height:22px;border-radius:50%;background:var(--parchment);border:2px solid var(--moss-dim);z-index:2;display:flex;align-items:center;justify-content:center;color:#0F1712;}
   .select-check.checked{background:var(--moss);border-color:var(--moss);}
@@ -431,6 +443,7 @@
   .pill-solid-terracotta{background:var(--terracotta);color:#3A1608;}
   .pill-solid-blue{background:var(--blue);color:#0F2622;}
   .pill-solid-pink{background:var(--pink);color:#3A0F20;}
+  .pill-solid-urgent{background:var(--terracotta);color:#3A1608;box-shadow:0 0 0 2px rgba(217,116,116,0.38);text-transform:uppercase;letter-spacing:0.6px;}
   .pill-solid-outline{background:transparent;border:1.5px solid var(--ink);color:var(--ink);}
   .chicory-oncream{color:#3E6B77;}
 
@@ -522,7 +535,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.82.1";
+const APP_VERSION = "1.83.0";
 const APP_UPDATED = "2026-08-27";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -798,7 +811,10 @@ function exportPlantsCsv() {
     "description", "plant_type", "growth_habit", "mature_size", "bloom_season", "origin",
     "identification_status", "collection_category", "original_collection", "status", "health_status",
     "location_path", "date_acquired", "acquisition_source_type", "acquisition_source_name",
-    "native_range", "hardy_to", "light_requirements", "water_needs", "notes"];
+    "native_range", "hardy_to", "light_requirements", "water_needs", "notes",
+    // Appended, not inserted — an existing spreadsheet keeps every column
+    // position it had.
+    "infraspecific", "parentage"];
   const rows = state.plants.map((pl) => {
     const loc = locationById(pl.location_id);
     // Species columns come off the taxon. The headers are unchanged so an
@@ -813,6 +829,7 @@ function exportPlantsCsv() {
       pl.identification_status, pl.collection_category, pl.original_collection, pl.status, pl.health_status,
       loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
       tv("native_range"), tv("hardy_to"), (t && t.light_conditions || []).join("; "), tv("water_needs"), pl.notes,
+      tv("infraspecific"), tv("parentage"),
     ].map(csvEscape).join(",");
   });
   const csv = [headers.join(","), ...rows].join("\r\n");
@@ -1694,7 +1711,8 @@ function listChoicesFor(listName, currentValue) {
 //                    the reason a plant's history across former homes could not
 //                    be recorded (v1.56.0)
 // Archive-ness now comes from the photo's location being an archive location.
-const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Species", description: "Description",
+const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Species",
+  infraspecific: "Infraspecific", parentage: "Parentage", description: "Description",
   plant_type: "Type", growth_habit: "Growth habit", mature_size: "Mature size", bloom_season: "Bloom season",
   origin: "Origin", native_range: "Native range", hardy_to: "Hardy to", water_needs: "Water needs",
   frost_tender: "Frost tender" };
@@ -1791,20 +1809,45 @@ function cultivarLabel(raw) {
 //   - A cultivar of hybrid origin has no epithet at all — Echeveria
 //     'Purple Perle' is genus + cultivar. Requiring an epithet would send it to
 //     the fallback and lose the markup, so genus + cultivar composes too.
+// Infraspecific rank, e.g. "var. erinacea", "subsp. horrida", "f. monstruosa".
+// Stored as the gardener types it, rank abbreviation included, because that is
+// what the label and the vendor tag say. Botanical convention sets the rank
+// abbreviation upright and the epithet italic, so the two are split for markup.
+const INFRA_RANKS = ["nothosubsp.", "subsp.", "ssp.", "subvar.", "var.", "subf.", "f."];
+function infraspecificParts(raw) {
+  const v = String(raw || "").trim();
+  if (!v) return null;
+  const hit = INFRA_RANKS.find((r) => v.toLowerCase().startsWith(r));
+  // No recognised rank means she typed a bare epithet. Default to var., which
+  // is overwhelmingly the common case, rather than rendering a rankless word
+  // that reads as a second species epithet.
+  if (!hit) return { rank: "var.", epithet: v };
+  return { rank: hit, epithet: v.slice(hit.length).trim() };
+}
+function infraspecificLabel(raw) {
+  const p = infraspecificParts(raw);
+  return p && p.epithet ? `${p.rank} ${p.epithet}` : "";
+}
+
 function taxonNameParts(t) {
   if (!t) return null;
   const genus = (t.genus || "").trim();
   const epithet = (t.species_epithet || "").trim();
   const cultivar = (t.cultivar || "").trim();
+  // Only meaningful below a species, so it rides along with the epithet.
+  const infra = epithet ? (t.infraspecific || "").trim() : "";
   if (!genus || (!epithet && !cultivar)) return null; // not enough to beat the free text
-  return { genus, epithet, cultivar, hybrid: !!t.is_hybrid };
+  return { genus, epithet, cultivar, infra, hybrid: !!t.is_hybrid };
 }
 
 function taxonDisplayName(t) {
   if (!t) return "Unknown";
   const p = taxonNameParts(t);
   if (p) {
-    const sci = p.epithet ? `${p.genus} ${p.hybrid ? "\u00D7 " : ""}${p.epithet}` : p.genus;
+    let sci = p.epithet ? `${p.genus} ${p.hybrid ? "\u00D7 " : ""}${p.epithet}` : p.genus;
+    // Before v1.83.0 the variety was silently dropped here: composition prefers
+    // the parts, and the parts had nowhere to hold it.
+    if (p.infra && infraspecificLabel(p.infra)) sci += ` ${infraspecificLabel(p.infra)}`;
     return p.cultivar ? `${sci} ${cultivarLabel(p.cultivar)}` : sci;
   }
   if (t.botanical_name && t.botanical_name.trim()) return t.botanical_name.trim();
@@ -1821,9 +1864,70 @@ function taxonDisplayHtml(t) {
   if (!p) return escapeHtml(taxonDisplayName(t));
   let html = `<i>${escapeHtml(p.genus)}</i>`;
   if (p.epithet) html += `${p.hybrid ? " \u00D7" : ""} <i>${escapeHtml(p.epithet)}</i>`;
+  const ip = p.infra ? infraspecificParts(p.infra) : null;
+  if (ip && ip.epithet) html += ` ${escapeHtml(ip.rank)} <i>${escapeHtml(ip.epithet)}</i>`;
   if (p.cultivar) html += ` ${escapeHtml(cultivarLabel(p.cultivar))}`;
   return html;
 }
+// AI-3 layer 1. Name matching for duplicate detection, and for the lookup that
+// decides whether a new specimen joins an existing species or starts a new one.
+//
+// The old lookup compared the typed string to `botanical_name` and nothing
+// else. Since v1.65.0 the display name is COMPOSED from genus / epithet /
+// cultivar, so a taxon created that way often has no `botanical_name` at all —
+// typing "Aeonium arboreum" against an existing Aeonium arboreum matched
+// nothing and silently created a second species record. Matching the composed
+// name is the fix.
+function nameKey(raw) {
+  return String(raw || "")
+    .toLowerCase()
+    .replace(/[\u2018\u2019'"]/g, "")          // quoting around cultivars varies
+    .replace(/\u00D7\s*/g, "x ")               // × and a bare x are the same claim
+    .replace(/\b(var|subsp|ssp|f|subvar|subf)\.?\s+/g, "")  // rank words are not identity
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Every name a taxon answers to, so a match on any of them counts.
+function taxonNameKeys(t) {
+  return [taxonDisplayName(t), t.botanical_name, t.common_name, t.working_label]
+    .map(nameKey)
+    .filter((k) => k && k !== "unknown" && k !== "unnamed taxon");
+}
+
+function findTaxonByName(botanical, common) {
+  const keys = [nameKey(botanical), nameKey(common)].filter(Boolean);
+  if (!keys.length) return null;
+  return state.taxa.find((t) => {
+    const tk = taxonNameKeys(t);
+    return keys.some((k) => tk.includes(k));
+  }) || null;
+}
+
+// Near misses — not the same name, but close enough that creating a second
+// species record is more likely a typo than a real distinction. Same genus with
+// a different epithet is the common one ("Aeonium arboreum" vs "Aeonium
+// arborium"); so is one name being a prefix of the other, which is what
+// happens when a cultivar is left off.
+function similarTaxaByName(botanical, common) {
+  const key = nameKey(botanical) || nameKey(common);
+  if (!key || key.length < 4) return [];
+  const [genus, ...rest] = key.split(" ");
+  const epithet = rest.join(" ");
+  return state.taxa
+    .filter((t) => {
+      const tk = taxonNameKeys(t);
+      if (tk.includes(key)) return false;                 // exact match is not a near miss
+      return tk.some((k) => {
+        if (k.startsWith(key + " ") || key.startsWith(k + " ")) return true;
+        const [g, ...r] = k.split(" ");
+        return !!epithet && g === genus && r.join(" ") !== epithet;
+      });
+    })
+    .slice(0, 4);
+}
+
 function taxonSecondaryName(t) {
   if (!t) return "";
   const primary = taxonDisplayName(t);
@@ -2009,7 +2113,24 @@ function nestedCountLabel(children) {
 
 const STATUS_LABELS = { active: "Active", dormant: "Dormant", given_away: "Given Away", dead: "Dead", deaccessioned: "Deaccessioned" };
 const ID_STATUS_LABELS = { confirmed: "Confirmed", tentative: "Tentative", unidentified: "Unidentified" };
-const HEALTH_LABELS = { healthy: "Healthy", watch: "Watch", recovery: "Recovery", unknown: "Unknown" };
+const HEALTH_LABELS = { healthy: "Healthy", watch: "Watch", urgent: "Urgent care", recovery: "Recovery", unknown: "Unknown" };
+
+// PD-4. The attention test used to be an inline expression copied into two
+// screens. That is precisely how a new tier ends up reading as healthy: add the
+// value, update one copy, miss the other. One helper, one source of truth.
+const HEALTH_ATTENTION = ["watch", "urgent", "recovery"];
+function needsAttention(pl) {
+  return pl.status !== "active" || HEALTH_ATTENTION.includes(pl.health_status);
+}
+function isUrgent(pl) {
+  return pl.health_status === "urgent";
+}
+// Urgent has to outrank plain attention visually or the tier buys nothing.
+// Palette is fixed (§5), so it separates by weight and ring, not a new hue.
+function healthPillClass(pl) {
+  if (isUrgent(pl)) return "pill-solid-urgent";
+  return needsAttention(pl) ? "pill-solid-terracotta" : "pill-solid-moss";
+}
 const CATEGORY_LABELS = { current: "Current", historical: "Historical" };
 const ACQ_SOURCE_LABELS = { nursery: "Nursery", gift: "Gift", propagation: "Propagation", rescue: "Rescue", original_collection: "Original Collection", unknown: "Unknown", other: "Other" };
 
@@ -2810,7 +2931,6 @@ function screenTaxonDetail() {
     const loc = sp.location_id ? locationById(sp.location_id) : null;
     const kids = offspringOf(sp.id, t.id);
     const cov = plantCoverPhoto(sp);
-    const needsAttention = sp.status !== "active" || sp.health_status === "watch" || sp.health_status === "recovery";
     return `
       <div class="tag-card plant-list-card" style="margin-left:${depth * 18}px;padding:10px 12px;" onclick="openPlant('${sp.id}')">
         <div class="plant-list-thumb" style="width:56px;height:56px;">
@@ -2819,7 +2939,7 @@ function screenTaxonDetail() {
         <div style="flex:1;min-width:0;">
           <div class="row">
             <div class="mono tag-id">${sp.accession_number}</div>
-            <span class="pill-solid ${needsAttention ? "pill-solid-terracotta" : "pill-solid-moss"}">${HEALTH_LABELS[sp.health_status] || sp.health_status}</span>
+            <span class="pill-solid ${healthPillClass(sp)}">${HEALTH_LABELS[sp.health_status] || sp.health_status}</span>
           </div>
           <div style="font-size:13px;color:var(--ink);margin-top:3px;">${loc ? "📍 " + escapeHtml(locationPath(loc)) : `<span class="value-blank">No location</span>`}</div>
           ${depth > 0 ? `<div style="font-size:11px;color:var(--blue);margin-top:2px;">${icon("seedling")} propagated</div>` : ""}
@@ -2904,7 +3024,9 @@ function screenTaxonDetail() {
           ${fieldRow("clipboard", "Family", t.family)}
           ${fieldRow("clipboard", "Genus", t.genus)}
           ${fieldRow("clipboard", "Species", t.species_epithet)}
+          ${fieldRow("clipboard", "Infraspecific", infraspecificLabel(t.infraspecific))}
           ${fieldRow("tag", "Cultivar", cultivarLabel(t.cultivar))}
+          ${fieldRow("seedling", "Parentage", t.parentage)}
         </div>
       </div>
 
@@ -3029,11 +3151,12 @@ function screenPlants() {
 function plantRow(pl) {
   const photos = plantPhotosOrdered(pl.id);
   const cover = plantCoverPhoto(pl);
-  const needsAttention = pl.status !== "active" || pl.health_status === "watch" || pl.health_status === "recovery";
+  const attention = needsAttention(pl);
+  const urgent = isUrgent(pl);
 
   return `
   <div class="tag-card plant-list-card" onclick="openPlant('${pl.id}')">
-    <div class="status-badge ${needsAttention ? "status-attention" : "status-active"}" title="${needsAttention ? "Needs attention" : "Active & healthy"}">${needsAttention ? icon("alertTriangle") : icon("check")}</div>
+    <div class="status-badge ${urgent ? "status-urgent" : attention ? "status-attention" : "status-active"}" title="${urgent ? "Urgent care" : attention ? "Needs attention" : "Active & healthy"}">${attention ? icon("alertTriangle") : icon("check")}</div>
     <div class="plant-list-thumb">
       ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
     </div>
@@ -3105,7 +3228,7 @@ function screenPlantDetail() {
             <span class="pill-solid pill-solid-outline">${CATEGORY_LABELS[pl.collection_category]}</span>
             <span class="pill-solid ${pl.identification_status === "confirmed" ? "pill-solid-moss" : "pill-solid-outline"}">${ID_STATUS_LABELS[pl.identification_status]}</span>
             ${pl.original_collection ? `<span class="pill-solid pill-solid-pink">Original Collection</span>` : ""}
-            <span class="pill-solid pill-solid-blue">${HEALTH_LABELS[pl.health_status]}</span>
+            <span class="pill-solid ${healthPillClass(pl)}">${HEALTH_LABELS[pl.health_status] || pl.health_status}</span>
           </div>
 
           <div style="margin-top:14px;">
@@ -3333,16 +3456,23 @@ function locationCard(l) {
   const photoCount = aggregatePhotoCount(l.id);
   const children = directChildLocations(l.id);
   const cover = locationCoverPhoto(l);
+  // LOC-1. Was a 92px square side thumb, which is the treatment for a specimen:
+  // one plant, centred, identifiable small. A location is a *place* — a bed, a
+  // wall of buckets, a yard — and a wide shot of one is unreadable at 92px. It
+  // takes the PD-1 card-media band instead, full bleed at the top of the card,
+  // which is what the Gallery album cards already do for the same reason.
+  // 4:3 matches Location Detail's hero, so the same photo does not recompose
+  // between the list and the page it opens.
   return `
-    <div class="tag-card plant-list-card" onclick="openLocation('${l.id}')">
-      <div class="plant-list-thumb">
-        ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+    <div class="tag-card loc-card" onclick="openLocation('${l.id}')">
+      <div class="card-media ratio-4x3">
+        ${cover ? photoImg(cover) : `<div class="card-media-empty">${icon("photo")}<span>No photos yet</span></div>`}
       </div>
       ${/* Counts sat beside the name in a right-aligned column, so "4026
            Sacramento Creation" wrapped to three lines to make room for
            "0 plants · 3 photos". The name is what identifies the card; it gets
            the full width and the counts go underneath. */""}
-      <div style="flex:1;min-width:0;">
+      <div class="loc-card-body">
         <div class="tag-id">${locationTypeLabel(l.type)}${l.code ? " · " + escapeHtml(l.code) : ""}</div>
         <div style="font-family:'Fraunces',serif;font-size:15px;font-weight:500;margin-top:2px;line-height:1.25;">${escapeHtml(l.name)}</div>
         <div class="mono" style="font-size:11px;color:var(--moss-dim);margin-top:4px;">${countLabel(plantCount, "plant", "plants")} · ${countLabel(photoCount, "photo", "photos")}${children.length ? ` · <span style="color:var(--blue);">${nestedCountLabel(children)} →</span>` : ""}</div>
@@ -3712,8 +3842,15 @@ function reportSections() {
       items: state.plants.filter((pl) => !pl.taxa_id), kind: "plant" },
     { key: "plantsNoLocation", title: "Plants with no location", sub: "Nowhere to find them",
       items: state.plants.filter((pl) => allLocationsForPlant(pl).length === 0), kind: "plant" },
-    { key: "plantsAttention", title: "Plants needing attention", sub: "Watch or recovery",
-      items: state.plants.filter((pl) => pl.health_status === "watch" || pl.health_status === "recovery"), kind: "plant" },
+    // PD-4: this filter is the third site that branches on the exact health
+    // values, and the backlog only listed two. Missing it here would have been
+    // the worst of the three — an urgent plant absent from the work queue.
+    // Urgent sorts to the top; the tier is pointless if it queues behind Watch.
+    { key: "plantsAttention", title: "Plants needing attention", sub: "Urgent care, watch or recovery",
+      items: state.plants
+        .filter((pl) => HEALTH_ATTENTION.includes(pl.health_status))
+        .sort((a, b) => (isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0)
+          || (a.accession_number || "").localeCompare(b.accession_number || "")), kind: "plant" },
     { key: "locationsNoPlants", title: "Locations with photos but no plants", sub: "Photographed, never catalogued",
       // Areas and archives are excluded: they are not expected to hold
       // specimens, so listing them here is not a finding.
@@ -4611,6 +4748,8 @@ function modalContent() {
         <input id="np-botanical" placeholder="e.g. Cephalocereus senilis" value="${suggestion ? escapeHtml(suggestion.suggested_name) : ""}" />
         <label>Common name</label>
         <input id="np-common" placeholder="e.g. Old Man Cactus" />
+        ${/* AI-3 layer 1. Filled live by checkDuplicateName() as she types. */""}
+        <div id="np-dupe"></div>
         <label>Identification status</label>
         <select id="np-idstatus">
           ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === (suggestion ? "tentative" : "unidentified") ? "selected" : ""}>${v}</option>`).join("")}
@@ -5129,12 +5268,18 @@ function modalContent() {
         <input id="et-genus" placeholder="e.g. Aeonium" value="${escapeHtml(t.genus || "")}" />
         <label>Species</label>
         <input id="et-species" placeholder="e.g. arboreum" value="${escapeHtml(t.species_epithet || "")}" />
+        <label>Infraspecific rank</label>
+        <input id="et-infraspecific" placeholder="e.g. var. erinacea" value="${escapeHtml(t.infraspecific || "")}" />
+        <div class="field-help">Variety, subspecies or form. Include the abbreviation &mdash; <span class="mono">var.</span>, <span class="mono">subsp.</span>, <span class="mono">f.</span> A bare word is read as <span class="mono">var.</span></div>
         <label>Cultivar</label>
         <input id="et-cultivar" placeholder="e.g. Zwartkop (no quotes)" value="${escapeHtml(t.cultivar || "")}" />
         <div class="checkbox-row">
           <input type="checkbox" id="et-hybrid" ${t.is_hybrid ? "checked" : ""} />
           <label for="et-hybrid">This is a hybrid</label>
         </div>
+        <label>Parentage</label>
+        <input id="et-parentage" placeholder="e.g. E. gibbiflora 'Metallica' &times; E. elegans 'Potosina'" value="${escapeHtml(t.parentage || "")}" />
+        <div class="field-help">The cross this came from. Vendors often put it in the name field &mdash; record the real name above and the pedigree here, so neither is lost.</div>
 
         <div class="section-label">Details</div>
         <label>Description</label>
@@ -6247,11 +6392,13 @@ async function moveToHospital(plantId) {
   // More than one hospital is legitimate. Name the destination in the confirm
   // rather than silently picking for her.
   const hospital = candidates[0];
-  if (!confirm(`Move this plant to ${locationPath(hospital)} and mark its health as Watch?`)) return;
+  // PD-4: the hospital is the strongest worry signal in the app. Setting Watch
+  // understated it and left the real flag to be set by hand afterwards.
+  if (!confirm(`Move this plant to ${locationPath(hospital)} and mark its health as Urgent care?`)) return;
   try {
     await restPatch("plants", `id=eq.${plantId}`, {
       location_id: hospital.id,
-      health_status: "watch",
+      health_status: "urgent",
       updated_at: new Date().toISOString(),
     });
     toast("Moved to Plant Hospital");
@@ -7707,11 +7854,7 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
   const name = (botanicalName || "").trim();
   const common = (commonName || "").trim();
   if (!name && !common) return null;
-  const key = (name || common).toLowerCase();
-  const existing = state.taxa.find((t) =>
-    (name && (t.botanical_name || "").trim().toLowerCase() === key) ||
-    (!name && (t.working_label || t.common_name || "").trim().toLowerCase() === key)
-  );
+  const existing = findTaxonByName(name, common);
   if (existing) return existing.id;
   const body = {
     botanical_name: name || null,
@@ -7729,6 +7872,41 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
 
   const newPlantForm = document.getElementById("new-plant-form");
   if (newPlantForm) {
+    // AI-3 layer 1. Adding a plant that already exists used to be silent in
+    // both directions: an exact match quietly joined the existing species
+    // without saying so, and a near miss quietly created a second one. Say
+    // which is about to happen, while she can still change it.
+    const dupeSlot = document.getElementById("np-dupe");
+    const nb = document.getElementById("np-botanical");
+    const nc = document.getElementById("np-common");
+    const checkDuplicateName = () => {
+      if (!dupeSlot) return;
+      const botanical = nb ? nb.value : "";
+      const common = nc ? nc.value : "";
+      if (!nameKey(botanical) && !nameKey(common)) { dupeSlot.innerHTML = ""; return; }
+      const hit = findTaxonByName(botanical, common);
+      if (hit) {
+        const n = specimensOfTaxon(hit.id).length;
+        dupeSlot.innerHTML = `<div class="dupe-note is-link">Joins the existing species <strong>${taxonDisplayHtml(hit)}</strong>${n ? ` — ${escapeHtml(countLabel(n, "specimen", "specimens"))} already` : ""}. This plant is saved as another specimen of it, not as a new species.</div>`;
+        return;
+      }
+      const near = similarTaxaByName(botanical, common);
+      if (near.length) {
+        dupeSlot.innerHTML = `<div class="dupe-note is-warn">Close to ${near.length > 1 ? "species you already have" : "a species you already have"}. Saving as typed creates a <strong>second</strong> species record.
+          ${near.map((t) => `<button type="button" class="dupe-pick" data-name="${escapeHtml(taxonDisplayName(t))}">Use ${escapeHtml(taxonDisplayName(t))} instead</button>`).join("")}</div>`;
+        dupeSlot.querySelectorAll(".dupe-pick").forEach((btn) => {
+          btn.onclick = () => {
+            if (nb) nb.value = btn.getAttribute("data-name");
+            checkDuplicateName();
+          };
+        });
+        return;
+      }
+      dupeSlot.innerHTML = "";
+    };
+    if (nb) nb.oninput = checkDuplicateName;
+    if (nc) nc.oninput = checkDuplicateName;
+    checkDuplicateName(); // an AI suggestion arrives pre-filled
     newPlantForm.onsubmit = async (e) => {
       e.preventDefault();
       try {
@@ -7816,6 +7994,8 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
           family: document.getElementById("et-family").value.trim() || null,
           genus: document.getElementById("et-genus").value.trim() || null,
           species_epithet: document.getElementById("et-species").value.trim() || null,
+          infraspecific: document.getElementById("et-infraspecific").value.trim() || null,
+          parentage: document.getElementById("et-parentage").value.trim() || null,
           // Stored bare; the display layer adds the quotes, so a name never
           // ends up with two sets of them.
           cultivar: document.getElementById("et-cultivar").value.trim().replace(/^['\u2018\u2019"]+|['\u2018\u2019"]+$/g, "") || null,

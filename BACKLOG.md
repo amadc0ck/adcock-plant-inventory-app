@@ -50,35 +50,22 @@ fix is to move the pedigree there rather than discard it.
 
 ### Decisions offered, never answered
 
-**`taxa.dormancy`** — the only one of the three still undecided. Raised by
-*Kalanchoe* 'Roseleaf' being **summer-dormant**, which matters practically: it
-looks half dead in July and that is correct. Same kind of seasonal trait as
-`bloom_season`, and currently has no home but `description`, which is for
-appearance.
-```sql
-alter table taxa add column if not exists dormancy text;
-notify pgrst, 'reload schema';
-```
+**`taxa.dormancy` — DECIDED 2026-08-27: no.** Amanda chose to leave seasonal
+dormancy in `description` rather than add a column. *Kalanchoe* 'Roseleaf'
+being summer-dormant is recorded there. Do not re-offer this.
 
-**`infraspecific` and `parentage` are no longer decisions — see the verified
-table above.** Both columns are live and unused. What is unbuilt:
-- `infraspecific` — for `var. erinacea`, `f. monstruosa`, `subsp. horrida`.
-  Since v1.65.0 name composition prefers the parts, so a variety is **silently
-  dropped from the displayed name**. Needs: the field in the taxon form, and
-  inclusion in `taxonDisplayName`. Would also close the open question on
-  *Austrocylindropuntia subulata monstrose*, which NAME-1 flagged as EXTRA WORD.
-- `parentage` — two records want it: *Echeveria* 'Purple Perle'
-  (*E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina') and *Kalanchoe*
-  'Roseleaf' (*K. tomentosa* × *K. beharensis*). Needs: the field in the taxon
-  form and on the taxon detail screen.
+**`infraspecific` and `parentage` — CLOSED 2026-08-27, built in v1.83.0.** They
+were never really decisions: both columns already existed in the database and no
+code touched them. The app now composes the variety into the displayed name,
+renders the rank upright and the epithet italic, offers both fields on the taxon
+form, shows them on taxon detail, and appends them to the CSV export. The
+silently-dropped-variety trap is closed.
 
-**Time-cluster location filing — not AI, and probably the biggest single win
-available.** Amanda has **932 photos needing a location**. Photos taken within
-minutes of each other are almost always the same place, and her archive imports
-cluster hard by capture time. Proposed as a one-tap "file the N other photos
-taken within 10 minutes of this one". Costs nothing to run, and would leave
-Claude only the genuinely ambiguous remainder. She was asked and had not
-answered when the session ended.
+**Time-cluster location filing — CLOSED 2026-08-27, not built.** Amanda finished
+filing all 932 photos to locations by hand before this was picked up. The idea
+was to let one filing decision carry a whole burst of photos taken within
+minutes of each other; there is no longer a backlog of photos for it to act on.
+Worth remembering only if a large archive import ever lands again.
 
 ### AI — where the tuning stands
 
@@ -207,60 +194,27 @@ order by location_count desc;
 ```
 
 
-### PD-4 — Health status needs an urgent tier
-**Status:** ready · **Effort:** low · **Schema:** none (text column) · **Touches:** `HEALTH_LABELS`, the two `needsAttention` sites, `moveToHospital`
-
-`healthy` / `watch` / `recovery` / `unknown` has no level above `watch`. Add an urgent tier.
-
-`health_status` is free text standardized by the dropdown, so no migration — but places branch on the exact values and must be updated together, or an urgent plant silently reads as healthy. **Re-verified 2026-08-27 — cheaper than this item used to say:** `plantsNeedingAttention` no longer exists (Reports was retired in v1.79.0), so there are **two** branch sites, not three:
-- `index.html:2813` — `needsAttention` on the taxon/specimen pill
-- `index.html:3032` — `needsAttention` on the plant card status badge
-- `HEALTH_LABELS` at `index.html:2012` — drives four `<option>` lists (4666, 4725, 5255, 5288), so adding the tier there populates every dropdown at once
-- `moveToHospital` (`index.html:6235`) sets `watch` — should it set the new tier instead?
-
-Name to confirm: `urgent` / "Urgent care".
-
 
 ---
 
-## Ready now — no upstream dependencies
+## Ready now
 
-### LOC-1 — Locations list card layout
-**Status:** ready · **Effort:** low · **Schema:** none · **Depends on:** PD-1 (image treatment must exist to apply) · **Touches:** `locationCard`, `.plant-list-card` / `.plant-list-thumb` CSS
+**PD-4, LOC-1 and AI-3 layer 1 all shipped in v1.83.0** — see Completed. AI-1 and
+AI-2 shipped in v1.80.0. What is left in this section is the one item below.
 
-Apply the card-media image treatment PD-1 establishes to the Locations list cards, and settle the card layout.
-
-Acceptance criteria:
-- The card's image uses the **reusable card-media pattern defined in PD-1**. LOC-1 consumes that pattern; it does not define its own.
-- Card layout and image size are decided against real photos in the cards. Current treatment is the compact square side thumb at 92 / 120 / 140px per breakpoint — deliberately left at that size in LOC-2 pending this judgment.
-- Responsive behavior matches the existing 700px / 1100px breakpoints.
-
-Counts, inline actions, and the nested indicator already ship — see LOC-2. This item is layout and imagery only.
-
-
----
-
-
-### AI-1, AI-2 — **shipped v1.80.0.** See the entry under Completed.
-
-### AI-3 — Duplicate plant detection when adding
-**Status:** partly blocked by AI-1 · **Effort:** medium
-
-Adding a plant that already exists creates a silent duplicate. Two layers, separable:
-
-1. **Name match — needs no AI, build first.** On the new-plant form, match the typed botanical/common name against existing plants and warn before creating, offering **tag the existing plant instead** as the primary action.
-2. **Photo match — needs AI-1.** When creating from an Inbox photo, Claude suggests the existing plant it most resembles.
-
-Layer 1 catches the common case and is independent of AI-1. Do not wait for the vision call to ship it.
-
----
-
-## Blocked
-
+**AI-3 layer 2 — photo match — is the only part of AI-3 not built.** When
+creating a plant from an Inbox photo, have Claude suggest the existing specimen
+it most resembles. Layer 1 (name match) shipped; this needs `suggest-photo`
+accuracy to be trusted first, which is still unproven at volume — see the AI
+section above.
 
 ### RPT-3 — Check-ins
-**Status:** blocked by AI-1 · **Effort:** medium
+**Status:** ready · **Effort:** medium
+**Unblocked 2026-08-27.** It was filed as blocked by AI-1, and AI-1 shipped in v1.80.0. Nothing is waiting on anything.
+
 Plant check-ins support **both** staleness (days since last photo, via `photoDate()`) and a manual flag. Location watch status is a manual flag only.
+
+Needs a design pass before building — "check-in" is not yet defined as a record. Open: is a check-in an event row with a date, or a `last_checked_at` stamp on the specimen? The staleness half needs no schema at all (`photoDate()` already exists); the manual flag half does.
 
 
 ---
@@ -293,6 +247,56 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 ---
 
 ## Completed
+
+### v1.83.0
+Four backlog items, closing everything that was buildable without a decision.
+
+**PD-4 — an urgent tier above Watch.** `HEALTH_LABELS` gains `urgent` /
+"Urgent care", and **Move to Plant Hospital now sets it** rather than Watch —
+the hospital is the strongest worry signal in the app and setting Watch
+understated it. Urgent outranks plain attention visually by weight and a
+terracotta ring; the palette is fixed (§5) so it does not get a new hue.
+
+The item warned that the exact health values are branched on in more than one
+place and must be changed together. **It listed two sites and there were three**
+— the third was `plantsAttention` in the work queue, filtering
+`watch || recovery`, so an urgent plant would have been **absent from the
+queue entirely**: the worst of the three, and the only one nobody had recorded.
+The inline expression is now a single `needsAttention()` / `isUrgent()` /
+`healthPillClass()` trio, so the next tier cannot be half-added. Urgent sorts to
+the top of the queue. Plant Detail's health pill was also hardcoded
+`pill-solid-blue` regardless of health, and now reflects the tier.
+
+**`infraspecific` and `parentage` wired up.** Both columns were already in the
+database with no code touching them. `Opuntia polyacantha` **var. erinacea**
+'Snow Fuzzy' displayed as *Opuntia polyacantha* 'Snow Fuzzy' — the variety was
+silently dropped, because since v1.65.0 the name composes from the parts and the
+parts had nowhere to hold it. Rank abbreviation renders upright, epithet italic,
+per convention; a bare word is read as `var.`. Both fields are on the taxon form
+and taxon detail, and appended (not inserted) to the CSV export so existing
+spreadsheets keep their column positions.
+
+**LOC-1 — Locations cards take the PD-1 card-media band.** They were using the
+92px square side thumb, which is the treatment for a specimen: one plant,
+centred, identifiable small. A location is a *place*, and a wide shot of a bed
+or a bucket wall is unreadable at 92px. Full-bleed 4:3 at the top of the card
+now, matching Location Detail's hero so the same photo does not recompose
+between the list and the page it opens.
+
+**AI-3 layer 1 — duplicate detection, and a real bug behind it.**
+`ensureTaxonForName` compared the typed name to `botanical_name` and nothing
+else. Since v1.65.0 a taxon created from parts often has **no `botanical_name`
+at all**, so typing "Aeonium arboreum" against an existing *Aeonium arboreum*
+matched nothing and **silently created a second species record**. Matching now
+runs against the composed display name, the botanical name, the common name and
+the working label, all normalised for case, quoting, `×` vs `x`, and rank words.
+
+On top of that, the new-plant form says live what is about to happen: an exact
+match shows "joins the existing species X — N specimens already", and a near
+miss (same genus, different epithet; or one name a prefix of the other) shows a
+warning with one-tap "use X instead". Fifteen assertions on the matching
+helpers, run under node.
+
 
 ### v1.82.1
 **Version drift and a stale map.** Housekeeping, no behaviour change.

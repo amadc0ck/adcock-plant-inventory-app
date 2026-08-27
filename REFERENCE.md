@@ -64,6 +64,8 @@ The **kind** of plant — whatever the most specific level is known: a species, 
 
 - `id` uuid PK · `taxa_id` on `plants` links a specimen to it, **nullable** so unidentified plants stay first-class
 - `botanical_name` / `common_name` / `cultivar` / `family` / `genus` / `species_epithet` / `is_hybrid`
+- `infraspecific` text (wired up v1.83.0) — variety, subspecies or form, stored **with** the rank abbreviation as written on the tag: `var. erinacea`, `subsp. horrida`, `f. monstruosa`. A bare word with no recognised rank is read as `var.`, which is overwhelmingly the common case; rendering it rankless would read as a second species epithet. `infraspecificParts()` splits rank from epithet so markup can set the rank upright and the epithet italic, per convention.
+- `parentage` text (wired up v1.83.0) — the cross a cultivar came from, e.g. *E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina'. Vendors put the pedigree in the name field; this is where it goes so that recording the real name does not discard it.
 - `working_label` — names an unidentified taxon until it has a real one. Three plants can obviously be the same kind without anyone knowing what that kind is; a null `taxa_id` cannot express that.
 - `description`, `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `origin`
 - `native_range`, `hardy_to`, `light_conditions`, `water_needs`
@@ -79,6 +81,14 @@ Two shapes the composition must handle, both present in the real data:
 **`taxonDisplayHtml()` / `plantDisplayHtml()` return markup**: genus and epithet italic, hybrid sign and cultivar upright — correct botanically and impossible with one free-text string. Callers must **not** wrap them in `escapeHtml()`; the parts are escaped inside. The plain-text functions stay for `<option>` labels, `title` attributes and CSV, and each call site picks one deliberately.
 
 **Cultivar is stored bare**, without quotes; the display layer adds them.
+
+**Both `infraspecific` and `parentage` existed in the database for some time with no code touching them** — added, then never built against. Until v1.83.0 the consequence was silent: composition prefers the parts, so *Opuntia polyacantha* var. *erinacea* 'Snow Fuzzy' displayed as *Opuntia polyacantha* 'Snow Fuzzy' and the variety simply vanished from the name. The same shape as the hybrid `×` trap above: a fact present in the data, absent from the composed name, and nothing anywhere to say so. **When a column is added, wire it or record why not.**
+
+**Name matching is normalised, not string equality** (v1.83.0, AI-3). `nameKey()` lowercases and strips quoting, folds `×` to `x`, drops rank words, and collapses punctuation and whitespace; `taxonNameKeys()` returns every name a taxon answers to — composed display name, `botanical_name`, `common_name`, `working_label`. `findTaxonByName()` is the single lookup used when a new specimen needs a taxon.
+
+This replaced a comparison against `botanical_name` alone, which had become **actively wrong** once composition landed: a taxon built from parts often has no `botanical_name` at all, so typing an existing species name matched nothing and created a duplicate species record. Any future "does this already exist" check must go through `findTaxonByName()` rather than comparing a column.
+
+**Health tiers are branched on by exact value, in three places** (v1.83.0, PD-4). `healthy` / `watch` / `urgent` / `recovery` / `unknown`. The branching is centralised in `needsAttention()`, `isUrgent()` and `healthPillClass()` — before that the test was an inline expression copied into each screen, and adding the `urgent` tier meant an urgent plant was **missing from the work queue** because the third copy, `plantsAttention`, was not on anyone's list. `moveToHospital()` sets `urgent`. Add a tier by editing `HEALTH_LABELS` and `HEALTH_ATTENTION` only.
 
 **Phase 3 shipped v1.65.0.** Nothing in the app reads or writes a species column on `plants` any more — `plantDisplayName()` resolves through `taxa_id`, and the four paths that copied species data down onto the specimen are gone. The columns themselves still exist: the drop is a separate step, recorded in BACKLOG under v1.65.0 and deliberately held back so the app can be exercised against the still-present data first. A backup precedes it; there is no migration tool and it is irreversible.
 

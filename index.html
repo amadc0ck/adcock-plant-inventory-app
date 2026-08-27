@@ -261,10 +261,16 @@
   .task-pick{display:flex;align-items:center;gap:9px;width:100%;background:var(--bg);border:none;border-radius:8px;padding:10px 12px;font-size:13px;color:var(--cream);cursor:pointer;font-family:inherit;text-align:left;}
   .task-pick.is-picked{background:var(--moss);color:#12200F;}
   .task-pick svg{width:15px;height:15px;flex-shrink:0;}
-  /* The check-in banner on a specimen. Terracotta only when actually due. */
-  .checkin-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;}
-  .checkin-bar.is-due{background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.5);color:var(--ink);}
-  .checkin-bar.is-ok{background:var(--parchment-dim);color:var(--ink-soft);}
+  /* The check-in banner on a specimen. Shown ONLY when actually due — a
+     bordered "everything is fine" panel on every healthy plant is a lot of
+     chrome for a non-event. The not-due case is one quiet line instead.
+     The svg rule is not optional: these icons carry a viewBox and no
+     width/height, so inside a flex row they stretch to fill the container. */
+  .checkin-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-radius:8px;padding:9px 12px;font-size:12.5px;
+    background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.5);color:var(--ink);}
+  .checkin-bar svg{width:16px;height:16px;flex-shrink:0;color:var(--terracotta);}
+  .checkin-bar .checkin-text{flex:1;min-width:140px;}
+  .checkin-quiet{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);}
   /* AI-3. Two different messages: linking to an existing species is correct and
      just needs saying; a near miss is a warning. They must not look alike. */
   .dupe-note{border-radius:8px;padding:9px 11px;margin:8px 0 4px;font-size:12.5px;line-height:1.45;}
@@ -559,7 +565,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.84.0";
+const APP_VERSION = "1.84.1";
 const APP_UPDATED = "2026-08-27";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4096,12 +4102,17 @@ function taskSectionFor(kind, id) {
 function checkInSectionFor(pl) {
   const st = checkInStatus(pl);
   if (!st) return "";
+  // Not due is not news. One line, no box, no icon — it says how fresh the
+  // record is without competing with the plant for attention.
+  if (!st.due) {
+    return `<div class="checkin-quiet">${escapeHtml(st.label)}${st.reason === "scheduled" ? " · scheduled" : ""}</div>`;
+  }
   return `
-    <div class="checkin-bar ${st.due ? "is-due" : "is-ok"}">
-      ${icon(st.due ? "alertTriangle" : "check")}
-      <span style="flex:1;min-width:120px;">${st.due ? "Due for a check-in" : "Checked recently"} — ${escapeHtml(st.label)}${st.reason === "scheduled" ? " (scheduled)" : ""}</span>
-      ${st.due ? `<button class="btn btn-secondary btn-sm" onclick="clearCheckIn('${pl.id}')">Checked it</button>` : ""}
-      <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="snoozeCheckIn('${pl.id}', 14)">Remind in 14d</button>
+    <div class="checkin-bar">
+      ${icon("alertTriangle")}
+      <span class="checkin-text">Due for a check-in — ${escapeHtml(st.label)}${st.reason === "scheduled" ? " (scheduled)" : ""}</span>
+      <button class="btn btn-secondary btn-sm" onclick="clearCheckIn('${pl.id}')">Checked it</button>
+      <button class="btn-ghost" style="padding:0;font-size:12px;" onclick="snoozeCheckIn('${pl.id}', 14)">Remind in 14d</button>
     </div>`;
 }
 

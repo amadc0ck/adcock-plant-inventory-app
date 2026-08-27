@@ -7,6 +7,66 @@ Item IDs are permanent. Never renumber.
 
 ---
 
+## Picking this up cold — state as of 2026-08-27
+
+Written so a session with no memory of the conversation can continue without asking. Everything below is either **waiting on Amanda** or **decided but unbuilt**. Delete an entry when it is resolved.
+
+### SQL she may not have run yet
+
+Ask before assuming. Each is idempotent, so re-running is safe.
+
+**1. `taxa.frost_tender` — v1.78.0.** The feature shipped; unknown whether the column exists. The app degrades on `PGRST204` and says so, which is the tell.
+```sql
+alter table taxa add column if not exists frost_tender boolean not null default false;
+create index if not exists taxa_frost_tender_idx on taxa (frost_tender) where frost_tender;
+notify pgrst, 'reload schema';
+```
+
+**2. `suggestions` — v1.80.0. Confirmed run**: species suggestions are working in the app.
+
+**3. NAME-1 leftovers.** The parse ran and the check query came back clean. Two tidies were offered and not confirmed:
+```sql
+-- lowercase cultivar in the free text, already correct in the cultivar column
+update taxa set botanical_name = replace(botanical_name, 'fuzzy navel', 'Fuzzy Navel')
+where botanical_name like '%fuzzy navel%';
+```
+And the **Echeveria 'Purple Perle'** rename — its `botanical_name` still holds the cross formula rather than the name. The statement is in the conversation history but not here; regenerate it from the `parentage` note below if she wants it.
+
+**4. SPECIES-1 Phase 3 — the column drop.** The code pass shipped in v1.65.0 and **nothing reads or writes a species column on `plants` any more**. The drop is deliberately unrun so the app could be exercised first. It has now been exercised for a day. The statement is in the v1.65.0 entry under Completed. **Take a JSON backup from Settings immediately before running it** — irreversible, no migration tool.
+
+### Decisions offered, never answered
+
+**`taxa.infraspecific`** — for `var. erinacea`, `f. monstruosa`, `subsp. horrida`. Raised when profiling *Opuntia polyacantha var. erinacea* 'Snow Fuzzy' from plantlust. There is nowhere to put an infraspecific rank, and since v1.65.0 composition prefers the parts, so the variety would be **silently dropped from the displayed name**. Same shape as the hybrid `×` trap. Would also close the open question on `Austrocylindropuntia subulata monstrose`, which NAME-1 flagged as EXTRA WORD and nobody resolved.
+```sql
+alter table taxa add column if not exists infraspecific text;
+notify pgrst, 'reload schema';
+```
+
+**`taxa.parentage`** — two records now want it: *Echeveria* 'Purple Perle' (*E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina') and *Kalanchoe* 'Roseleaf' (*K. tomentosa* × *K. beharensis*). In both cases the vendor put the pedigree in the name field, and recording the real name discards the parentage unless there is somewhere for it.
+
+**`taxa.dormancy`** — raised by *Kalanchoe* 'Roseleaf' being **summer-dormant**, which matters practically: it looks half dead in July and that is correct. Same kind of seasonal trait as `bloom_season`, and currently has no home but `description`, which is for appearance.
+
+**Time-cluster location filing — not AI, and probably the biggest single win available.** Amanda has **932 photos needing a location**. Photos taken within minutes of each other are almost always the same place, and her archive imports cluster hard by capture time. Proposed as a one-tap "file the N other photos taken within 10 minutes of this one". Costs nothing to run, and would leave Claude only the genuinely ambiguous remainder. She was asked and had not answered when the session ended.
+
+### AI — where the tuning stands
+
+Shipped and working in v1.80–1.82. **`suggest-species` is good**: the *Dracaena angolensis* pass filled eight blank fields correctly, including Angola, Zone 9-10 and clumping.
+
+**`suggest-photo`'s specimen matching is unproven.** It has produced plausible reasoning — it correctly noticed a specimen with no location and connected it to a photo of an unlabelled pot — but it has **not been run at volume**, and prompt tuning was expected to be the next step. Do not assume the accuracy is good enough for a large batch until it has been checked on ten or twenty.
+
+Advice given and worth keeping: **try ten before four hundred.** Each photo is one vision call.
+
+The `focus` parameter (v1.82.0) is the lever for the 932: location-only is cheaper and more accurate, and locations now carry their period so the capture date does most of the work for archive photos.
+
+### Two things about how to work here
+
+Both are also saved as memories.
+
+- **Give Amanda shell commands as plain lines to paste into Terminal.** Never with the Claude Code `!` prefix — in zsh that is history expansion. She lost two rounds to this on the Edge Function deploys.
+- **Check the live state before diagnosing.** The Supabase CLI is installed and the project is linked (`fsckwgicmvviefuivgza`), so `supabase functions list`, `secrets list` and `functions logs <name>` all work from `~/Projects/adcock-plant-inventory`. The AI functions failing with "failed to fetch" was simply that they had never deployed — one command would have shown it, and instead two rounds went into improving error messages.
+
+---
+
 ## Observed 2026-08-25 — triaged from Amanda's session notes
 
 ### SPECIES-1 — Split taxa from specimens (epic)

@@ -90,6 +90,8 @@ This replaced a comparison against `botanical_name` alone, which had become **ac
 
 **Health tiers are branched on by exact value, in three places** (v1.83.0, PD-4). `healthy` / `watch` / `urgent` / `recovery` / `unknown`. The branching is centralised in `needsAttention()`, `isUrgent()` and `healthPillClass()` — before that the test was an inline expression copied into each screen, and adding the `urgent` tier meant an urgent plant was **missing from the work queue** because the third copy, `plantsAttention`, was not on anyone's list. `moveToHospital()` sets `urgent`. Add a tier by editing `HEALTH_LABELS` and `HEALTH_ATTENTION` only.
 
+**Check-ins are derived, not stored** (RPT-3, v1.84.0). `plants.next_check_date` is the only stored part, and it is an override. `checkInStatus()` returns due/not-due for one specimen from two independent rules: an explicit `next_check_date` that has arrived, or nothing photographed for longer than `check_in_interval_days` (default 14). The explicit date wins whenever it is set. Two exclusions matter and are easy to get wrong: a **non-active** specimen is not a chore, and a **never-photographed** one is excluded here — it belongs to the "missing photos" queue, or every new specimen would be overdue the day it is created.
+
 **Phase 3 shipped v1.65.0.** Nothing in the app reads or writes a species column on `plants` any more — `plantDisplayName()` resolves through `taxa_id`, and the four paths that copied species data down onto the specimen are gone. The columns themselves still exist: the drop is a separate step, recorded in BACKLOG under v1.65.0 and deliberately held back so the app can be exercised against the still-present data first. A backup precedes it; there is no migration tool and it is irreversible.
 
 ### `plants`
@@ -196,6 +198,21 @@ Everything Claude proposes, one row per proposal (v1.80.0). Separate from `ident
 - `status` — pending / accepted / dismissed. Accepted and dismissed rows are **kept**: the last 20 are fed back to Claude as examples, which is the only learning available without fine-tuning
 
 **Claude is given the whole collection on every call** — 33 taxa, 58 specimens, 157 locations, about 6KB — rather than being trained, synced or scheduled. It is small enough to ride along, which means it is never stale. The catalogue sits in a `cache_control` block so a batch pays for it once.
+
+### `tasks` / `task_subjects`
+TASK-1 + RPT-3 (v1.84.0). A task is something Amanda wants to do; a subject is what it is about.
+
+- `tasks` — `id` uuid PK · `title` (required) · `detail` · `status` (`open` | `done`) · `due_date` · `created_at` · `completed_at`
+- `task_subjects` — `task_id` FK cascade, plus **exactly one** of `plant_id` / `location_id` / `taxa_id`, enforced by `check (num_nonnulls(...) = 1)`. Same shape as `identifications`, which carries exactly one of `photo_id` / `taxa_id`.
+
+**Why one feature and not two.** RPT-3 was specified as a manual "needs a check-in" flag, and the task request arrived separately. They are the same thing at different sizes: a flag is a task with one subject and no note. Building both would have produced two places to look for what needs doing — the exact fault v1.79.0 corrected by retiring Reports and moving work into the queue. **If a "flag this record" feature is ever proposed again, it is a task.**
+
+**Subjects are mixed-type and many-per-task because the real work is.** The three cases that drove it: eleven buckets pulled off the wall together, one bucket with a rotted centre, and one species to consolidate across several locations. A single `plant_id` column would have handled none of them.
+
+**Tasks render as rows, not as counted tiles**, which is the one place the work queue's vocabulary is deliberately broken. A tile answers "how many"; a task's value is its text, and hiding "bucket 11, centre is rotted" behind a count would make her click to remember what she meant.
+
+### `app_settings`
+Key/value, one row per setting, RLS on (v1.84.0). Currently holds `check_in_interval_days`. Read into `state.appSettings` as a plain object at load; `settingInt()` coerces and falls back, so a missing table, a missing key or a junk value all degrade to the built-in default rather than breaking.
 
 ### `google_auth_tokens`
 Single-row table, one Google account ever. `access_token` (~1hr, auto-refreshed by Edge Functions), `refresh_token` (expires ~weekly, see §8), `expires_at`, `updated_at`.

@@ -241,6 +241,30 @@
      a place. Padding lives on the body so the photo goes edge to edge. */
   .loc-card{padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;}
   .loc-card-body{padding:12px 14px 14px;}
+  /* TASK-1 */
+  .task-row{display:flex;gap:11px;align-items:flex-start;background:var(--parchment);border-radius:10px;padding:11px 13px;cursor:pointer;}
+  .task-row.is-done{opacity:0.55;}
+  .task-row.is-done .task-title{text-decoration:line-through;}
+  .task-check{width:20px;height:20px;flex-shrink:0;margin-top:1px;border-radius:5px;border:1.8px solid var(--moss-dim);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;color:#12200F;}
+  .task-check.is-done{background:var(--moss);border-color:var(--moss);}
+  .task-check svg{width:13px;height:13px;}
+  .task-title{font-size:14px;color:var(--ink);line-height:1.3;}
+  .task-detail{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.45;}
+  .task-due{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--moss-dim);margin-top:5px;}
+  .task-due.is-overdue{color:var(--terracotta);font-weight:700;}
+  .task-subjects{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;}
+  .task-subject{display:inline-flex;align-items:center;gap:4px;background:var(--parchment-dim);border:none;border-radius:20px;padding:3px 9px;font-size:11px;color:var(--ink);cursor:pointer;font-family:inherit;}
+  .task-subject svg{width:12px;height:12px;color:var(--moss-dim);}
+  .task-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+  .task-chip{display:inline-flex;align-items:center;gap:5px;background:var(--moss);color:#12200F;border:none;border-radius:20px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;}
+  .task-chip svg{width:12px;height:12px;}
+  .task-pick{display:flex;align-items:center;gap:9px;width:100%;background:var(--bg);border:none;border-radius:8px;padding:10px 12px;font-size:13px;color:var(--cream);cursor:pointer;font-family:inherit;text-align:left;}
+  .task-pick.is-picked{background:var(--moss);color:#12200F;}
+  .task-pick svg{width:15px;height:15px;flex-shrink:0;}
+  /* The check-in banner on a specimen. Terracotta only when actually due. */
+  .checkin-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;}
+  .checkin-bar.is-due{background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.5);color:var(--ink);}
+  .checkin-bar.is-ok{background:var(--parchment-dim);color:var(--ink-soft);}
   /* AI-3. Two different messages: linking to an existing species is correct and
      just needs saying; a near miss is a warning. They must not look alike. */
   .dupe-note{border-radius:8px;padding:9px 11px;margin:8px 0 4px;font-size:12.5px;line-height:1.45;}
@@ -535,7 +559,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.83.0";
+const APP_VERSION = "1.84.0";
 const APP_UPDATED = "2026-08-27";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -555,6 +579,13 @@ const state = {
   plantSearch: "",
   attachSearch: "",
   plantFilters: { category: "", status: "", idStatus: "", original: "", location: "" },
+  tasks: [],
+  taskSubjects: [],
+  appSettings: {},
+  taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
+  taskSubjectSearch: "",
+  taskFilter: "open",     // open | done | all
+  refImage: null,         // {url, caption} — Pl@ntNet reference photo overlay
   photoUrlCache: {},
   photoFetchInFlight: new Set(),
   photoCacheOrder: [],
@@ -1179,7 +1210,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -1198,6 +1229,11 @@ async function loadAll() {
       restGetAll("bloom_events", "?select=*&order=started_on.desc").catch(() => null),
       // Same again: AI-1 ships ahead of its table.
       restGetAll("suggestions", "?status=eq.pending&select=*&order=created_at.desc").catch(() => null),
+      // TASK-1 / RPT-3. Resilient in the same way — the app runs before the
+      // migration and simply has no tasks to show.
+      restGetAll("tasks", "?select=*&order=created_at.desc").catch(() => null),
+      restGetAll("task_subjects", "?select=*").catch(() => null),
+      restGetAll("app_settings", "?select=*").catch(() => null),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -1212,6 +1248,9 @@ async function loadAll() {
     state.listOptions = listOptions || [];
     state.bloomEvents = bloomEvents || [];
     state.suggestions = suggestions || [];
+    state.tasks = tasks || [];
+    state.taskSubjects = taskSubjects || [];
+    state.appSettings = Object.fromEntries((appSettings || []).map((r) => [r.key, r.value]));
   } catch (e) {
     toast(e.message, true);
   }
@@ -2180,6 +2219,127 @@ function fmtDate(iso) {
 function photoDate(p) {
   return p.taken_at || p.uploaded_at;
 }
+/* ------------------------------------------------------------
+   TASK-1 / RPT-3 — tasks, task subjects, and check-in staleness.
+
+   Item 6 and RPT-3 turned out to be one feature. RPT-3's manual half is
+   "flag this for a look"; a task is that plus a note and more than one
+   subject. Building both would have given two places to look for what needs
+   doing, which is the mistake v1.79.0 fixed by retiring Reports.
+
+   A subject is exactly one of plant / location / taxon — the same
+   "exactly one of" shape `identifications` already uses.
+   ------------------------------------------------------------ */
+const DEFAULT_CHECK_IN_DAYS = 14;
+
+function settingInt(key, fallback) {
+  const n = parseInt(state.appSettings[key], 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+function checkInIntervalDays() {
+  return settingInt("check_in_interval_days", DEFAULT_CHECK_IN_DAYS);
+}
+
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+function daysBetween(fromISO, toISO) {
+  if (!fromISO) return null;
+  const ms = new Date(toISO).getTime() - new Date(fromISO).getTime();
+  return Math.floor(ms / 86400000);
+}
+
+function subjectsOfTask(taskId) {
+  return state.taskSubjects.filter((ts) => ts.task_id === taskId);
+}
+function tasksForSubject(kind, id) {
+  const col = kind === "plant" ? "plant_id" : kind === "location" ? "location_id" : "taxa_id";
+  const ids = new Set(state.taskSubjects.filter((ts) => ts[col] === id).map((ts) => ts.task_id));
+  return state.tasks.filter((t) => ids.has(t.id));
+}
+function openTasksForSubject(kind, id) {
+  return tasksForSubject(kind, id).filter((t) => t.status !== "done");
+}
+function openTasks() {
+  return state.tasks.filter((t) => t.status !== "done");
+}
+// Overdue sorts first, then soonest due, then oldest created. A task with no
+// due date is not overdue — it is just not scheduled.
+function taskIsOverdue(t) {
+  return t.status !== "done" && !!t.due_date && t.due_date <= todayISO();
+}
+function sortTasks(list) {
+  return [...list].sort((a, b) => {
+    const ao = taskIsOverdue(a) ? 0 : 1, bo = taskIsOverdue(b) ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    if (a.due_date && b.due_date && a.due_date !== b.due_date) return a.due_date < b.due_date ? -1 : 1;
+    if (!!a.due_date !== !!b.due_date) return a.due_date ? -1 : 1;
+    return (b.created_at || "").localeCompare(a.created_at || "");
+  });
+}
+
+// A subject renders as a label wherever it appears, whatever its kind.
+function subjectLabel(ts) {
+  if (ts.plant_id) {
+    const pl = state.plants.find((p) => p.id === ts.plant_id);
+    return pl ? `${pl.accession_number} · ${plantDisplayName(pl)}` : "Deleted specimen";
+  }
+  if (ts.location_id) {
+    const l = locationById(ts.location_id);
+    return l ? locationPath(l) : "Deleted location";
+  }
+  const t = ts.taxa_id ? taxonById(ts.taxa_id) : null;
+  return t ? taxonDisplayName(t) : "Deleted species";
+}
+function subjectKind(ts) {
+  return ts.plant_id ? "plant" : ts.location_id ? "location" : "taxa";
+}
+function subjectIcon(ts) {
+  return icon(ts.plant_id ? "seedling" : ts.location_id ? "pin" : "leaf");
+}
+function openSubject(ts) {
+  if (ts.plant_id) return openPlant(ts.plant_id);
+  if (ts.location_id) return openLocation(ts.location_id);
+  if (ts.taxa_id) return openTaxon(ts.taxa_id);
+}
+
+/* RPT-3 — check-ins.
+   Two independent reasons a specimen wants looking at:
+     1. an explicit next_check_date that has arrived, and
+     2. staleness — nothing photographed for longer than the interval.
+   Amanda's call: the explicit date wins when set; otherwise fall back to the
+   interval, which defaults to 14 days and is adjustable in Settings. */
+function lastPhotoDateForPlant(plantId) {
+  const dates = plantPhotosOrdered(plantId).map(photoDate).filter(Boolean);
+  if (!dates.length) return null;
+  return dates.sort().slice(-1)[0];
+}
+function checkInStatus(pl) {
+  if (pl.status !== "active") return null;      // a dead or given-away plant is not a chore
+  if (pl.next_check_date) {
+    const over = daysBetween(pl.next_check_date, todayISO());
+    return over >= 0
+      ? { due: true, reason: "scheduled", days: over, label: over === 0 ? "Due today" : `${over}d overdue` }
+      : { due: false, reason: "scheduled", days: over, label: `Due ${fmtDate(pl.next_check_date)}` };
+  }
+  const last = lastPhotoDateForPlant(pl.id);
+  const interval = checkInIntervalDays();
+  // Never photographed is a real gap, but it is a different one — it belongs to
+  // the "no photos" queue, not here, or every new specimen would be overdue on
+  // the day it is created.
+  if (!last) return null;
+  const age = daysBetween(last, todayISO());
+  return age >= interval
+    ? { due: true, reason: "stale", days: age, label: `${age}d since a photo` }
+    : { due: false, reason: "stale", days: age, label: `${age}d since a photo` };
+}
+function plantsNeedingCheckIn() {
+  return state.plants
+    .map((pl) => ({ pl, st: checkInStatus(pl) }))
+    .filter((x) => x.st && x.st.due)
+    .sort((a, b) => b.st.days - a.st.days);
+}
+
 function icon(name) {
   const icons = {
     inbox: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12h4l2 3h4l2-3h4M4 12l1.5-6.5A2 2 0 0 1 7.44 4h9.12a2 2 0 0 1 1.94 1.5L20 12M4 12v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/></svg>`,
@@ -2326,6 +2486,18 @@ function openModal(type, data = {}) {
   // Paging resets per open, so the picker never starts mid-list.
   if (type === "attachInboxPhoto") state.attachPhotoLimit = 24;
   if (type === "newPlant" || type === "newPlantFromPhoto") state.newPlantExpanded = false;
+  // TASK-1. The subject draft lives in state so the picker survives the
+  // re-render on every search keystroke. Seed it on open: from the task being
+  // edited, or from the record she opened the modal from ("new task about this
+  // bucket" should arrive with the bucket already attached).
+  if (type === "newTask" || type === "editTask") {
+    state.taskSubjectSearch = "";
+    if (type === "editTask") {
+      state.taskSubjectDraft = subjectsOfTask(data.taskId).map((ts) => ({ kind: subjectKind(ts), id: ts[subjectKind(ts) === "taxa" ? "taxa_id" : subjectKind(ts) + "_id"] }));
+    } else {
+      state.taskSubjectDraft = data.subject ? [data.subject] : [];
+    }
+  }
   // Picker filters are per-open, not sticky: a stale species filter from a
   // previous modal reads as "no plants match".
   state.pickerSearch = ""; state.pickerTaxon = ""; state.pickerLocation = "";
@@ -3028,6 +3200,7 @@ function screenTaxonDetail() {
           ${fieldRow("tag", "Cultivar", cultivarLabel(t.cultivar))}
           ${fieldRow("seedling", "Parentage", t.parentage)}
         </div>
+        ${taskSectionFor("taxa", t.id)}
       </div>
 
       <div class="row" style="margin-top:26px;margin-bottom:8px;">
@@ -3223,6 +3396,8 @@ function screenPlantDetail() {
             ${lineage ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;letter-spacing:0.2px;">${escapeHtml(lineage)}</div>` : ""}`;
           })()}
 
+          ${(() => { const bar = checkInSectionFor(pl); return bar ? `<div style="margin-top:13px;">${bar}</div>` : ""; })()}
+
           <div class="wrap-gap" style="margin-top:13px;">
             <span class="pill-solid ${pl.status === "active" ? "pill-solid-moss" : "pill-solid-terracotta"}">${STATUS_LABELS[pl.status]}</span>
             <span class="pill-solid pill-solid-outline">${CATEGORY_LABELS[pl.collection_category]}</span>
@@ -3312,6 +3487,8 @@ function screenPlantDetail() {
           </div>`;
         })()}
 
+        ${taskSectionFor("plant", pl.id)}
+
         <div class="section-card">
           <h4>Identification</h4>
           ${fieldRow("check", "Status", ID_STATUS_LABELS[pl.identification_status] || pl.identification_status)}
@@ -3324,6 +3501,7 @@ function screenPlantDetail() {
           ${fieldRow("check", "Original collection", pl.original_collection ? "Yes" : "No")}
           ${fieldRow("info", "Status", STATUS_LABELS[pl.status] || pl.status)}
           ${fieldRow("alertTriangle", "Health", HEALTH_LABELS[pl.health_status] || pl.health_status)}
+          ${fieldRow("clipboard", "Next check", pl.next_check_date ? fmtDate(pl.next_check_date) : "")}
         </div>
 
         <div class="section-card">
@@ -3407,6 +3585,7 @@ function screenPlantDetail() {
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
                   <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit</button>
+                  ${diagnoseButton(p, "btn-ghost icon-btn")}
                   ${!isPrimary ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="setPrimaryPhoto('${pl.id}','${p.id}')">${icon("photoStar")} Set as profile</button>` : ""}
                   ${isDirectAttachment
                     ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('movePhoto',{photoId:'${p.id}',fromPlantId:'${pl.id}'})">${icon("seedling")} Move</button>
@@ -3578,6 +3757,8 @@ function screenLocationDetail() {
         </div>
         </div>
       </div>
+
+      <div style="margin-top:18px;">${taskSectionFor("location", l.id)}</div>
 
       ${(() => {
         const children = directChildLocations(l.id);
@@ -3758,11 +3939,19 @@ function screenLocationDetail() {
                   <button class="btn btn-accent btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${l.id}'})">New plant from this photo</button>
                 </div>` : ""}
               <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;${state.gallerySelectMode ? "display:none;" : ""}">
-                ${!plantnetSuggestion
+                ${/* A photo already filed to a specimen has been identified —
+                     offering "Identify" there invites re-asking Pl@ntNet a
+                     settled question. The Gallery has always gated this
+                     (identifyBtn returns "" when p.plant_id is set); this feed
+                     never did. */""}
+                ${p.plant_id
+                  ? ""
+                  : !plantnetSuggestion
                   ? `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${isIdentifying ? "disabled" : ""} onclick="identifyPhoto('${p.id}')">${isIdentifying ? '<span class="spinner"></span>' : icon("search") + " Identify"}</button>`
                   : `<button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="dismissIdentification('${plantnetSuggestion.id}')">${icon("close")} Dismiss Pl@ntNet</button>`}
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" ${state.suggestingPhotoId === p.id ? "disabled" : ""} onclick="askClaudeAboutPhoto('${p.id}')">${state.suggestingPhotoId === p.id ? '<span class="spinner"></span>' : icon("photoQuestion") + " Ask Claude"}</button>
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attach',{photoId:'${p.id}', locationId:'${l.id}'})">${icon("tag")} Attach to a plant</button>
+                ${diagnoseButton(p, "btn-ghost icon-btn")}
                 <button class="btn-ghost" style="padding:0;" title="Edit this photo" onclick="openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")}</button>
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Move</button>
                 <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('tagLocations',{photoId:'${p.id}'})">${icon("map")} Other containers</button>
@@ -3851,11 +4040,87 @@ function reportSections() {
         .filter((pl) => HEALTH_ATTENTION.includes(pl.health_status))
         .sort((a, b) => (isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0)
           || (a.accession_number || "").localeCompare(b.accession_number || "")), kind: "plant" },
+    // RPT-3. Two reasons a specimen wants a look, in one list: a scheduled
+    // next_check_date that has arrived, or nothing photographed for longer
+    // than the interval (14 days by default, adjustable in Settings).
+    { key: "checkIns", title: "Due for a check-in", sub: `Scheduled, or nothing photographed in ${checkInIntervalDays()} days`,
+      items: plantsNeedingCheckIn().map((x) => x.pl), kind: "plant" },
     { key: "locationsNoPlants", title: "Locations with photos but no plants", sub: "Photographed, never catalogued",
       // Areas and archives are excluded: they are not expected to hold
       // specimens, so listing them here is not a finding.
       items: state.locations.filter((l) => locationHoldsPlants(l) && photosAtLocation(l.id).length > 0 && plantsAtLocation(l.id).length === 0), kind: "location" },
   ];
+}
+
+// TASK-1. Tasks are shown as rows, not as a counted tile like everything else
+// in the queue. A tile answers "how many"; a task's whole value is its text —
+// "bucket 11, centre is rotted, see what is salvageable" is the point, and
+// hiding it behind a count would make her click to remember what she meant.
+function taskRow(t, compact) {
+  const subs = subjectsOfTask(t.id);
+  const overdue = taskIsOverdue(t);
+  const done = t.status === "done";
+  return `
+    <div class="task-row ${done ? "is-done" : ""}">
+      <button class="task-check ${done ? "is-done" : ""}" title="${done ? "Reopen" : "Mark done"}"
+        onclick="event.stopPropagation();toggleTaskDone('${t.id}')">${done ? icon("check") : ""}</button>
+      <div style="flex:1;min-width:0;" onclick="openModal('editTask',{taskId:'${t.id}'})">
+        <div class="task-title">${escapeHtml(t.title)}</div>
+        ${t.detail && !compact ? `<div class="task-detail">${escapeHtml(t.detail)}</div>` : ""}
+        ${t.due_date ? `<div class="task-due ${overdue ? "is-overdue" : ""}">${overdue ? "Due " : "Due "}${fmtDate(t.due_date)}${overdue ? " — overdue" : ""}</div>` : ""}
+        ${subs.length ? `<div class="task-subjects">${subs.map((ts) => `
+          <button class="task-subject" onclick="event.stopPropagation();openSubjectFromTask('${ts.id}')">${subjectIcon(ts)} ${escapeHtml(subjectLabel(ts))}</button>`).join("")}</div>` : ""}
+      </div>
+    </div>`;
+}
+
+// The same card on Plant, Location and Taxon detail. Standing at bucket 11,
+// the note about the rotted centre is the thing she needs to see.
+function taskSectionFor(kind, id) {
+  const open = sortTasks(openTasksForSubject(kind, id));
+  const doneCount = tasksForSubject(kind, id).length - open.length;
+  const subj = `{kind:'${kind}',id:'${id}'}`;
+  return `
+    <div class="section-card">
+      <div class="row" style="margin-bottom:${open.length ? "10px" : "0"};">
+        <h4 style="margin:0;">Tasks</h4>
+        <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('newTask',{subject:${subj}})">${icon("plus")} New</button>
+      </div>
+      ${open.length
+        ? `<div class="stack">${open.map((t) => taskRow(t, true)).join("")}</div>`
+        : `<p class="subtle" style="margin:6px 0 0;font-size:12.5px;">No open tasks${doneCount ? ` — ${countLabel(doneCount, "done", "done")}` : ""}.</p>`}
+    </div>`;
+}
+
+// RPT-3, on the specimen itself.
+function checkInSectionFor(pl) {
+  const st = checkInStatus(pl);
+  if (!st) return "";
+  return `
+    <div class="checkin-bar ${st.due ? "is-due" : "is-ok"}">
+      ${icon(st.due ? "alertTriangle" : "check")}
+      <span style="flex:1;min-width:120px;">${st.due ? "Due for a check-in" : "Checked recently"} — ${escapeHtml(st.label)}${st.reason === "scheduled" ? " (scheduled)" : ""}</span>
+      ${st.due ? `<button class="btn btn-secondary btn-sm" onclick="clearCheckIn('${pl.id}')">Checked it</button>` : ""}
+      <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="snoozeCheckIn('${pl.id}', 14)">Remind in 14d</button>
+    </div>`;
+}
+
+function taskGroup() {
+  const open = sortTasks(openTasks());
+  const shown = open.slice(0, 4);
+  return `
+    <div class="queue-group">
+      <div class="queue-head">
+        <h3>Tasks</h3>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('newTask')">+ New task</button>
+      </div>
+      ${open.length === 0
+        ? `<p class="subtle" style="margin:0;font-size:12.5px;">Nothing on the list. A task can hang off any number of buckets, plants or species &mdash; useful for &ldquo;pull these eleven and re-evaluate&rdquo;.</p>`
+        : `<div class="stack">${shown.map((t) => taskRow(t, true)).join("")}</div>
+           ${open.length > shown.length || state.tasks.length > open.length
+             ? `<button class="btn-ghost" style="padding:8px 0 0;font-size:12.5px;" onclick="state.reportView='tasks';render()">See all tasks (${open.length} open${state.tasks.length > open.length ? `, ${state.tasks.length - open.length} done` : ""}) &rarr;</button>`
+             : ""}`}
+    </div>`;
 }
 
 // The work queue. Was the body of the Reports tab; it is the Inbox now, because
@@ -3928,9 +4193,12 @@ function workQueue() {
       ]);
     })()}
 
+    ${taskGroup()}
+
     ${group("Needs you now", null, [
       sect("frostTender", true),
       sect("plantsAttention", true),
+      sect("checkIns", true),
     ])}
 
     ${group("Photos to file", photoTotal, photoBuckets.map((b) =>
@@ -3962,6 +4230,29 @@ function workQueueDetail() {
     blooming: { title: "In bloom now", sub: "Recorded as flowering", items: bloomingSpecimens(), kind: "plant" },
     dueToBloom: { title: "Should be blooming", sub: "Their species flowers around now", items: expectedToBloom(), kind: "plant" },
   };
+  // The full task list is its own view: tasks render as rows, not as the
+  // photo-thumbnail record cards every other queue view uses.
+  if (state.reportView === "tasks") {
+    const f = state.taskFilter || "open";
+    const list = sortTasks(
+      f === "open" ? openTasks() : f === "done" ? state.tasks.filter((t) => t.status === "done") : state.tasks);
+    const btn = (k, label) => `<button class="btn btn-sm ${f === k ? "btn-primary" : "btn-secondary"}" onclick="state.taskFilter='${k}';render()">${label}</button>`;
+    return `
+      <div class="screen">
+        <div class="container">
+          <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="state.reportView=null;render()">${icon("back")} To Do</button>
+          <div class="row" style="margin-bottom:6px;">
+            <h2 class="display" style="font-size:22px;font-weight:500;margin:0;">Tasks</h2>
+            <button class="btn btn-secondary btn-sm" onclick="openModal('newTask')">+ New task</button>
+          </div>
+          <div style="display:flex;gap:8px;margin:12px 0 16px;">${btn("open", "Open")}${btn("done", "Done")}${btn("all", "All")}</div>
+          ${list.length === 0
+            ? `<div class="empty"><div class="display">Nothing here</div><div>${f === "done" ? "No tasks completed yet." : "No open tasks."}</div></div>`
+            : `<div class="stack">${list.map((t) => taskRow(t, false)).join("")}</div>`}
+        </div>
+      </div>`;
+  }
+
   const open = state.reportView
     ? (sections.find((x) => x.key === state.reportView) || bloomViews[state.reportView] || null)
     : null;
@@ -4005,6 +4296,16 @@ function collectionStats() {
 // Opening a record from a report navigates away from Reports entirely, and the
 // tab resets to the top on return. Remember the origin so the detail screen can
 // offer a way back to the exact list.
+// A task subject can be any of the three kinds, and tapping it should land on
+// that record with a way back to the task list.
+function openSubjectFromTask(subjectId) {
+  const ts = state.taskSubjects.find((x) => x.id === subjectId);
+  if (!ts) return;
+  state.backTo = { tab: "inbox", reportView: "tasks", label: "Tasks" };
+  closeModal();
+  openSubject(ts);
+}
+
 function openFromReport(kind, id, reportKey) {
   state.backTo = { tab: "inbox", reportView: reportKey || null, label: "To Do" };
   if (kind === "plant") openPlant(id); else openLocation(id);
@@ -4432,6 +4733,21 @@ function screenSettings() {
         </p>
       </div>
       <div class="divider"></div>
+      ${/* RPT-3. The interval that decides when an unscheduled specimen goes
+           stale. A per-plant next_check_date overrides it. */""}
+      <div class="surface" style="padding:16px;">
+        <div style="font-weight:600;font-size:14.5px;">Check-in interval</div>
+        <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
+          A specimen with no check-in date of its own is flagged when nothing has been
+          photographed for this many days. Currently ${countLabel(plantsNeedingCheckIn().length, "plant is", "plants are")} due.
+        </p>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input type="number" id="setting-checkin" min="1" max="365" value="${checkInIntervalDays()}" style="max-width:110px;" />
+          <span class="subtle" style="font-size:12.5px;">days</span>
+          <button class="btn btn-secondary btn-sm" onclick="saveAppSetting('check_in_interval_days', document.getElementById('setting-checkin').value)">Save</button>
+        </div>
+      </div>
+      <div class="divider"></div>
       ${(() => {
         const missing = state.photos.filter((p) => !p.taken_at && p.drive_file_id).length;
         const b = state.backfill;
@@ -4590,9 +4906,23 @@ function modalContent() {
                 ${score !== null ? `<span class="pill ${isCurrent ? "pill-orange" : "pill-blue"}">${score}%</span>` : ""}
               </div>
               ${refImages.length ? `
+                ${/* The thumbnails were 64px and inert, which is too small to
+                     actually compare a spine pattern or a leaf margin against
+                     your own photo — the whole point of this screen. They open
+                     at the largest size Pl@ntNet returns. These are external
+                     URLs, not Drive files, so they cannot use the app's
+                     lightbox: that resolves through photoUrlCache by
+                     drive_file_id. Hence a separate, simpler overlay. */""}
                 <div style="display:flex;gap:6px;margin-top:8px;">
-                  ${refImages.map((img) => `<img src="${img.url?.s || img.url?.m}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0;" />`).join("")}
-                </div>` : `<p class="subtle" style="margin:8px 0 0;font-size:11.5px;">No reference photos available for this match.</p>`}
+                  ${refImages.map((img) => {
+                    const small = img.url?.s || img.url?.m || img.url?.o;
+                    const large = img.url?.o || img.url?.m || img.url?.s;
+                    const cap = [name, img.author ? `© ${img.author}` : ""].filter(Boolean).join(" · ");
+                    return `<img src="${small}" title="Tap to enlarge" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:zoom-in;"
+                      onclick="event.stopPropagation();openRefImage('${escapeAttr(large)}','${escapeAttr(cap)}')" />`;
+                  }).join("")}
+                </div>
+                <div class="subtle" style="font-size:10.5px;margin-top:5px;">Tap a reference photo to enlarge</div>` : `<p class="subtle" style="margin:8px 0 0;font-size:11.5px;">No reference photos available for this match.</p>`}
               ${!isCurrent ? `<button class="btn btn-secondary btn-sm btn-on-cream" style="margin-top:10px;" onclick="useIdentificationCandidate('${suggestion.id}','${name.replace(/'/g, "\\'")}',${r.score || "null"})">Use this instead</button>` : `<div class="mono" style="font-size:11px;color:var(--orange);margin-top:10px;">Currently selected</div>`}
             </div>`;
           }).join("")}
@@ -4863,6 +5193,9 @@ function modalContent() {
         <select id="ep-health">
           ${Object.entries(HEALTH_LABELS).map(([k, v]) => `<option value="${k}" ${pl.health_status === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
+        <label>Next check-in</label>
+        <input type="date" id="ep-nextcheck" value="${escapeHtml(pl.next_check_date || "")}" />
+        <div class="field-help">Leave blank and this plant is flagged when nothing has been photographed for ${checkInIntervalDays()} days. Set a date to override that for this one plant.</div>
 
         <div class="section-label">Provenance</div>
         <label>Date acquired</label>
@@ -5702,6 +6035,63 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "newTask" || type === "editTask") {
+    const editing = type === "editTask";
+    const t = editing ? state.tasks.find((x) => x.id === data.taskId) : null;
+    if (editing && !t) return `<p class="subtle">This task no longer exists.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
+    const q = (state.taskSubjectSearch || "").toLowerCase();
+    const picked = state.taskSubjectDraft;
+    const isPicked = (kind, id) => picked.some((d) => d.kind === kind && d.id === id);
+
+    // Searching across all three kinds at once, because she does not think
+    // "now I will add a location subject" — she thinks "bucket 87", and that
+    // string should find it whatever kind of record it is.
+    const matches = [];
+    if (q) {
+      state.locations.filter((l) => locationPath(l).toLowerCase().includes(q) || (l.code || "").toLowerCase().includes(q))
+        .slice(0, 8).forEach((l) => matches.push({ kind: "location", id: l.id, label: locationPath(l), ic: icon("pin") }));
+      state.plants.filter((pl) => plantSearchText(pl).includes(q))
+        .slice(0, 8).forEach((pl) => matches.push({ kind: "plant", id: pl.id, label: `${pl.accession_number} · ${plantDisplayName(pl)}`, ic: icon("seedling") }));
+      state.taxa.filter((x) => taxonDisplayName(x).toLowerCase().includes(q) || (x.common_name || "").toLowerCase().includes(q))
+        .slice(0, 8).forEach((x) => matches.push({ kind: "taxa", id: x.id, label: taxonDisplayName(x), ic: icon("leaf") }));
+    }
+
+    const pickedLabel = (d) => {
+      if (d.kind === "plant") { const pl = state.plants.find((x) => x.id === d.id); return pl ? `${pl.accession_number} · ${plantDisplayName(pl)}` : "?"; }
+      if (d.kind === "location") { const l = locationById(d.id); return l ? locationPath(l) : "?"; }
+      const x = taxonById(d.id); return x ? taxonDisplayName(x) : "?";
+    };
+
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">${editing ? "Edit task" : "New task"}</h3>
+      <p class="subtle" style="margin:0 0 14px;">A task can point at any number of buckets, plants or species &mdash; it then shows up on each of them.</p>
+
+      <label>What needs doing</label>
+      <input id="task-title" placeholder="e.g. Pull these buckets and re-evaluate composition" value="${escapeHtml(t?.title || "")}" />
+      <label>Detail (optional)</label>
+      <textarea id="task-detail" rows="3" placeholder="e.g. a lot of these are mixed with multiple species &mdash; rearrange and consolidate">${escapeHtml(t?.detail || "")}</textarea>
+      <label>Due date (optional)</label>
+      <input type="date" id="task-due" value="${escapeHtml(t?.due_date || "")}" />
+
+      <div class="section-label">Applies to</div>
+      ${picked.length ? `<div class="task-chips">${picked.map((d) => `
+        <button class="task-chip" onclick="toggleTaskSubjectDraft('${d.kind}','${d.id}')">${escapeHtml(pickedLabel(d))} ${icon("close")}</button>`).join("")}</div>`
+        : `<p class="subtle" style="margin:0 0 8px;font-size:12.5px;">Nothing yet. A task with no subjects is fine &mdash; it just won't appear on any record.</p>`}
+      <input placeholder="Search buckets, plants, species…" value="${escapeHtml(state.taskSubjectSearch || "")}"
+        oninput="state.taskSubjectSearch=this.value;render()" />
+      ${q ? `<div class="stack" style="max-height:34vh;overflow-y:auto;margin-top:10px;">
+        ${matches.length === 0 ? `<p class="subtle">Nothing matches.</p>` : matches.map((m) => `
+          <button class="task-pick ${isPicked(m.kind, m.id) ? "is-picked" : ""}" onclick="toggleTaskSubjectDraft('${m.kind}','${m.id}')">
+            ${m.ic}<span style="flex:1;text-align:left;">${escapeHtml(m.label)}</span>${isPicked(m.kind, m.id) ? icon("check") : ""}
+          </button>`).join("")}
+      </div>` : ""}
+
+      <button class="btn btn-primary btn-block" style="margin-top:18px;" onclick="saveTask(${editing ? `'${t.id}'` : "null"})">${editing ? "Save changes" : "Create task"}</button>
+      ${editing ? `<button class="btn-ghost" style="margin-top:10px;color:var(--terracotta);" onclick="deleteTask('${t.id}')">Delete task</button>` : ""}
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "tagPlants") {
     const photo = state.photos.find((p) => p.id === data.photoId);
     const taggedIds = new Set(state.photoPlants.filter((pp) => pp.photo_id === data.photoId).map((pp) => pp.plant_id));
@@ -5968,6 +6358,16 @@ async function identifyPhoto(photoId) {
 // than a name to match by hand.
 // One shape for every suggestion, so accept and dismiss mean the same thing
 // wherever they appear.
+// #4. Diagnosing health is only worth asking once the photo is filed: the read
+// is against what THIS species should look like, which needs the specimen. So
+// the button appears only when there is a plant behind the photo.
+function diagnoseButton(p, cls) {
+  if (!p.plant_id) return "";
+  const busy = state.suggestingPhotoId === p.id;
+  return `<button class="${cls}" ${busy ? "disabled" : ""} title="Ask Claude how this plant is doing"
+    onclick="event.stopPropagation();askClaudeAboutPhoto('${p.id}',{focus:'health'})">${busy ? '<span class="spinner"></span>' : icon("ambulance") + " How is it doing?"}</button>`;
+}
+
 function suggestionLine(sg) {
   const pl = sg.value_id ? state.plants.find((x) => x.id === sg.value_id) : null;
   const loc = sg.value_id ? locationById(sg.value_id) : null;
@@ -5979,6 +6379,7 @@ function suggestionLine(sg) {
   else if (sg.kind === "photo_type") { ic = "photo"; label = `Type: ${listOptionsFor("photo_type")[sg.value_text] || PHOTO_TYPE_LABELS[sg.value_text] || sg.value_text}`; }
   else if (sg.kind === "bloom") { ic = "plant2"; label = "Looks like it is in bloom — record a bloom"; }
   else if (sg.kind === "health_note") { ic = "alertTriangle"; label = sg.value_text; }
+  else if (sg.kind === "health_status") { ic = "ambulance"; label = `Set health to ${HEALTH_LABELS[sg.value_text] || sg.value_text}`; }
   else if (sg.kind === "species_field") { ic = "leaf"; label = `${FIELD_LABELS[sg.field] || sg.field}: ${sg.value_text}`; }
   const stale = (sg.kind === "plant_tag" && !pl) || (sg.kind === "location_tag" && !loc) || (sg.kind === "new_specimen" && !tx);
   return `
@@ -6010,7 +6411,7 @@ function suggestionBlock(photoId, onCream) {
 // Ordered by what she acts on first, not by insertion. They arrive newest-first
 // from the API and are unshifted into state, so the raw order put the photo
 // type above the identification that justifies it.
-const SUGGESTION_ORDER = ["plant_tag", "new_specimen", "location_tag", "bloom", "photo_type", "health_note"];
+const SUGGESTION_ORDER = ["plant_tag", "new_specimen", "location_tag", "bloom", "photo_type", "health_status", "health_note"];
 function suggestionsForPhoto(photoId) {
   return state.suggestions
     .filter((x) => x.photo_id === photoId && x.status === "pending")
@@ -6185,6 +6586,10 @@ async function acceptSuggestion(id) {
         noted_on: String(photoDate(ph) || new Date().toISOString()).slice(0, 10),
         body: `Claude, from a photo: ${sg.value_text}`,
       });
+    } else if (sg.kind === "health_status") {
+      const ph = state.photos.find((x) => x.id === sg.photo_id);
+      if (!ph || !ph.plant_id) { toast("Attach the photo to a plant first", true); return; }
+      await restPatch("plants", `id=eq.${ph.plant_id}`, { health_status: sg.value_text, updated_at: new Date().toISOString() });
     } else if (sg.kind === "species_field") {
       const v = sg.field === "frost_tender" ? String(sg.value_text) === "true" : sg.value_text;
       await restPatch("taxa", `id=eq.${sg.taxa_id}`, { [sg.field]: v, updated_at: new Date().toISOString() });
@@ -6373,6 +6778,107 @@ async function deletePlant(plantId) {
     await restDelete("plants", `id=eq.${plantId}`);
     toast("Plant deleted");
     goTab("plants");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- TASK-1 mutations ---------- */
+
+// The draft lives in state, not in the DOM, because the subject picker
+// re-renders on every search keystroke and checkboxes would be wiped.
+function toggleTaskSubjectDraft(kind, id) {
+  const i = state.taskSubjectDraft.findIndex((d) => d.kind === kind && d.id === id);
+  if (i >= 0) state.taskSubjectDraft.splice(i, 1);
+  else state.taskSubjectDraft.push({ kind, id });
+  render();
+}
+
+async function saveTask(taskId) {
+  const title = document.getElementById("task-title").value.trim();
+  if (!title) { toast("Give the task a title", true); return; }
+  const body = {
+    title,
+    detail: document.getElementById("task-detail").value.trim() || null,
+    due_date: document.getElementById("task-due").value || null,
+  };
+  try {
+    let id = taskId;
+    if (id) {
+      await restPatch("tasks", `id=eq.${id}`, body);
+      await restDelete("task_subjects", `task_id=eq.${id}`);
+    } else {
+      const [created] = await restPost("tasks", body);
+      id = created.id;
+    }
+    // Rewritten wholesale rather than diffed: the set is small and a diff here
+    // would be more code than it saves.
+    const rows = state.taskSubjectDraft.map((d) => ({
+      task_id: id,
+      plant_id: d.kind === "plant" ? d.id : null,
+      location_id: d.kind === "location" ? d.id : null,
+      taxa_id: d.kind === "taxa" ? d.id : null,
+    }));
+    if (rows.length) await restPost("task_subjects", rows);
+    state.taskSubjectDraft = [];
+    state.taskSubjectSearch = "";
+    closeModal();
+    toast(taskId ? "Task updated" : "Task created");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function toggleTaskDone(taskId) {
+  const t = state.tasks.find((x) => x.id === taskId);
+  if (!t) return;
+  const done = t.status !== "done";
+  try {
+    await restPatch("tasks", `id=eq.${taskId}`, {
+      status: done ? "done" : "open",
+      completed_at: done ? new Date().toISOString() : null,
+    });
+    toast(done ? "Task done" : "Task reopened");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deleteTask(taskId) {
+  if (!confirm("Delete this task? Its subjects go with it.")) return;
+  try {
+    // task_subjects is ON DELETE CASCADE, but clear it explicitly so a schema
+    // without the cascade cannot leave orphans behind.
+    await restDelete("task_subjects", `task_id=eq.${taskId}`);
+    await restDelete("tasks", `id=eq.${taskId}`);
+    closeModal();
+    toast("Task deleted");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// RPT-3. Checking in is "I have looked at this" — it clears an explicit date
+// and, because staleness is measured from the last photo, tells her plainly
+// when a photo is the thing that would actually clear it.
+async function clearCheckIn(plantId) {
+  try {
+    await restPatch("plants", `id=eq.${plantId}`, { next_check_date: null, updated_at: new Date().toISOString() });
+    toast("Checked in — staleness now runs from the last photo");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+async function snoozeCheckIn(plantId, days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  try {
+    await restPatch("plants", `id=eq.${plantId}`, { next_check_date: d.toISOString().slice(0, 10), updated_at: new Date().toISOString() });
+    toast(`Next check ${fmtDate(d.toISOString())}`);
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function saveAppSetting(key, value) {
+  try {
+    await restUpsert("app_settings", [{ key, value: String(value), updated_at: new Date().toISOString() }], "key");
+    state.appSettings[key] = String(value);
+    toast("Saved");
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
@@ -7492,6 +7998,40 @@ function logout() {
 /* ============================================================
    RENDER
    ============================================================ */
+// For values going into a single-quoted inline handler, where escapeHtml's
+// entity encoding is not enough — a quote or backslash would break out of the
+// attribute.
+function escapeAttr(str) {
+  return String(str == null ? "" : str).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;").replace(/[\r\n]+/g, " ");
+}
+
+// #5. A minimal overlay for Pl@ntNet reference photos. Deliberately NOT the
+// app lightbox: that one steps through a list of Drive photos resolved via
+// photoUrlCache, and these are remote URLs with no record behind them.
+function openRefImage(url, caption) {
+  state.refImage = { url, caption: caption || "" };
+  render();
+}
+function closeRefImage() {
+  state.refImage = null;
+  render();
+}
+function renderRefImage() {
+  if (!state.refImage) return "";
+  const { url, caption } = state.refImage;
+  return `
+    <div class="lightbox-backdrop" style="z-index:60;" onclick="closeRefImage()">
+      <div class="lightbox-top">
+        <div style="font-size:13px;">${escapeHtml(caption)}</div>
+        <button class="lightbox-close" onclick="event.stopPropagation();closeRefImage()">${icon("close")}</button>
+      </div>
+      <div class="lightbox-body">
+        <img src="${url}" onclick="event.stopPropagation();this.classList.toggle('zoomed')" />
+      </div>
+      <div class="lightbox-bottom"><div class="lightbox-counter">Pl@ntNet reference photo</div></div>
+    </div>`;
+}
+
 function escapeHtml(str) {
   const d = document.createElement("div");
   d.textContent = str ?? "";
@@ -7676,6 +8216,7 @@ function render() {
     ${taskBanner()}
     ${state.modal ? `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${modalContent()}</div></div>` : ""}
     ${state.lightbox ? renderLightbox() : ""}
+    ${state.refImage ? renderRefImage() : ""}
   `;
   document.body.classList.toggle("has-task-banner", !!taskBanner());
   measureStickyOffset();
@@ -7758,10 +8299,21 @@ function renderLightbox() {
             <button class="btn btn-danger btn-sm icon-btn" onclick="event.stopPropagation();closeLightbox();deletePhoto('${p.id}')">${icon("trash")} Delete</button>
       </div>`;
   } else {
+    // Plant mode was the poorest of the four: "Set as profile picture" and a
+    // button labelled "Edit location" that actually opened the whole Edit Plant
+    // modal. So looking at a specimen's photo offered no way to tag the other
+    // plants in the shot (a planter holds several) and no way to reach the
+    // photo's own bloom type or focal point — both of which exist, but only on
+    // the photo ROW behind the lightbox. It now carries the same vocabulary
+    // every other mode has.
     bottomActions = `
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;">
       ${!isPrimary ? `<button class="btn btn-accent btn-sm" onclick="event.stopPropagation();setPrimaryPhoto('${plantId}','${p.id}')">Set as profile picture</button>` : `<span class="pill pill-orange">Profile picture</span>`}
-      <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openModal('editPlant',{plantId:'${plantId}'})">Edit location</button>
+      <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('tagPlants',{photoId:'${p.id}'})">${icon("tag")} Tag plants</button>
+      <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('editPhoto',{photoId:'${p.id}'})">${icon("edit")} Edit photo</button>
+      <button class="btn btn-secondary btn-sm icon-btn" onclick="event.stopPropagation();prepareLightboxResume();closeLightbox();openModal('attachLocation',{photoId:'${p.id}'})">${icon("pin")} Location</button>
+      <button class="btn btn-secondary btn-sm icon-btn" style="${p.is_favorite ? "color:var(--pink);" : ""}" onclick="event.stopPropagation();toggleFavorite('${p.id}')">${icon("heartStar")} ${p.is_favorite ? "Favourited" : "Favourite"}</button>
+      ${diagnoseButton(p, "btn btn-secondary btn-sm icon-btn")}
     </div>
   `;
   }
@@ -8110,6 +8662,7 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
           original_collection: document.getElementById("ep-original").checked,
           status: document.getElementById("ep-status").value,
           health_status: document.getElementById("ep-health").value,
+          next_check_date: document.getElementById("ep-nextcheck").value || null,
           date_acquired: document.getElementById("ep-dateacquired").value || null,
           acquisition_source_type: document.getElementById("ep-acqtype").value || null,
           acquisition_source_name: document.getElementById("ep-acqname").value || null,

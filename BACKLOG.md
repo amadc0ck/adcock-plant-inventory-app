@@ -23,6 +23,9 @@ column returns `42703`, a known one returns a row set), so these are facts:
 | `taxa.parentage` | **exists** | Same — column exists, **0 hits in `index.html`**. |
 | `taxa.dormancy` | does not exist | Still an open decision. |
 | `plants.species` | **still exists** | **SPECIES-1 Phase 3 drop has NOT been run.** |
+| `tasks` / `task_subjects` | **exist** | TASK-1, created 2026-08-27, **with RLS policies**. |
+| `app_settings` | **exists** | key/value, RLS on. Holds `check_in_interval_days` (14). |
+| `plants.next_check_date` | **exists** | RPT-3. Null means fall back to the interval. |
 | `locations.period` | does not exist | Not a gap — `archivePeriod()` (index.html:4034) derives it from `active_from` / `active_to` / `locality`. v1.82.0 is fine. |
 
 **What this changes.** Two of the three "decisions offered, never answered"
@@ -199,8 +202,8 @@ order by location_count desc;
 
 ## Ready now
 
-**PD-4, LOC-1 and AI-3 layer 1 all shipped in v1.83.0** — see Completed. AI-1 and
-AI-2 shipped in v1.80.0. What is left in this section is the one item below.
+**PD-4, LOC-1 and AI-3 layer 1 shipped in v1.83.0.** AI-1 and AI-2 shipped in
+v1.80.0. RPT-3 and TASK-1 shipped in v1.84.0. What is left is below.
 
 **AI-3 layer 2 — photo match — is the only part of AI-3 not built.** When
 creating a plant from an Inbox photo, have Claude suggest the existing specimen
@@ -208,14 +211,10 @@ it most resembles. Layer 1 (name match) shipped; this needs `suggest-photo`
 accuracy to be trusted first, which is still unproven at volume — see the AI
 section above.
 
-### RPT-3 — Check-ins
-**Status:** ready · **Effort:** medium
-**Unblocked 2026-08-27.** It was filed as blocked by AI-1, and AI-1 shipped in v1.80.0. Nothing is waiting on anything.
+**RPT-3 and TASK-1 both shipped in v1.84.0.** See Completed.
 
-Plant check-ins support **both** staleness (days since last photo, via `photoDate()`) and a manual flag. Location watch status is a manual flag only.
-
-Needs a design pass before building — "check-in" is not yet defined as a record. Open: is a check-in an event row with a date, or a `last_checked_at` stamp on the specimen? The staleness half needs no schema at all (`photoDate()` already exists); the manual flag half does.
-
+**SPECIES-2 cleanup** and **SPECIES-1 phase 3 column drop** both need Amanda at
+the SQL editor rather than code. See the verified schema table at the top.
 
 ---
 
@@ -247,6 +246,70 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 ---
 
 ## Completed
+
+### v1.84.0
+Amanda's six observations from a day using the app, plus RPT-3. Shipped
+together at her request rather than staged.
+
+**TASK-1 and RPT-3 turned out to be one feature, and that shaped the build.**
+RPT-3's manual half is "flag this for a look"; her task examples are that plus a
+note and more than one subject — eleven buckets to pull and re-evaluate, one
+bucket with a rotted centre, one species to consolidate across locations.
+Building both separately would have created two places to look for what needs
+doing, which is the mistake v1.79.0 fixed by retiring Reports.
+
+So: `tasks` + `task_subjects`, where a subject is exactly one of plant /
+location / taxon — the same "exactly one of" shape `identifications` uses. A
+task appears on every record it points at, so standing at bucket 11 shows the
+note about the rot. Tasks render as **rows, not counted tiles** like the rest of
+the queue: a tile answers "how many", and a task's whole value is its text.
+
+RPT-3 then cost almost nothing on top. Two independent reasons a specimen wants
+looking at: a `plants.next_check_date` that has arrived, or nothing
+photographed for longer than `check_in_interval_days` (default **14**,
+adjustable in Settings, per Amanda). The explicit date wins when set. Dead and
+never-photographed specimens are excluded — the latter belongs to the "no
+photos" queue, or every new specimen would be overdue on creation day.
+
+**Two features existed and could not be reached.** Multi-specimen tagging
+(`photo_plants`, a real many-to-many) and photo editing (bloom type, focal
+point) were both **only on the Plant Detail photo row**. The plant-mode
+lightbox — where you land after tapping a photo — offered "Set as profile
+picture" and a button labelled **"Edit location" that actually opened the whole
+Edit Plant modal**. Gallery mode had Edit, Favourite and Delete; plant mode
+never got them. It now carries the same vocabulary as every other mode.
+
+**Identify on already-filed photos.** The Gallery has always gated this
+(`identifyBtn` returns `""` when `p.plant_id` is set); Location Detail's photo
+feed never did, so a filed photo still offered to re-ask Pl@ntNet a settled
+question. Same gate, copied.
+
+**Pl@ntNet reference photos enlarge.** They were 64px and inert, which is too
+small to compare a spine pattern against your own photo — the entire point of
+that screen. They open at the largest size the API returns. Deliberately a
+**separate overlay, not the app lightbox**: that one steps through Drive photos
+resolved via `photoUrlCache` by `drive_file_id`, and these are remote URLs with
+no record behind them.
+
+**Health diagnosis — `focus: "health"` on `suggest-photo`.** Third focus after
+location and plant, and the only one that requires the photo to already be
+filed: the read is against what *this* species should look like, which needs the
+specimen. The prompt is told what NOT to panic about — drying lower leaves,
+summer dormancy, sun colouring — and to be forward about basal and central rot,
+because it spreads and is often fatal. Returns a note plus a **separately
+acceptable** suggested tier, so the note can be kept on the record without
+changing the plant's status. Ties into PD-4: Claude can propose `urgent`.
+
+29 assertions on the task and check-in logic, run under node.
+
+**Deploy:** `supabase functions deploy suggest-photo` — the health focus is
+inert until that runs.
+
+**Schema (run 2026-08-27):** `tasks`, `task_subjects`, `app_settings`,
+`plants.next_check_date`, plus RLS policies on all three new tables. The two
+task tables were initially created without RLS, which would have left them
+readable by anyone holding the publishable key embedded in `index.html`.
+
 
 ### v1.83.0
 Four backlog items, closing everything that was buildable without a decision.

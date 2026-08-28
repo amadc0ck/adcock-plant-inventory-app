@@ -276,6 +276,25 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.5.1
+**SCROLL-1 — the scrollbars looked like a UI element, not a hint.** The browser
+default is a heavy white slab against this palette, and on the Gallery's
+horizontal rows it sat under every strip competing with the photographs.
+
+Thin bars in the palette everywhere, with an inverted thumb on cream surfaces
+(modals, cards, the filing strips) where a light one would vanish. Standard
+`scrollbar-width` / `scrollbar-color` plus the `::-webkit-` rules Safari and
+Chrome still need.
+
+**The Gallery rows go further:** the bar is hidden until the row is hovered,
+because those scroll by drag or wheel — the bar was never the control. A soft
+fade at the right edge says "there is more" better than a scrollbar does.
+
+Kept the row-specific rules **beside** the `.gal-scroll` rule they modify rather
+than with the global block. Styling for one element living in two places is what
+caused the v1.37.1 media-query bug, and there is no reason to repeat it.
+
+
 ### v2.5.0
 **NAME-3 — new species now arrive with their parts filled in.** Amanda: every
 plant she adds lands on the "Names not split up" list, so the cleanup never

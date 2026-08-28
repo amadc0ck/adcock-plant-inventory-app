@@ -345,6 +345,27 @@
   .back-link:hover{opacity:1;}
   .back-link svg{width:17px;height:17px;flex-shrink:0;}
   .back-link .back-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  /* SCROLL-1. The default scrollbars are a heavy white slab on this palette —
+     on the Gallery's horizontal rows they read as a UI element rather than a
+     hint. Thin, in the palette, and only present when there is something to
+     scroll. `scrollbar-width`/`scrollbar-color` is the standard property;
+     the ::-webkit rules cover Safari and Chrome, which still need them. */
+  * { scrollbar-width: thin; scrollbar-color: rgba(245,239,227,0.22) transparent; }
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:rgba(245,239,227,0.20);border-radius:8px;}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(245,239,227,0.38);}
+  ::-webkit-scrollbar-corner{background:transparent;}
+
+  /* On a cream surface the light thumb disappears, so invert it there. */
+  .modal, .tag-card, .surface, .on-cream-ground{scrollbar-color:rgba(37,41,37,0.25) transparent;}
+  .modal ::-webkit-scrollbar-thumb,
+  .tag-card ::-webkit-scrollbar-thumb,
+  .file-strip::-webkit-scrollbar-thumb{background:rgba(37,41,37,0.22);}
+  .modal ::-webkit-scrollbar-thumb:hover,
+  .tag-card ::-webkit-scrollbar-thumb:hover,
+  .file-strip::-webkit-scrollbar-thumb:hover{background:rgba(37,41,37,0.40);}
+
   .filter-note{background:rgba(124,167,161,0.14);border:1px solid rgba(124,167,161,0.4);border-radius:8px;padding:11px 13px;color:var(--cream);}
   .filter-note-head{font-size:10.5px;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);font-family:'IBM Plex Mono',monospace;}
   .set-section{padding:0;overflow:hidden;margin-bottom:0;}
@@ -533,6 +554,18 @@
   .gal-row-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px;}
   .gal-row-head h3{font-family:'Fraunces',serif;font-size:17px;font-weight:500;margin:0;}
   .gal-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity;}
+  /* SCROLL-1. These rows scroll by drag or wheel; the bar is a hint, not a
+     control, so it stays hidden until the row is touched. Kept beside the rule
+     above rather than with the global scrollbar block — this file has already
+     been bitten once by styling for one element living in two places. */
+  .gal-scroll{scrollbar-width:none;}
+  .gal-scroll::-webkit-scrollbar{height:0;}
+  .gal-scroll:hover{scrollbar-width:thin;}
+  .gal-scroll:hover::-webkit-scrollbar{height:6px;}
+  /* A soft edge says "there is more" better than a scrollbar does. */
+  .gal-scroll-wrap{position:relative;}
+  .gal-scroll-wrap::after{content:"";position:absolute;top:0;right:0;bottom:0;width:48px;pointer-events:none;
+    background:linear-gradient(to right, rgba(36,62,54,0), var(--bg));}
   .gal-scroll > *{scroll-snap-align:start;flex-shrink:0;}
   .gal-tile{width:132px;cursor:pointer;border:none;padding:0;background:none;text-align:left;}
   .gal-tile .card-media{border-radius:8px;}
@@ -660,7 +693,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.5.0";
+const APP_VERSION = "2.5.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5460,7 +5493,7 @@ function screenGallery() {
         <h3>${title}</h3>
         ${seeAll ? `<button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--orange);" onclick="${seeAll}">See all →</button>` : ""}
       </div>
-      <div class="gal-scroll">${items.join("")}</div>
+      <div class="gal-scroll-wrap"><div class="gal-scroll">${items.join("")}</div></div>
     </div>`;
 
   // Compact rows fit roughly five times more on screen, which is the difference

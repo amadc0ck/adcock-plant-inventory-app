@@ -247,6 +247,23 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.86.1
+**The trigger fires on any plant update, not just a location change.** Found
+while helping Amanda roll back a batch of moves, by reading her actual rows:
+ABG-2026-0137 has two history rows both pointing at Bucket 13 (one move, two
+rows), and ABG-2026-0079 has three rows all at Bucket 06 — two of them **0.2
+milliseconds apart**. Harmless in the table; v1.86.0 rendered each as its own
+stay, so "Where it has lived" read "Bucket 06, Bucket 06, Bucket 06".
+
+`locationHistoryForPlant()` now collapses **consecutive** rows at the same
+location into one stay, taking the earliest start and latest end. Consecutive
+only — a plant that left and came back has two genuine stays there and both must
+stay visible.
+
+7 assertions, written against rows copied out of the live database rather than
+invented.
+
+
 ### v1.86.0
 **MOVE-1 — where a specimen has lived.** Amanda moved plants around and asked
 how to show that one used to be in Bucket 32 and is now in Bucket 01.

@@ -577,7 +577,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.86.0";
+const APP_VERSION = "1.86.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2258,9 +2258,30 @@ function photoDate(p) {
    same individual changing place over time — same accession, same photos.
    ------------------------------------------------------------ */
 function locationHistoryForPlant(plantId) {
-  return state.plantLocationHistory
+  // The trigger fires on ANY update to a plant, not only a location change, so
+  // the table holds redundant no-op stays: ABG-2026-0137 has two rows both
+  // pointing at Bucket 13, and ABG-2026-0079 has three at Bucket 06, two of
+  // them 0.2ms apart. Rendering each as its own stay reads as "moved to Bucket
+  // 06, then to Bucket 06, then to Bucket 06".
+  //
+  // Consecutive rows at the SAME location are one stay: earliest start, latest
+  // end. Non-consecutive ones are not collapsed — leaving and coming back is a
+  // real thing that happened and must stay visible.
+  const rows = state.plantLocationHistory
     .filter((h) => h.plant_id === plantId)
-    .sort((a, b) => String(b.started_at || "").localeCompare(String(a.started_at || "")));
+    .sort((a, b) => String(a.started_at || "").localeCompare(String(b.started_at || "")));
+  const merged = [];
+  rows.forEach((h) => {
+    const last = merged[merged.length - 1];
+    if (last && last.location_id === h.location_id) {
+      // An open row absorbs a later one; a note on either survives.
+      last.ended_at = last.ended_at && h.ended_at ? (last.ended_at > h.ended_at ? last.ended_at : h.ended_at) : (h.ended_at || null);
+      last.notes = last.notes || h.notes || null;
+    } else {
+      merged.push({ ...h });
+    }
+  });
+  return merged.reverse();   // newest first, as every caller expects
 }
 
 // The stay a plant is in NOW: the open row, or failing that whatever the

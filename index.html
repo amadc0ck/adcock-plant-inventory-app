@@ -626,7 +626,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.2.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2440,24 +2440,33 @@ function photosNeedingLocationByPlant() {
     .sort((a, b) => (b.location ? 1 : 0) - (a.location ? 1 : 0) || b.photos.length - a.photos.length);
 }
 
-// Applies one answer to a whole group. Sequential rather than parallel: these
-// are writes, and a partial failure should say how far it got.
-async function assignPhotosToPlant(photoIds, plantId) {
+/* Applies one answer to a whole group.
+   Named fileGroupTo… and NOT assignPhotosTo…: `assignPhotosToPlant(plantId)`
+   already exists for the bulk-selection flow, and a same-named second copy was
+   silently shadowed by it — the group button ran the selection version with an
+   array where it wanted an id, and answered "Pick some photos first".
+
+   Chunked `id=in.()` rather than one request per photo, matching
+   applyGalleryBatch: 300 ids is an ~11KB query string, past what proxies
+   accept, and the request is rejected at the edge before PostgREST sees it. */
+async function fileGroupTo(field, photoIds, value) {
+  if (!photoIds || !photoIds.length) return;
   let done = 0;
   try {
-    for (const id of photoIds) { await restPatch("photos", `id=eq.${id}`, { plant_id: plantId }); done++; }
+    for (let i = 0; i < photoIds.length; i += DELETE_CHUNK) {
+      const slice = photoIds.slice(i, i + DELETE_CHUNK);
+      await restPatch("photos", `id=in.(${slice.join(",")})`, { [field]: value });
+      done += slice.length;
+    }
     toast(`${countLabel(done, "photo", "photos")} filed`);
     await loadAll();
-  } catch (e) { toast(`Stopped after ${done} — ${e.message}`, true); if (done) await loadAll(); }
+  } catch (e) {
+    toast(done ? `Stopped after ${done} — ${e.message}` : e.message, true);
+    if (done) await loadAll();
+  }
 }
-async function assignPhotosToLocation(photoIds, locationId) {
-  let done = 0;
-  try {
-    for (const id of photoIds) { await restPatch("photos", `id=eq.${id}`, { location_id: locationId }); done++; }
-    toast(`${countLabel(done, "photo", "photos")} filed`);
-    await loadAll();
-  } catch (e) { toast(`Stopped after ${done} — ${e.message}`, true); if (done) await loadAll(); }
-}
+const fileGroupToPlant = (ids, plantId) => fileGroupTo("plant_id", ids, plantId);
+const fileGroupToLocation = (ids, locationId) => fileGroupTo("location_id", ids, locationId);
 
 function bloomPhotosFor(plantId) {
   return plantPhotosOrdered(plantId).filter((p) => p.photo_type === "bloom");
@@ -4995,14 +5004,14 @@ function workQueueDetail() {
                         <div class="filter-note-head">The only plant here</div>
                         <div style="font-size:13.5px;margin-top:2px;">${plantDisplayHtml(g.only)} <span class="mono subtle">${g.only.accession_number}</span></div>
                       </div>
-                      <button class="btn btn-accent btn-sm" onclick="assignPhotosToPlant(${idList}, '${g.only.id}')">File all ${g.photos.length}</button>
+                      <button class="btn btn-accent btn-sm" onclick="fileGroupToPlant(${idList}, '${g.only.id}')">File all ${g.photos.length}</button>
                     </div>`
                   : g.candidates.length ? `
                     <div class="file-suggest is-choice">
                       <div style="flex:1;min-width:0;">
                         <div class="filter-note-head">${countLabel(g.candidates.length, "plant is", "plants are")} here — pick one</div>
                         <div class="file-choices">${g.candidates.map((c) => `
-                          <button class="row-act" onclick="assignPhotosToPlant(${idList}, '${c.id}')">${escapeHtml(plantPickerName(c).primary)} · ${c.accession_number}</button>`).join("")}</div>
+                          <button class="row-act" onclick="fileGroupToPlant(${idList}, '${c.id}')">${escapeHtml(plantPickerName(c).primary)} · ${c.accession_number}</button>`).join("")}</div>
                       </div>
                     </div>`
                   : `
@@ -5032,7 +5041,7 @@ function workQueueDetail() {
                       <div class="filter-note-head">Where this plant lives</div>
                       <div style="font-size:13.5px;margin-top:2px;">${escapeHtml(locationPath(g.location))}</div>
                     </div>
-                    <button class="btn btn-accent btn-sm" onclick="assignPhotosToLocation(${idList}, '${g.location.id}')">File all ${g.photos.length}</button>
+                    <button class="btn btn-accent btn-sm" onclick="fileGroupToLocation(${idList}, '${g.location.id}')">File all ${g.photos.length}</button>
                   </div>`
                 : `
                   <div class="file-suggest is-choice">

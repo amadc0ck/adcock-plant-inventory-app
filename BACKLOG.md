@@ -295,6 +295,29 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.2.1
+**"File all 4" answered "Pick some photos first".** A **name collision**:
+`assignPhotosToPlant(plantId)` already existed for the bulk-selection flow, and
+v2.2.0 added a second function with the same name. The later declaration wins,
+so the group button silently ran the selection version with an array where it
+wanted an id — and that version, finding no selection, refused.
+
+Renamed to `fileGroupToPlant` / `fileGroupToLocation`, and rewritten to use the
+existing chunked `id=in.()` pattern rather than one request per photo, which is
+both faster and what `applyGalleryBatch` already does.
+
+**Third name collision in one session** — after a duplicate `endBloom` and a
+duplicate `startBloom`. In an 9,000-line single file, adding a function without
+checking the name first is a reliable way to shadow a working one, and the
+failure is silent: no error, just the wrong function running.
+
+**Check before adding:**
+```
+grep -oE "^(async )?function [a-zA-Z0-9_]+\(" index.html | sed 's/^async //;s/function //;s/(//' | sort | uniq -d
+```
+Empty output means no duplicates. This is now clean.
+
+
 ### v2.2.0
 **FILE-1 — the filing queues answer their own question.** Amanda: "Needs a
 plant" was 95 photographs in a grid, which is the same question asked 95 times.

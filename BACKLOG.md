@@ -274,6 +274,48 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v2.0.0
+**TODO-1 — the To Do page becomes a place to work, not a report.** Amanda's
+framing, and all four of her observations were right.
+
+**Tasks moved to the right**, beside the queue at 1100px and above, with New
+task at their head. Neither list pushes the other off the first screen now.
+
+**Six groups became three.** She spotted that "Species names" is a records job;
+Claude's suggestions are something waiting on her, which is what "Needs you
+now" means; and Bloom was two status readouts filed as if they were work.
+Grouped by *when she acts*, not by which table the row came from.
+
+**Zero tiles are gone.** They used to render greyed, so the page was a list of
+categories rather than a list of work. An empty To Do now reads as "nothing
+outstanding" — with a real empty state saying so.
+
+**"Six plants need attention" can now be acted on.** Her point: a red count that
+cannot be cleared stops being read. Each queue row carries the actions that
+would resolve *it*, and they differ per view because "needs attention" and
+"should be blooming" are cleared by different things — Healthy again, To
+hospital, Checked it, Remind me in 14 days, Record a bloom, It has finished,
+Set a location. Every view also offers **Make a task**, so a row can be dealt
+with honestly when the answer is "not today".
+
+**Bloom became two real prompts.** "Should be blooming" gains *Record a bloom*
+and clears itself when the season passes, so it needs no dismissal to store.
+"Blooms still open" is new and is a data-quality fix as much as a prompt: a
+bloom recorded in March and never closed makes the Gallery's In Bloom row lie.
+The window comes from `bloom_season` rather than one number that would be wrong
+for both a five-day Echeveria and a months-long Aeonium — 12 weeks for a full
+season, 7 for early/late summer, 16 for `not_observed`, and **never** for
+`intermittent` or `monocarpic`.
+
+**A duplicate I nearly shipped:** `startBloom()` and `endBloom()` already
+existed, with date validation and a location snapshot. An earlier pass in this
+same session added a second, cruder `endBloom` without checking. Removed; the
+rows call the real ones, which fall back to today when there is no modal field
+to read — exactly right when she is standing in front of the plant.
+
+12 assertions on the bloom windows.
+
+
 ### v1.99.0
 **NAV-1 — Back now means back.** Amanda, working the 61-name cleanup: filter the
 Plants list, open a species, and Back dropped the filter *and* the scroll

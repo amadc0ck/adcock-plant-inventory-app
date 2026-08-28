@@ -283,6 +283,13 @@
   .ident-source{display:block;font-size:9.5px;color:var(--blue);text-transform:uppercase;letter-spacing:0.4px;}
   /* Settings sections. Collapsed by default so the page is a short menu rather
      than a wall — most of it is set once and never touched again. */
+  /* TODO-1 */
+  .todo-split{display:flex;flex-direction:column;gap:18px;}
+  .todo-queue{min-width:0;flex:1;}
+  .todo-tasks{min-width:0;}
+  .row-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(37,41,37,0.10);}
+  .row-act{background:var(--parchment-dim);border:none;border-radius:20px;padding:5px 11px;font-size:12px;color:var(--ink);cursor:pointer;font-family:inherit;}
+  .row-act:hover{background:var(--moss);color:#12200F;}
   .filter-note{background:rgba(124,167,161,0.14);border:1px solid rgba(124,167,161,0.4);border-radius:8px;padding:11px 13px;color:var(--cream);}
   .filter-note-head{font-size:10.5px;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);font-family:'IBM Plex Mono',monospace;}
   .set-section{padding:0;overflow:hidden;margin-bottom:0;}
@@ -564,6 +571,10 @@
     .plant-list-thumb{width:140px;height:140px;}
     .login-wrap .container{max-width:none;}
     .queue-grid{grid-template-columns:repeat(4,1fr);}
+    /* Tasks beside the queue rather than above it, so neither pushes the other
+       off the first screen. */
+    .todo-split{flex-direction:row;align-items:flex-start;gap:22px;}
+    .todo-tasks{width:340px;flex-shrink:0;}
     .section-grid{columns:3;column-gap:16px;}
     /* Columns, not grid: photos are shown at their own aspect ratio, so cell
        heights vary wildly and a grid would leave every short one over a hole. */
@@ -594,7 +605,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.99.0";
+const APP_VERSION = "2.0.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2337,6 +2348,38 @@ function expectedToBloom() {
     if (!t || !t.bloom_season || t.bloom_season === "monocarpic" || t.bloom_season === "not_observed") return false;
     return seasons.includes(t.bloom_season);
   });
+}
+
+/* TODO-1. An open bloom is not news forever. Recorded in March and still open
+   in September, it makes the Gallery's In Bloom row lie. How long is plausible
+   depends on the species, so the window comes from `bloom_season` rather than
+   one number that is wrong for both a five-day Echeveria and a months-long
+   Aeonium. Unknown or genuinely long-running seasons are never chased. */
+const BLOOM_WINDOW_WEEKS = {
+  spring: 12, summer: 12, fall: 12, winter: 12,
+  early_summer: 7, late_summer: 7,
+  intermittent: null,   // on and off by nature — closing it would be wrong
+  monocarpic: null,     // blooms once, then the plant dies
+  not_observed: 16,     // nobody knows; chase only after a long while
+};
+function openBlooms() {
+  return state.bloomEvents.filter((b) => !b.ended_on);
+}
+function bloomsToClose() {
+  const today = todayISO();
+  return openBlooms()
+    .map((b) => {
+      const pl = state.plants.find((p) => p.id === b.plant_id);
+      const t = pl && pl.taxa_id ? taxonById(pl.taxa_id) : null;
+      const weeks = t && t.bloom_season in BLOOM_WINDOW_WEEKS
+        ? BLOOM_WINDOW_WEEKS[t.bloom_season] : 12;
+      if (weeks == null || !b.started_on) return null;
+      const days = daysBetween(b.started_on, today);
+      return days != null && days > weeks * 7 ? { b, pl, days } : null;
+    })
+    .filter(Boolean)
+    .filter((x) => x.pl)
+    .sort((a, b2) => b2.days - a.days);
 }
 
 function bloomPhotosFor(plantId) {
@@ -4744,14 +4787,16 @@ function workQueue() {
       count: state.photos.filter(photoIsUntaggedArchiveOrArea).length, muted: true },
   ];
 
-  const attentionTotal = sections.reduce((n, x) => n + x.items.length, 0) + duplicateGroups.length;
   const dupPhotos = findDuplicatePhotoGroups();
   const dupExtras = dupPhotos.reduce((n, g) => n + g.length - 1, 0);
 
   // Everything that can be worked, as one vocabulary of tiles. `urgent` is for
   // the two that are about a plant's survival rather than a record's tidiness.
-  const tile = (n, title, sub, onclick, urgent) => `
-    <button class="queue-tile ${n ? (urgent ? "is-urgent" : "") : "is-clear"}" onclick="${onclick}">
+  // A zero is not a job. Showing it greyed out made the page a list of
+  // categories rather than a list of work, and an empty To Do should read as
+  // "nothing to do" rather than "nine things at zero".
+  const tile = (n, title, sub, onclick, urgent) => !n ? "" : `
+    <button class="queue-tile ${urgent ? "is-urgent" : ""}" onclick="${onclick}">
       <div class="queue-num">${n}</div>
       <div class="queue-title">${title}</div>
       <div class="queue-sub">${sub}</div>
@@ -4774,53 +4819,56 @@ function workQueue() {
 
   const blooming = bloomingSpecimens();
   const due = expectedToBloom();
+  const toClose = bloomsToClose();
   const photoTotal = photoBuckets.filter((b) => !b.muted).reduce((n, b) => n + b.count, 0);
+  const photoSugs = new Set(state.suggestions.filter((x) => x.photo_id).map((x) => x.photo_id));
+  const taxaSugs = new Set(state.suggestions.filter((x) => x.taxa_id).map((x) => x.taxa_id));
+  const missingParts = taxaMissingNameParts().length;
 
-  return `
-    ${(() => {
-      const photoSugs = new Set(state.suggestions.filter((x) => x.photo_id).map((x) => x.photo_id));
-      const taxaSugs = new Set(state.suggestions.filter((x) => x.taxa_id).map((x) => x.taxa_id));
-      if (!photoSugs.size && !taxaSugs.size) return "";
-      return group("Claude is waiting on you", state.suggestions.length, [
-        photoSugs.size ? tile(photoSugs.size, "Photos with suggestions", "Filing Claude proposed — accept or dismiss", "showGalleryHasSuggestions()") : "",
-        taxaSugs.size ? tile(taxaSugs.size, "Species with suggestions", "Blank fields Claude filled in", "showTaxaWithSuggestions()") : "",
-      ]);
-    })()}
-
-    ${taskGroup()}
-
+  /* TODO-1. Six groups became three. "Species names" was a records job filed
+     on its own; Claude's suggestions are something waiting on her, which is
+     what "Needs you now" means; and Bloom was two status readouts rather than
+     work. Grouped by WHEN she acts, not by which table the row came from. */
+  const queue = `
     ${group("Needs you now", null, [
       sect("frostTender", true),
       sect("plantsAttention", true),
       sect("checkIns", true),
+      photoSugs.size ? tile(photoSugs.size, "Photos Claude answered", "Filing it proposed — accept or dismiss", "showGalleryHasSuggestions()") : "",
+      taxaSugs.size ? tile(taxaSugs.size, "Species Claude answered", "Blank fields it filled in", "showTaxaWithSuggestions()") : "",
+      tile(due.length, "Should be blooming", "In season, nothing recorded — go and look", "state.reportView='dueToBloom';render()"),
+      tile(toClose.length, "Blooms still open", "Recorded a while ago — still flowering?", "state.reportView='closeBlooms';render()"),
     ])}
 
     ${group("Photos to file", photoTotal, photoBuckets.map((b) =>
       tile(b.count, b.title, b.sub, `showGalleryNeeds('${b.needs}')`)))}
 
-    ${(() => {
-      const n = taxaMissingNameParts().length;
-      return n ? group("Species names", n, [
-        tile(n, "Names not split up", "Only free text — no genus or epithet, so they cannot group", "showTaxaMissingParts()"),
-      ]) : "";
-    })()}
-
-    ${group("Records to finish", attentionTotal, [
+    ${group("Records to finish", null, [
+      tile(missingParts, "Names not split up", "Free text only — cannot group with relatives", "showTaxaMissingParts()"),
       sect("plantsNoPhotos"),
       sect("plantsUnidentified"),
       sect("plantsNoTaxon"),
       sect("plantsNoLocation"),
       sect("locationsNoPlants"),
       sect("emptyLocations"),
-      dupPhotos.length ? tile(dupPhotos.length, "Duplicate photos", `Same capture time — ${countLabel(dupExtras, "extra copy", "extra copies")}`, "openModal('duplicatePhotos')") : "",
-      duplicateGroups.length ? tile(duplicateGroups.length, "Duplicate plants", "Same species, same location", "openModal('duplicatePlants')") : "",
-    ])}
+      tile(dupPhotos.length, "Duplicate photos", `Same capture time — ${countLabel(dupExtras, "extra copy", "extra copies")}`, "openModal('duplicatePhotos')"),
+      tile(duplicateGroups.length, "Duplicate plants", "Same species, same location", "openModal('duplicatePlants')"),
+      tile(blooming.length, "In bloom now", "Recorded as flowering", "state.reportView='blooming';render()"),
+    ])}`;
 
-    ${group("Bloom", null, [
-      blooming.length || due.length ? tile(blooming.length, "In bloom now", "Recorded as flowering", "state.reportView='blooming';render()") : "",
-      blooming.length || due.length ? tile(due.length, "Should be blooming", "Their species flowers around now", "state.reportView='dueToBloom';render()") : "",
-    ])}
-`;
+  const nothing = !queue.trim();
+
+  return `
+    <div class="todo-split">
+      <div class="todo-queue">
+        ${nothing ? `
+          <div class="empty" style="padding:44px 20px;">
+            <div class="display">Nothing outstanding</div>
+            <div>Every photo is filed, every record is complete, and nothing needs a look.</div>
+          </div>` : queue}
+      </div>
+      <div class="todo-tasks">${taskGroup()}</div>
+    </div>`;
 }
 
 // The drilled-in list for one queue row. Renders in place of the Inbox rather
@@ -4829,7 +4877,8 @@ function workQueueDetail() {
   const sections = reportSections();
   const bloomViews = {
     blooming: { title: "In bloom now", sub: "Recorded as flowering", items: bloomingSpecimens(), kind: "plant" },
-    dueToBloom: { title: "Should be blooming", sub: "Their species flowers around now", items: expectedToBloom(), kind: "plant" },
+    dueToBloom: { title: "Should be blooming", sub: "In season with nothing recorded — go and look", items: expectedToBloom(), kind: "plant" },
+    closeBlooms: { title: "Blooms still open", sub: "Recorded a while ago — still flowering?", items: bloomsToClose().map((x) => x.pl), kind: "plant" },
   };
   // The full task list is its own view: tasks render as rows, not as the
   // photo-thumbnail record cards every other queue view uses.
@@ -4926,19 +4975,53 @@ function reportLocationItem(l) {
     </div>`;
 }
 
+/* TODO-1. The queue was a list you could only navigate: six plants needing
+   attention showed a red 6 you could look at and not act on, and a count that
+   cannot be cleared stops being read. Each row now carries the actions that
+   would resolve IT — which differ per view, because "needs attention" and
+   "should be blooming" are cleared by different things.
+
+   Every view also offers "Make a task", so a row can be dealt with honestly
+   even when the answer is "not today". */
+function reportRowActions(pl) {
+  const v = state.reportView;
+  const btn = (label, onclick) =>
+    `<button class="row-act" onclick="event.stopPropagation();${onclick}">${escapeHtml(label)}</button>`;
+  const out = [];
+  const open = state.bloomEvents.find((x) => x.plant_id === pl.id && !x.ended_on);
+
+  if (v === "plantsAttention" && pl.health_status !== "healthy") out.push(btn("Healthy again", `setPlantHealth('${pl.id}','healthy')`));
+  if (v === "plantsAttention") out.push(btn("To hospital", `moveToHospital('${pl.id}')`));
+  if (v === "checkIns") {
+    out.push(btn("Checked it", `clearCheckIn('${pl.id}')`));
+    out.push(btn("Remind me in 14d", `snoozeCheckIn('${pl.id}', 14)`));
+  }
+  if (v === "dueToBloom") out.push(btn("Record a bloom", `startBloom('${pl.id}')`));
+  if ((v === "closeBlooms" || v === "blooming") && open) out.push(btn("It has finished", `endBloom('${open.id}')`));
+  if (v === "plantsNoLocation" || v === "frostTender") out.push(btn(v === "frostTender" ? "Move it in" : "Set a location", `openModal('movePlant',{plantId:'${pl.id}'})`));
+
+  out.push(btn("Make a task", `openModal('newTask',{subject:{kind:'plant',id:'${pl.id}'}})`));
+  return out.join("");
+}
+
 function reportPlantItem(pl) {
   const cover = plantCoverPhoto(pl);
   const loc = pl.location_id ? locationById(pl.location_id) : null;
+  const st = state.reportView === "checkIns" ? checkInStatus(pl) : null;
   return `
-    <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openFromReport('plant','${pl.id}','${state.reportView || ""}')">
-      <div class="plant-list-thumb" style="width:60px;height:60px;">
-        ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+    <div class="tag-card" style="padding:10px 14px;">
+      <div style="display:flex;gap:14px;cursor:pointer;" onclick="openFromReport('plant','${pl.id}','${state.reportView || ""}')">
+        <div class="plant-list-thumb" style="width:60px;height:60px;flex-shrink:0;">
+          ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div class="tag-id">${pl.accession_number}${st ? ` · ${escapeHtml(st.label)}` : ""}</div>
+          <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;">${plantDisplayHtml(pl)}</div>
+          <div style="font-size:11.5px;color:var(--ink-soft);">${loc ? escapeHtml(locationPath(loc)) : "No location"}</div>
+        </div>
+        ${HEALTH_ATTENTION.includes(pl.health_status) ? `<span class="pill-solid ${healthPillClass(pl)}" style="align-self:flex-start;flex-shrink:0;">${HEALTH_LABELS[pl.health_status] || pl.health_status}</span>` : ""}
       </div>
-      <div style="flex:1;min-width:0;">
-        <div class="tag-id">${pl.accession_number}</div>
-        <div style="font-family:'Fraunces',serif;font-size:14.5px;font-weight:500;">${plantDisplayHtml(pl)}</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);">${loc ? escapeHtml(locationPath(loc)) : "No location"}</div>
-      </div>
+      <div class="row-acts">${reportRowActions(pl)}</div>
     </div>`;
 }
 
@@ -7488,6 +7571,18 @@ async function endBloom(bloomId) {
     await restPatch("bloom_events", `id=eq.${bloomId}`, { ended_on: ended });
     toast("Bloom closed");
     closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// TODO-1. Clearing a health flag from the queue row. startBloom() and
+// endBloom() already exist and work unchanged from a row — they read their
+// dates from modal fields when there are any and fall back to today when there
+// are not, which is exactly right when she is standing in front of the plant.
+async function setPlantHealth(plantId, status) {
+  try {
+    await restPatch("plants", `id=eq.${plantId}`, { health_status: status, updated_at: new Date().toISOString() });
+    toast(`Marked ${HEALTH_LABELS[status] || status}`);
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

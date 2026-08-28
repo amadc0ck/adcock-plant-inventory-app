@@ -581,7 +581,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.90.0";
+const APP_VERSION = "1.90.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2534,6 +2534,7 @@ function icon(name) {
     search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`,
     temperatureSnow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5a4 4 0 1 0 4 0v-8.5a2 2 0 1 0 -4 0v8.5" /><path d="M4 9h4" /><path d="M14.75 4l1 2h2.25" /><path d="M17 4l-3 5l2 3" /><path d="M20.25 10l-1.25 2l1.25 2" /><path d="M22 12h-6l-2 3" /><path d="M18 18h-2.25l-1 2" /><path d="M17 20l-3 -5h-1" /><path d="M12 9l2.088 .008" /></svg>`,
     photoPlus: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M12.5 21h-6.5a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v6.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l4 4" /><path d="M14 14l1 -1c.67 -.644 1.45 -.824 2.182 -.54" /><path d="M16 19h6" /><path d="M19 16v6" /></svg>`,
+    claude: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.0 9.8L12.0 2.6M13.3 10.2L16.0 6.5M14.1 11.3L20.9 9.1M14.1 12.7L18.5 14.1M13.3 13.8L17.5 19.6M12.0 14.2L12.0 18.8M10.7 13.8L6.5 19.6M9.9 12.7L5.5 14.1M9.9 11.3L3.1 9.1M10.7 10.2L8.0 6.5" /></svg>`,
     photoQuestion: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M15 21h-9a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l3 3" /><path d="M19 22v.01" /><path d="M19 19a2.003 2.003 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483" /></svg>`,
     plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>`,
     trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/><path d="M10 11v6M14 11v6"/></svg>`,
@@ -3116,7 +3117,7 @@ function screenInbox() {
         <span class="mono" style="font-size:12.5px;color:var(--cream);">${selectedCount} selected</span>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add Location</button>
-        <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("photoQuestion")} Ask Claude</button>
+        <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("claude")} Ask Claude</button>
         <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos()">${icon("trash")} Delete</button>
       </div>
     </div>` : ""}`;
@@ -3342,7 +3343,7 @@ function screenTaxonDetail() {
               ${/* AI-2. No photograph: every field here follows from the name,
                    so a text call answers it for a tenth of the cost. */""}
               <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}')">
-                ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("photoQuestion")}
+                ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("claude")}
                 <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Ask Claude to fill the blanks"}</span>
                 <span class="action-chevron">${icon("chevronRight")}</span>
               </button>
@@ -4813,7 +4814,7 @@ function screenGallery() {
         <button class="btn btn-accent btn-sm" onclick="openModal('galleryBatch')">Edit</button>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
         <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add location</button>
-        <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("photoQuestion")} Ask Claude</button>
+        <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("claude")} Ask Claude</button>
         <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos('gallery')">${icon("trash")} Delete</button>
         <button class="btn-ghost" style="margin-left:auto;font-size:12.5px;" onclick="toggleGallerySelectMode()">Cancel</button>
       </div>
@@ -6663,10 +6664,13 @@ function photoActionList(p, ctx) {
       add({ key: "dismissId", label: "Dismiss Pl@ntNet", ic: "close",
             onclick: `dismissIdentification('${plantnet.id}')`, show: full });
     } else {
-      add({ key: "identify", label: "Identify", ic: "search", busy: busyId,
+      // Amanda's call: the photo-with-a-question-mark belongs to Pl@ntNet, which
+      // is literally "what is this picture of?". Asking Claude is a different
+      // kind of question and gets Claude's own mark.
+      add({ key: "identify", label: "Identify", ic: "photoQuestion", busy: busyId,
             onclick: `identifyPhoto('${p.id}')`, show: !p.plant_id });
     }
-    add({ key: "ask", label: "Ask Claude", ic: "photoQuestion", busy: busyAsk,
+    add({ key: "ask", label: "Ask Claude", ic: "claude", busy: busyAsk,
           onclick: `askClaudeAboutPhoto('${p.id}')`, show: !p.plant_id || !p.location_id });
   }
   // Diagnosing needs the specimen — the read is against what THIS species

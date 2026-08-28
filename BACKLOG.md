@@ -343,6 +343,23 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.90.1
+**The two AI buttons swapped icons, per Amanda.** The photo-with-a-question-mark
+now belongs to **Identify with Pl@ntNet**, which is literally "what is this a
+picture of?" — the glyph was always a better fit there. **Ask Claude** gets
+Claude's own burst mark.
+
+New `claude` icon: a ten-ray radial burst, alternating ray lengths so it stays
+legible at the 12–15px this icon set renders at rather than turning to mush.
+Stroke-based with `currentColor` like every other icon here, so it inherits
+colour and the disabled/spinner states unchanged.
+
+Changed in all four places: the shared photo action row (which covers every card
+and lightbox), the Gallery bulk bar in both view modes, and the species-level
+Ask Claude on Taxon Detail. The `search` icon is now unused but kept — it is a
+generically useful spare.
+
+
 ### v1.90.0
 **Claude's photo suggestions were invisible in the Gallery.** Amanda pressed Ask
 Claude from To Do → "Needs a plant" and could not find the answers.

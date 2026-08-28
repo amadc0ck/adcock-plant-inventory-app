@@ -217,21 +217,75 @@ order by location_count desc;
 
 ---
 
-## Ready now
+## Ready now — the actual open list, verified 2026-08-28
 
-**PD-4, LOC-1 and AI-3 layer 1 shipped in v1.83.0.** AI-1 and AI-2 shipped in
-v1.80.0. RPT-3 and TASK-1 shipped in v1.84.0. What is left is below.
+### DEPLOY — `suggest-photo` is a version behind
+**Status:** blocked on one command · **Effort:** trivial
 
-**AI-3 layer 2 — photo match — is the only part of AI-3 not built.** When
-creating a plant from an Inbox photo, have Claude suggest the existing specimen
-it most resembles. Layer 1 (name match) shipped; this needs `suggest-photo`
-accuracy to be trusted first, which is still unproven at volume — see the AI
-section above.
+`focus: "health"` was written 27 Aug and **committed 28 Aug, never deployed**.
+`supabase functions list` shows version 6, last updated 2026-08-27 17:24 UTC —
+before the health code existed. Until this runs, the "How is it doing?" button
+is inert and answers with a 502 or nothing:
 
-**RPT-3 and TASK-1 both shipped in v1.84.0.** See Completed.
+```
+cd ~/Projects/adcock-plant-inventory
+supabase functions deploy suggest-photo
+```
 
-**SPECIES-2 cleanup** and **SPECIES-1 phase 3 column drop** both need Amanda at
-the SQL editor rather than code. See the verified schema table at the top.
+### PERF-2 — the app blinks while images load
+**Status:** ready · **Effort:** high (a day) · **Schema:** none
+
+**The last of the six things Amanda raised on 28 Aug.** She asked whether this is
+a hosting limitation or the 2,664 photos. **Neither.**
+
+`render()` replaces `app.innerHTML` wholesale on every state change — **80 call
+sites, 9 of them `oninput` handlers** — so one keystroke in the Gallery search
+destroys and rebuilds every DOM node on screen, images included. Cached images
+re-decode (the flash); uncached ones go blank and refetch.
+
+Compounding it: `PHOTO_CACHE_LIMIT` is **180 blob URLs against 2,664 photos**, so
+a gallery scroll thrashes the cache and refetches through the Edge Function.
+
+PERF-1 already fixed the *loading* flash — `ensurePhotoLoaded()` patches the
+`<img>` directly rather than re-rendering. What remains is the re-render itself.
+This is the cost of the no-framework single-innerHTML-swap design, which was
+right at 300 photos and is not at 2,664. Fixable without a framework:
+1. Decouple search inputs from the full render (debounce, or update only the result list).
+2. Raise the cache limit — memory tradeoff, needs measuring.
+3. Stop rebuilding image nodes that have not changed.
+
+**Ask her which screen it bites on first** — Gallery scroll, typing in search, or
+a plant with many photos. They have different causes and fixing the wrong one
+first wastes the day.
+
+### AI-3 layer 2 — photo match when creating
+**Status:** gated · **Effort:** medium
+
+When creating a plant from an Inbox photo, have Claude suggest the existing
+specimen it most resembles. Layer 1 (name match) shipped in v1.83.0. Still gated
+on `suggest-photo` accuracy at volume, which is **unproven** — see the AI
+section above. Try ten before four hundred.
+
+### Waiting on Amanda at the SQL editor
+- **Bucket 32–61 renumber.** She reported 61 should be 32 and 32–60 each +1.
+  Blocked on `select name, code, sort_order from locations where name ~ '^Bucket (3[2-9]|[45][0-9]|6[01])$'` —
+  `code` is displayed AND searchable, so if it encodes the number it must shift
+  in the same transaction. It is a **rotation, not a shift**: every new name is
+  an existing name, so a one-at-a-time rename collides. Park-then-rewrite in a
+  transaction. Renaming creates **no history** — `plant_location_history` keys
+  on `location_id`.
+- **SPECIES-1 phase 3 column drop.** Statement in the v1.65.0 entry. Backup first.
+- **NAME-1 leftovers.** 'fuzzy navel' casing; *Echeveria* 'Purple Perle' pedigree
+  into `taxa.parentage`, which now exists and is wired up.
+
+### Waiting on Amanda in the garden
+From the 28 Aug rollback audit — all seven moves after 27 Aug 5PM turned out to
+be intentional, so nothing to revert. What is left:
+- **ABG-2026-0150** *Curio repens*, Below Wall, **0 photos**, and another
+  *Curio repens* exists. The one plausible accidental duplicate. Merge if so.
+- **ABG-2026-0145** *Euphorbia mammillaris* has **no location** — created, never placed.
+- **Bucket 39:** 0029 moved out at 02:34, 0151 created there at 03:16. Two
+  different plants, or one plant recorded twice? She can see by looking.
 
 ---
 

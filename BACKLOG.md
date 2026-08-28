@@ -197,8 +197,6 @@ asserted.** Statement is in the v1.65.0 entry. Take a JSON backup first anyway:
 `drop column` is irreversible, and a restore adds and updates by id — it cannot
 bring a dropped column back.
 
-**NAME-1 leftovers.** 'fuzzy navel' casing; *Echeveria* 'Purple Perle' pedigree
-into `taxa.parentage`, which now exists and is wired up.
 
 ### Waiting on Amanda in the garden
 
@@ -275,6 +273,31 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### NAME-1 — CLOSED 2026-08-28
+
+Both leftovers resolved. The names were **already corrected** by Amanda's own
+cleanup before this session looked at them — the backlog note saying otherwise
+was a day stale, and the evidence was sitting in a query she had already run:
+the 105-species listing composed names from parts first and printed
+`Echeveria 'Purple Perle'` rather than the cross formula, which it could only do
+if the free text had already been fixed.
+
+What was genuinely missing was the **pedigree**, discarded when the name was
+corrected. Restored into `taxa.parentage`:
+
+- *Echeveria* 'Purple Perle' ← *E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina'
+- *Kalanchoe* 'Roseleaf' ← *K. tomentosa* × *K. beharensis*
+
+These are the **first two real uses of `parentage`** — a column that existed
+unused in the database until v1.83.0 wired it up, and had no data until now. It
+shows on the species page's Taxonomy card, so the cross lives on the record
+instead of in a backlog note.
+
+**Lesson, and the second time today:** a note saying "unconfirmed" is a claim
+with a date on it. Amanda's cleanup outran the notes twice — check the database
+before quoting the backlog back at her.
+
 
 ### v2.6.0
 **"In bloom now" left To Do.** It sat under *Records to finish*, and it is not a

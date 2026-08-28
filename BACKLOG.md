@@ -295,6 +295,38 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.5.0
+**NAME-3 — new species now arrive with their parts filled in.** Amanda: every
+plant she adds lands on the "Names not split up" list, so the cleanup never
+finishes. She was right about the cause — `ensureTaxonForName()` wrote only
+`botanical_name` unless `parts` were passed, and the only caller that passed
+them read the New Plant form's **collapsed "More details" fields**, which are
+almost always left blank. 61 of 105 records had no genus; the list grew with
+every addition.
+
+**The name already contains the parts.** `parseBotanicalName()` reads them:
+genus, epithet, infraspecific rank, cultivar, and the hybrid sign. It sits
+inside `ensureTaxonForName()`, the single choke point every creation path goes
+through — the New Plant form, batch entry, and "New specimen here" — so all
+three benefit and none needed changing.
+
+**Deliberately refuses to guess.** A token becomes an epithet only if it is
+lowercase, which is the botanical convention; a cultivar only if it is quoted.
+So `Echeveria Agavoides` yields a genus and **no epithet** rather than baking in
+a miscapitalisation, and `unidentified cactus` parses to nothing at all. What it
+cannot read confidently is left to NAME-2's Claude pass, because **a wrong genus
+is worse than an empty one**. Explicitly-passed form fields still win over the
+parse.
+
+This stops the list growing. It does not shrink it — the existing records still
+need NAME-2, which is what Amanda is working through.
+
+17 assertions, drawn from her own names: cultivars in straight and curly quotes,
+`Sedum × rubrotinctum`, `Kalanchoe x houghtonii`, `var. erinacea`, `f. palmeri`,
+the miscapitalised `Agavoides`, the misspelled `Echerveria`, a working label,
+and empty input.
+
+
 ### v2.4.1
 **The Pl@ntNet comparison opened behind the photograph.** `.modal-backdrop` was
 `z-index: 50` and `.lightbox-backdrop` was `80`, so any modal opened from inside

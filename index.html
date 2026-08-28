@@ -660,7 +660,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.4.1";
+const APP_VERSION = "2.5.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -9707,6 +9707,59 @@ function renderLightbox() {
 // A common name with no botanical name still deserves a taxon — three plants
 // can obviously be the same kind before anyone knows what that kind is, which
 // is what working_label is for. Returning null there would strand the specimen.
+/* NAME-3. Every taxon created by typing a name landed as free text with no
+   parts, because `parts` were only filled from the New Plant form's collapsed
+   "More details" fields — which are almost always left blank. 61 of 105 records
+   had no genus, and the "Names not split up" list grew with every plant added.
+
+   The name already contains the parts. Parse them.
+
+   Deliberately conservative — it does NOT guess. A token becomes an epithet
+   only if it is lowercase, which is the botanical convention; a cultivar only
+   if it is quoted. Anything it cannot read confidently is left for NAME-2's
+   Claude pass rather than filled in wrongly, because a wrong genus is worse
+   than an empty one. */
+const INFRA_RANK_RE = /^(nothosubsp|subsp|ssp|subvar|var|subf|f)\.?$/i;
+function parseBotanicalName(raw) {
+  const out = { genus: null, species_epithet: null, infraspecific: null, cultivar: null, is_hybrid: false };
+  let str = String(raw || "").trim();
+  if (!str) return out;
+
+  // Cultivar first: it is quoted, so pulling it out leaves a clean botanical
+  // name behind. Straight or curly quotes, and never treated as an epithet.
+  const q = str.match(/['\u2018\u201C"]([^'\u2019\u201D"]+)['\u2019\u201D"]/);
+  if (q) {
+    out.cultivar = q[1].trim();
+    str = (str.slice(0, q.index) + " " + str.slice(q.index + q[0].length)).trim();
+  }
+
+  const tok = str.split(/\s+/).filter(Boolean);
+  if (!tok.length) return out;
+
+  // Genus must look like a genus: capitalised, letters only.
+  if (!/^[A-Z][a-zA-Z-]+$/.test(tok[0])) return out;
+  out.genus = tok[0];
+  let i = 1;
+
+  // The hybrid sign sits between genus and epithet, written × or a bare x.
+  if (i < tok.length && (tok[i] === "\u00D7" || tok[i].toLowerCase() === "x")) { out.is_hybrid = true; i++; }
+
+  // An epithet is lowercase. "Agavoides" is a miscapitalised epithet and this
+  // will not take it — that is NAME-2's job, and guessing here would bake the
+  // error in.
+  if (i < tok.length && /^[a-z][a-z-]+$/.test(tok[i])) { out.species_epithet = tok[i]; i++; }
+
+  // Infraspecific rank plus its epithet, e.g. "var. erinacea".
+  if (i + 1 < tok.length && INFRA_RANK_RE.test(tok[i]) && /^[a-z][a-z-]+$/.test(tok[i + 1])) {
+    out.infraspecific = `${tok[i].replace(/\.?$/, ".").toLowerCase()} ${tok[i + 1]}`;
+    i += 2;
+  }
+  // Anything still unconsumed means the name is not a shape this understands
+  // ("Austrocylindropuntia subulata monstrose"). What was read stays; the rest
+  // is left for NAME-2 rather than forced into a field.
+  return out;
+}
+
 async function ensureTaxonForName(botanicalName, commonName, parts) {
   const name = (botanicalName || "").trim();
   const common = (commonName || "").trim();
@@ -9718,6 +9771,13 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
     common_name: common || null,
     working_label: name ? null : common,
   };
+  // Parse the typed name into its parts, then let anything explicitly passed
+  // win — a form field she filled in is a stronger signal than a parse.
+  const parsed = parseBotanicalName(name);
+  ["genus", "species_epithet", "infraspecific", "cultivar"].forEach((k) => {
+    if (parsed[k]) body[k] = parsed[k];
+  });
+  if (parsed.is_hybrid) body.is_hybrid = true;
   if (parts) {
     ["cultivar", "family", "genus", "species_epithet"].forEach((k) => {
       if (parts[k]) body[k] = parts[k];

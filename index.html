@@ -41,6 +41,10 @@
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
+  /* Nothing in this app scrolls sideways at the page level — the Gallery rows
+     scroll inside their own containers. A stray wide element shifting every
+     screen left is always a bug, so stop it becoming one silently. */
+  html,body{max-width:100%;overflow-x:hidden;}
   body{padding-bottom:76px;min-height:100vh;}
   body.has-task-banner{padding-top:46px;}
   h1,h2,h3,.display{font-family:'Fraunces',serif;}
@@ -318,6 +322,10 @@
     border-radius:10px;box-shadow:0 12px 34px -8px rgba(0,0,0,0.55);overflow:hidden;
     opacity:0;visibility:hidden;transform:translateY(-4px);transition:opacity .12s,transform .12s;pointer-events:none;}
   .hover-card.is-open{opacity:1;visibility:visible;transform:translateY(0);}
+  /* `visibility:hidden` still occupies the scrollable area, so a card last shown
+     near the right edge kept the document wider than the viewport and every
+     screen sat scrolled sideways. Parked off-canvas when closed instead. */
+  .hover-card:not(.is-open){left:-9999px !important;top:0 !important;}
   .hover-card-media{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);}
   .hover-card-media img{width:100%;height:100%;object-fit:cover;display:block;}
   .hover-card-body{padding:11px 13px;}
@@ -693,7 +701,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "2.6.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3865,11 +3873,10 @@ function screenTaxa() {
           <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaOnlySuggestions=false;render()">Show all</button>
         </div>` : ""}
       <input class="search-input" placeholder="Search name, genus, family…" value="${escapeHtml(state.taxaSearch || "")}" id="search-taxa" oninput="state.taxaSearch=this.value;scheduleRender()" />
-      <div class="row" style="margin-bottom:16px;">
-        <span class="subtle">${q ? `${list.length} of ${state.taxa.length}` : countLabel(state.taxa.length, "kind", "kinds")} · ${countLabel(state.plants.length, "specimen", "specimens")}</span>
-        <button class="btn btn-secondary btn-sm" onclick="openModal('batchAdd')">+ Batch</button>
-        <button class="btn btn-accent btn-sm" onclick="openModal('newPlant')">+ New Plant</button>
-      </div>
+      ${/* The counts and the two buttons moved into screenHeader() in v2.1.0 and
+           this row was left behind, so the whole lot rendered twice. Only the
+           filtered count was unique to it, and that now lives in the header. */""}
+      ${q ? `<div class="subtle" style="margin-bottom:16px;">${list.length} of ${countLabel(state.taxa.length, "kind", "kinds")} match</div>` : ""}
       ${list.length === 0 ? `
         <div class="empty"><div class="display">${state.taxa.length === 0 ? "No plants yet" : "No matches"}</div>
         <div>${state.taxa.length === 0 ? "Add your first plant from a photo." : "Try a different search."}</div></div>` : `

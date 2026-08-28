@@ -274,6 +274,27 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.6.1
+**Two bugs from the last two ships, both visible in one screenshot.**
+
+**The Plants header rendered twice.** v2.1.0's `screenHeader()` added the counts
+and the +Batch / +New Plant buttons, and the row that used to carry them was
+left in place below the search. Only the *filtered* count was unique to it —
+"12 of 126 kinds match" — and that now lives in the header. Audited the other
+four list screens; none had the same leftover.
+
+**Every screen sat scrolled sideways.** The hover card from v2.3.0 is
+`position:absolute` on `<body>` and was hidden with `visibility:hidden` — which
+still occupies the scrollable area. A card last shown near the right edge left
+the document wider than the viewport, so the whole app appeared shifted left
+with the logo and titles cut off. It parks off-canvas when closed now, and
+`overflow-x:hidden` on the page guards against the next stray wide element,
+since nothing here is meant to scroll sideways at page level.
+
+**Both are the same failure**: an element that is invisible is not necessarily
+absent. `visibility:hidden` hides pixels, not layout.
+
+
 ### NAME-1 — CLOSED 2026-08-28
 
 Both leftovers resolved. The names were **already corrected** by Amanda's own

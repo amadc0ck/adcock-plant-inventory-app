@@ -605,7 +605,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.0.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3479,9 +3479,12 @@ function screenInbox() {
         </div>
         </div>`}
 
+      ${/* This read "Nothing waiting" directly beneath a queue showing 2,000
+           photos to file and 40 names to fix — it means "no UNFILED photos",
+           which is a much narrower claim than it sounded. */""}
       ${unassigned.length === 0 ? `
-        <div class="empty"><div class="display">${filtered ? "No matches" : "Nothing waiting"}</div>
-        <div>${filtered ? "Try a different year or search." : "Tap the camera button to add a photo."}</div>
+        <div class="empty"><div class="display">${filtered ? "No matches" : "No unfiled photos"}</div>
+        <div>${filtered ? "Try a different year or search." : "Everything you have uploaded is filed. Tap the camera button to add more."}</div>
         ${filtered ? `<button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="state.inboxYear='';state.inboxSearch='';render()">Clear filters</button>` : ""}</div>` : `
         ${state.inboxView === "compact"
           ? `<div class="stack">${visible.map((p) => inboxCompactRow(p, selectMode)).join("")}</div>`
@@ -4667,16 +4670,25 @@ function reportSections() {
     // values, and the backlog only listed two. Missing it here would have been
     // the worst of the three — an urgent plant absent from the work queue.
     // Urgent sorts to the top; the tier is pointless if it queues behind Watch.
+    // TODO-2. "Make a task" was the escape hatch for a count that cannot be
+    // cleared — but the plant stayed in the queue, so the count did not move
+    // and the escape hatch escaped nothing. A record with an open task about it
+    // is being handled: it leaves the queue and lives in Tasks instead.
+    //
+    // Self-correcting rather than a dismissal: complete or delete the task and,
+    // if the plant is still unwell, it comes straight back.
     { key: "plantsAttention", title: "Plants needing attention", sub: "Urgent care, watch or recovery",
       items: state.plants
         .filter((pl) => HEALTH_ATTENTION.includes(pl.health_status))
+        .filter((pl) => !openTasksForSubject("plant", pl.id).length)
         .sort((a, b) => (isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0)
           || (a.accession_number || "").localeCompare(b.accession_number || "")), kind: "plant" },
     // RPT-3. Two reasons a specimen wants a look, in one list: a scheduled
     // next_check_date that has arrived, or nothing photographed for longer
     // than the interval (14 days by default, adjustable in Settings).
     { key: "checkIns", title: "Due for a check-in", sub: `Scheduled, or nothing photographed in ${checkInIntervalDays()} days`,
-      items: plantsNeedingCheckIn().map((x) => x.pl), kind: "plant" },
+      items: plantsNeedingCheckIn().map((x) => x.pl)
+        .filter((pl) => !openTasksForSubject("plant", pl.id).length), kind: "plant" },
     { key: "locationsNoPlants", title: "Locations with photos but no plants", sub: "Photographed, never catalogued",
       // Areas and archives are excluded: they are not expected to hold
       // specimens, so listing them here is not a finding.
@@ -4914,8 +4926,22 @@ function workQueueDetail() {
         <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="state.reportView=null;render()">${icon("back")} To Do</button>
         <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 2px;">${open.title}</h2>
         <p class="subtle" style="margin-bottom:16px;">${open.sub} · ${countLabel(open.items.length, "record", "records")}</p>
+        ${/* A record with an open task drops out of the count above. Say so, or
+             it looks like the app lost track of it. */""}
+        ${(() => {
+          if (open.kind !== "plant") return "";
+          const handled = state.plants.filter((pl) => openTasksForSubject("plant", pl.id).length
+            && !open.items.some((x) => x.id === pl.id)
+            && (open.key === "plantsAttention" ? HEALTH_ATTENTION.includes(pl.health_status)
+              : open.key === "checkIns" ? !!(checkInStatus(pl) || {}).due : false)).length;
+          return handled ? `
+            <div class="filter-note" style="margin-bottom:14px;">
+              <span class="filter-note-head">${countLabel(handled, "more has a task", "more have tasks")}</span>
+              <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">Not counted here because you have already planned what to do. They are in <strong>Tasks</strong>, and they come back if the task is completed or deleted while the plant still needs looking at.</p>
+            </div>` : "";
+        })()}
         ${open.items.length === 0
-          ? `<div class="empty"><div class="display">Nothing here</div><div>Everything in this category is in good shape.</div></div>`
+          ? `<div class="empty"><div class="display">Nothing here</div><div>Everything in this category is either in good shape or has a task.</div></div>`
           : `<div class="card-grid">${open.items.map(renderItem).join("")}</div>`}
       </div>
     </div>`;

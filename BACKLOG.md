@@ -274,6 +274,37 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v2.0.1
+**"Make a task" did not clear the count it was supposed to clear.** Amanda made
+tasks for two plants and they stayed in "Plants needing attention" — so the
+escape hatch for a count that cannot be cleared escaped nothing.
+
+A record with an **open task about it is being handled**, and now leaves the
+queue. Applied to attention and check-ins, the two prompts where "I have
+planned what to do" is a real answer. **Self-correcting rather than a
+dismissal:** complete or delete the task and, if the plant still needs looking
+at, it comes straight back — so nothing can be hidden permanently by accident.
+
+Nothing vanishes silently either: the drilled-in list says "*N more have tasks*"
+and explains why they are not counted.
+
+**Also fixed: "Nothing waiting" was printing under a queue showing 2,139 photos
+to file.** It means "no *unfiled* photos", a far narrower claim than it read as.
+Now "No unfiled photos — everything you have uploaded is filed."
+
+**Version numbering is now written down** in `CLAUDE.md`, after Amanda
+challenged v2.0.0. She was right, and more so than she knew: **fifteen ships
+have carried schema changes as minor bumps** (v1.36.0 through v1.93.0), so
+"schema change = major" was never this project's practice and v2.0.0 for a page
+layout fit no rule at all. Recorded: patch for fixes, minor for features **and
+schema additions**, major only when the collection's *model* changes or she has
+to work differently. Also recorded that 1.100.0 legitimately follows 1.99.0 —
+avoiding a three-digit minor is not a reason to bump the major — and that
+versions are never renumbered downwards.
+
+7 assertions on the task-clears-the-queue behaviour.
+
+
 ### v2.0.0
 **TODO-1 — the To Do page becomes a place to work, not a report.** Amanda's
 framing, and all four of her observations were right.

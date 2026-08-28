@@ -214,7 +214,23 @@ positive** — see the AI section above. Get the accept-versus-dismiss count
 before a large batch, but this no longer blocks building layer 2.
 
 ### Waiting on Amanda at the SQL editor
-- **SPECIES-1 phase 3 column drop.** Statement in the v1.65.0 entry. Backup first.
+- **SPECIES-1 phase 3 column drop — PROVEN LOSSLESS 2026-08-28, ready to run.**
+  All 16 columns compared across all **167 specimens** against their taxon:
+  every column returned **zero** specimens holding a value the species lacks,
+  except a single `family`, which Amanda promoted to its taxon. The comparison
+  then returned zeros throughout. **This is the first time v1.65.0's claim that
+  nothing writes species data onto specimens has been measured rather than
+  asserted, and it held.**
+
+  Code side matches: the only remaining `species` string in `index.html` is a
+  CSV header label whose value already comes from `tv("species_epithet")` off
+  the taxon; the apparent `pl.botanical_name` / `p.genus` / `p.cultivar` hits
+  are a comment and the local `parts` object inside `taxonDisplayName()`.
+
+  Statement is in the v1.65.0 entry. **Take a JSON backup from Settings first
+  anyway** — `drop column` is irreversible and there is no migration tool. The
+  backup restores by upsert and will not re-create dropped columns: it is a
+  reference copy, not a rollback.
 - **NAME-1 leftovers.** 'fuzzy navel' casing; *Echeveria* 'Purple Perle' pedigree
   into `taxa.parentage`, which now exists and is wired up.
 

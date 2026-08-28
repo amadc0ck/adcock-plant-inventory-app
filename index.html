@@ -583,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.90.2";
+const APP_VERSION = "1.91.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -612,6 +612,10 @@ const state = {
   // Newest first by default: the plants you are filing photos to are almost
   // always the ones you just entered, and alphabetical buries them.
   pickerSort: "recent",   // recent | name
+  // LOCFIELD-1. One staged location field, keyed by form prefix, replacing the
+  // flat <select> that eight forms each rolled their own copy of.
+  locField: {},           // prefix -> chosen location id
+  locFieldOpen: "",       // which prefix has its picker expanded
   appSettings: {},
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
   taskSubjectSearch: "",
@@ -1649,6 +1653,53 @@ function locPickerGo(id) { state.locPickerParent = id || null; render(); }
 function locPickerReset() { state.locPickerParent = null; state.locPickerSearch = ""; state.locPickerNewOpen = false; }
 
 // onPick is a JS snippet with {id} substituted, matching plantPicker's contract.
+/* LOCFIELD-1. Eight forms used a flat `<select>` of every location while four
+   used the real picker — searchable, hierarchical, with recents and a
+   create-as-you-go. With 157 locations the flat list is a scroll hunt, and
+   Amanda hit it creating a plant from the Gallery.
+
+   Staged like the edit-photo one: picking sets state and the form's own submit
+   commits, so choosing a location never submits the form under her. */
+function setLocField(prefix, locationId) {
+  state.locField[prefix] = locationId || "";
+  state.locFieldOpen = "";
+  state.locPickerNewOpen = false;
+  if (locationId) noteRecentLocation(locationId);
+  render();
+}
+// quickAddLocation() resolves its callback via globalThis[name], so it needs a
+// real global taking (id). Only one field's picker is ever open, so
+// state.locFieldOpen already identifies which one is asking.
+function setLocFieldActive(locationId) {
+  setLocField(state.locFieldOpen, locationId);
+}
+function locFieldValue(prefix) {
+  return state.locField[prefix] || "";
+}
+function locationField(prefix, opts) {
+  const o = opts || {};
+  const id = locFieldValue(prefix);
+  const chosen = id ? locationById(id) : null;
+  const parent = chosen && chosen.parent_location_id ? locationById(chosen.parent_location_id) : null;
+  const open = state.locFieldOpen === prefix;
+  return `
+    <div class="tag-card plant-list-card" style="padding:8px 10px;margin-bottom:8px;">
+      <span class="suggestion-icon" style="color:var(--moss-dim);">${icon("pin")}</span>
+      <div style="flex:1;min-width:0;">
+        ${chosen ? `
+          <div style="font-size:13.5px;font-weight:500;">${escapeHtml(chosen.name)}</div>
+          <div style="font-size:11.5px;color:var(--ink-soft);">${parent ? escapeHtml(locationPath(parent)) : locationTypeLabel(chosen.type)}</div>`
+        : `<div class="value-blank" style="font-size:13px;">${escapeHtml(o.empty || "No location")}</div>`}
+      </div>
+      <div style="display:flex;gap:10px;flex-shrink:0;">
+        <button type="button" class="btn-ghost" style="padding:0;font-size:12px;"
+          onclick="state.locFieldOpen = state.locFieldOpen === '${prefix}' ? '' : '${prefix}';state.locPickerNewOpen=false;render()">${open ? "Close" : (chosen ? "Change" : "Choose")}</button>
+        ${chosen ? `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="setLocField('${prefix}','')">Clear</button>` : ""}
+      </div>
+    </div>
+    ${open ? locationPicker(`setLocField('${prefix}','{id}')`, { onCreatePick: "setLocFieldActive" }) : ""}`;
+}
+
 function locationPicker(onPick, opts) {
   const o = opts || {};
   const q = (state.locPickerSearch || "").trim().toLowerCase();
@@ -2672,6 +2723,20 @@ function openModal(type, data = {}) {
   // re-render on every search keystroke. Seed it on open: from the task being
   // edited, or from the record she opened the modal from ("new task about this
   // bucket" should arrive with the bucket already attached).
+  // Seed the staged location field per form. Cleared each open, so a value from
+  // a previous modal never leaks into the next one.
+  state.locFieldOpen = "";
+  if (type === "newPlant" || type === "newPlantFromPhoto") state.locField.np = data.locationId || "";
+  if (type === "editPlant") {
+    const _pl = state.plants.find((x) => x.id === data.plantId);
+    state.locField.ep = _pl ? (_pl.location_id || "") : "";
+  }
+  if (type === "newSpecimen") state.locField.ns = "";
+  if (type === "propagatePlant") {
+    const _wa = state.locations.find((l) => l.name === "Propagation / Work Area" && !l.parent_location_id);
+    state.locField.pp = _wa ? _wa.id : "";
+  }
+  if (type === "batchAdd") state.locField.ba = "";
   if (type === "movePlant") { state.moveTarget = ""; locPickerReset(); }
   if (type === "batchAdd") { state.batchRows = []; state.batchSearch = ""; }
   if (type === "newTask" || type === "editTask") {
@@ -5119,10 +5184,7 @@ function modalContent() {
 
       <div class="section-label">Shared by everything in this batch</div>
       <label>Location</label>
-      <select id="ba-location">
-        <option value="">&mdash; Not planted yet &mdash;</option>
-        ${locationSelectOptions(null)}
-      </select>
+      ${locationField("ba", { empty: "Not planted yet" })}
       <div class="field-help">Leave unset if they are still in the tray. They will show in &ldquo;Plants with no location&rdquo; until you file them.</div>
       ${acquisitionFields("ba", { defaultId: "confirmed" })}
 
@@ -5437,7 +5499,7 @@ function modalContent() {
           ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === (suggestion ? "tentative" : "unidentified") ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Location</label>
-        <select id="np-location">${locationSelectOptions(data.locationId || null)}</select>
+        ${locationField("np", { empty: "Not filed to a location" })}
         <label>Collection</label>
         <select id="np-category">
           <option value="current" selected>Current</option>
@@ -5569,7 +5631,7 @@ function modalContent() {
 
         <div class="section-label">Location</div>
         <label>Current location</label>
-        <select id="ep-location">${locationSelectOptions(pl.location_id)}</select>
+        ${locationField("ep", { empty: "No location" })}
         <div class="field-help">Changing this logs the move — the previous location is kept in history automatically.</div>
 
         <div class="section-label">Notes</div>
@@ -6091,7 +6153,7 @@ function modalContent() {
       <p class="subtle" style="margin:0 0 14px;">Another <em>${escapeHtml(taxonDisplayName(t))}</em>. Species details are inherited — you only set where this one lives and where it came from.</p>
       <form id="new-specimen-form">
         <label>Location *</label>
-        <select id="ns-location" required>${locationSelectOptions(null)}</select>
+        ${locationField("ns", { empty: "Choose where it lives" })}
         <label>Propagated from</label>
         <select id="ns-parent">
           <option value="">— Not a propagation —</option>
@@ -6260,7 +6322,7 @@ function modalContent() {
         <input type="number" id="pp-count" value="1" min="1" max="25" />
         <div class="field-help">Each becomes its own specimen with its own accession number, all sharing this parent and location. Taking five cuttings should not mean filling this in five times.</div>
         <label>Location</label>
-        <select id="pp-location">${locationSelectOptions(workArea ? workArea.id : null)}</select>
+        ${locationField("pp", { empty: "No location" })}
         <label>Notes</label>
         <textarea id="pp-notes" rows="2"></textarea>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Create propagated plant</button>
@@ -6687,7 +6749,17 @@ function photoActionList(p, ctx) {
         onclick: `openModal('attachLocation',{photoId:'${p.id}'})`,
         show: full || c.mode === "inbox" });
   add({ key: "newPlant", label: "New plant", ic: "plus",
-        onclick: `openModal('newPlantFromPhoto',{photoId:'${p.id}'${c.mode === "location" && c.locationId ? `, locationId:'${c.locationId}'` : ""}})`,
+        // v1.85.0 dropped this and left the comment behind. The old gallery
+        // button seeded the form with the photo's OWN location whenever that
+        // location expects plants — which is what photoAwaitsPlant() means —
+        // so a photo filed to Copper Rectangle Planter 1 opened the New plant
+        // form already pointing there instead of at "None". Pre-filling an Area
+        // or an Archive is still wrong: that would record a specimen living in
+        // a former home.
+        onclick: `openModal('newPlantFromPhoto',{photoId:'${p.id}'${(() => {
+          const loc = (c.mode === "location" && c.locationId) ? c.locationId : (photoAwaitsPlant(p) ? p.location_id : null);
+          return loc ? `, locationId:'${loc}'` : "";
+        })()}})`,
         show: !p.plant_id });
 
   // --- the photo itself: available everywhere, which was the whole finding ---
@@ -7298,8 +7370,7 @@ async function createBatch() {
   const rows = state.batchRows.filter((r) => r.taxaId || (r.newName || "").trim());
   if (!rows.length) { toast("Add at least one plant", true); return; }
   const shared = readAcquisitionFields("ba");
-  const locEl = document.getElementById("ba-location");
-  const locationId = locEl && locEl.value ? locEl.value : null;
+  const locationId = locFieldValue("ba") || null;
   const total = rows.reduce((n, r) => n + r.qty, 0);
   if (!confirm(`Create ${total} specimen${total === 1 ? "" : "s"}? Each gets its own accession number.`)) return;
   const btn = document.getElementById("ba-submit");
@@ -8947,7 +9018,7 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
         const common = document.getElementById("np-common").value || null;
         const body = {
           identification_status: document.getElementById("np-idstatus").value,
-          location_id: document.getElementById("np-location").value || null,
+          location_id: locFieldValue("np") || null,
           collection_category: document.getElementById("np-category").value,
           original_collection: document.getElementById("np-original").checked,
           notes: document.getElementById("np-notes").value || null,
@@ -9108,11 +9179,14 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
       e.preventDefault();
       const taxonId = state.modal.data.taxonId;
       const t = taxonById(taxonId);
+      // The <select> carried `required`; the staged field cannot, so the check
+      // moves here rather than silently creating a homeless specimen.
+      if (!locFieldValue("ns")) { toast("Choose where this specimen lives", true); return; }
       try {
         const parentId = document.getElementById("ns-parent").value || null;
         const body = {
           taxa_id: taxonId,
-          location_id: document.getElementById("ns-location").value || null,
+          location_id: locFieldValue("ns") || null,
           parent_plant_id: parentId,
           // Was hardcoded `confirmed` on the reasoning that a specimen of a
           // known taxon is identified by definition. True of a real species,
@@ -9147,7 +9221,7 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
           acquisition_source_name: document.getElementById("ep-acqname").value || null,
           acquisition_notes: document.getElementById("ep-acqnotes").value || null,
           parent_plant_id: document.getElementById("ep-parent").value || null,
-          location_id: document.getElementById("ep-location").value || null,
+          location_id: locFieldValue("ep") || null,
           notes: document.getElementById("ep-notes").value || null,
           updated_at: new Date().toISOString(),
         };
@@ -9195,7 +9269,7 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
         const parent = state.plants.find((p) => p.id === state.modal.data.parentId);
         const body = {
           taxa_id: parent.taxa_id || null,
-          location_id: document.getElementById("pp-location").value || null,
+          location_id: locFieldValue("pp") || null,
           notes: document.getElementById("pp-notes").value || null,
           parent_plant_id: state.modal.data.parentId,
           acquisition_source_type: "propagation",

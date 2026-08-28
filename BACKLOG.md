@@ -343,6 +343,40 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.91.0
+**LOCFIELD-1 — one location field, and the second half of a v1.85.0 regression.**
+
+Amanda hit the flat `<select>` of all 157 locations while creating a plant from
+the Gallery. It was not one stale form: **eight forms used the flat select while
+only four used the real picker** — searchable, hierarchical, with recents and
+create-as-you-go.
+
+`locationField(prefix)` now covers the five plant-location forms: New plant, Edit
+plant, Add specimen, Propagate, and Batch. Staged like the edit-photo one, so
+choosing never submits the form underneath her. Two flat selects stay on
+purpose: the picker's own **location filter** (a filter wants a select) and the
+Gallery batch editor, whose "leave unchanged / remove location" is a three-state
+field the staged control cannot express.
+
+**The `— None —` was a regression, not a default.** The Gallery's old New-plant
+button seeded the form with the photo's own location whenever that location
+expects plants. v1.85.0's shared action row only passed a location in `location`
+mode, so from the Gallery it passed nothing — and a photo filed to Copper
+Rectangle Planter 1 opened the form pointing at None.
+
+**The tell was already in the file.** The comment explaining that behaviour —
+"the photo's own location is offered as the default only when that location
+actually holds plants" — survived at line 4777, describing code that had been
+deleted. Same shape as v1.90.2: the consolidation kept the prose and dropped the
+behaviour.
+
+Also restored: `ns-location` carried `required` on the `<select>`; a staged field
+cannot, so the check moved into the submit handler rather than silently creating
+a homeless specimen.
+
+10 assertions on the field helpers.
+
+
 ### v1.90.2
 **Pl@ntNet suggestions were invisible in the Gallery — a v1.85.0 regression.**
 

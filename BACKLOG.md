@@ -264,6 +264,23 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.89.1
+**The plant picker leads with the newest specimens.** Straight out of BATCH-1:
+after entering a group, the plants she is assigning photos to are the ones she
+just created, and alphabetical buried them behind every Adromischus and Aeonium.
+Newest first is the default; an A–Z toggle sits next to the filters and the
+choice persists for the session.
+
+**Sorted on `accession_number`, not `created_at`.** The first attempt used
+`created_at` with accession as a tiebreaker, and the tests caught it: a row with
+no `created_at` sorted to the *bottom* — the opposite of "newest first", and
+worst for exactly the rows most likely to be new. Accession numbers are issued
+sequentially by the trigger, never reused, always present, and compare correctly
+as strings across years, so they already are creation order.
+
+7 assertions, including a null `created_at` row and every filter combination.
+
+
 ### v1.89.0
 **BATCH-1 — record a group of plants before planting them.** Amanda buys
 succulents as a group and wants them in the system before they are planted and

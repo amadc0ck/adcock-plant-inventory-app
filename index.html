@@ -581,7 +581,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.89.0";
+const APP_VERSION = "1.89.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -607,6 +607,9 @@ const state = {
   moveTarget: "",          // location picked in the Move modal
   batchRows: [],           // BATCH-1: [{ taxaId, newName, qty }]
   batchSearch: "",
+  // Newest first by default: the plants you are filing photos to are almost
+  // always the ones you just entered, and alphabetical buries them.
+  pickerSort: "recent",   // recent | name
   appSettings: {},
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
   taskSubjectSearch: "",
@@ -1326,6 +1329,14 @@ function plantPickerMatches(opts) {
       return hay.includes(q);
     })
     .sort((a, b) => {
+      if (state.pickerSort !== "name") {
+        // Accession number ALONE, not created_at. It is issued sequentially by
+        // the trigger, never reused, always present, and sorts correctly as a
+        // string across years — so it already is creation order. Sorting on
+        // created_at first pushed rows missing it to the bottom, which is the
+        // opposite of "newest first" for the very rows most likely to be new.
+        return (b.accession_number || "").localeCompare(a.accession_number || "");
+      }
       const an = plantPickerName(a).primary, bn = plantPickerName(b).primary;
       return an.localeCompare(bn) || (a.accession_number || "").localeCompare(b.accession_number || "");
     });
@@ -1351,6 +1362,9 @@ function plantPicker(onPick, opts) {
         <option value="">Anywhere</option>
         ${locationSelectOptions(state.pickerLocation)}
       </select>
+      <button class="btn-ghost" style="font-size:12px;padding:0 4px;" title="Change the order"
+        onclick="state.pickerSort = state.pickerSort === 'name' ? 'recent' : 'name';render()">
+        ${state.pickerSort === "name" ? "A–Z" : "Newest first"} &#8645;</button>
       ${(state.pickerSearch || state.pickerTaxon || state.pickerLocation)
         ? `<button class="btn-ghost" style="font-size:12px;padding:0 4px;" onclick="clearPlantPicker()">Clear</button>` : ""}
       <span class="subtle" style="font-size:11.5px;">${countLabel(matches.length, "plant", "plants")}</span>

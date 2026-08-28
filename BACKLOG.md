@@ -295,6 +295,37 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.3.0
+**HOVER-1 — see the plant before you trust the suggestion.** Amanda's point
+about the filing screen: it says "the only plant here is *Curio peregrinus*" and
+asks you to file four photos on that basis, with no way to check it is really
+that plant without leaving the page.
+
+Hovering a specimen name now shows a card: cover photo, name, common name,
+location, photo count, check-in state and health.
+
+**Deliberately outside `render()`.** The card is built once, lives outside
+`#app`, and is filled by direct DOM writes. Routing it through state would
+rebuild the entire page on every mouse movement — exactly what PERF-2 was fixed
+to stop. The listener is **delegated from `document`**, so it survives every
+re-render and any element can opt in with `data-plant-card="<id>"`. Nine places
+do so far: the filing suggestions, the candidate buttons, and task subject
+chips.
+
+The cover photo is fetched through `ensurePhotoLoaded()` like every other image,
+so it patches itself into the card when it lands rather than blocking it.
+
+Pointer events only. A touch device gets whatever tap behaviour the element
+already had, which for the filing suggestion is "open the plant".
+
+**A self-inflicted break worth recording:** the insertion duplicated its own
+anchor line, producing
+`function bloomPhotosFor(plantId) {function bloomPhotosFor(plantId) {` and a
+file that would not parse. The syntax check caught it, but only a per-function
+bisect found *where* — "Unexpected end of input" points at the last line of the
+file, never at the damage.
+
+
 ### v2.2.1
 **"File all 4" answered "Pick some photos first".** A **name collision**:
 `assignPhotosToPlant(plantId)` already existed for the bulk-selection flow, and

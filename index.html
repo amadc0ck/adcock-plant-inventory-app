@@ -293,6 +293,20 @@
      it returns to rather than always a tab name, so it can be long — "Names to
      split", a bucket name, a quoted search — and it must never wrap beside its
      chevron. Truncates instead. */
+  /* HOVER-1 */
+  .hover-card{position:absolute;z-index:80;width:290px;background:var(--parchment);color:var(--ink);
+    border-radius:10px;box-shadow:0 12px 34px -8px rgba(0,0,0,0.55);overflow:hidden;
+    opacity:0;visibility:hidden;transform:translateY(-4px);transition:opacity .12s,transform .12s;pointer-events:none;}
+  .hover-card.is-open{opacity:1;visibility:visible;transform:translateY(0);}
+  .hover-card-media{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);}
+  .hover-card-media img{width:100%;height:100%;object-fit:cover;display:block;}
+  .hover-card-body{padding:11px 13px;}
+  .hover-card-name{font-family:'Fraunces',serif;font-size:15px;font-weight:600;margin-top:2px;line-height:1.25;}
+  .hover-card-sub{font-size:12.5px;color:var(--ink-soft);margin-top:1px;}
+  .hover-card-meta{display:flex;flex-direction:column;gap:3px;margin:8px 0 9px;font-size:11.5px;color:var(--ink-soft);}
+  .hover-card-meta div{display:flex;align-items:center;gap:5px;}
+  .hover-card-meta svg{width:12px;height:12px;flex-shrink:0;opacity:0.7;}
+  [data-plant-card]{cursor:pointer;}
   /* FILE-1 */
   .file-group{padding:12px 14px;}
   .file-strip{display:flex;gap:6px;margin:10px 0;overflow-x:auto;padding-bottom:2px;}
@@ -626,7 +640,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.2.1";
+const APP_VERSION = "2.3.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2467,6 +2481,84 @@ async function fileGroupTo(field, photoIds, value) {
 }
 const fileGroupToPlant = (ids, plantId) => fileGroupTo("plant_id", ids, plantId);
 const fileGroupToLocation = (ids, locationId) => fileGroupTo("location_id", ids, locationId);
+
+/* HOVER-1. "File all 4" asks you to trust a suggestion about a plant you cannot
+   see. The card shows it without leaving the screen.
+
+   Deliberately NOT part of render(): it lives outside #app, is built once, and
+   is filled by direct DOM writes. Routing it through state would rebuild the
+   whole page on every mouse movement — the exact thing PERF-2 just fixed.
+
+   Delegated from document, so it keeps working after any re-render and any
+   element can opt in with data-plant-card="<id>". */
+let hoverCardEl = null;
+function ensureHoverCard() {
+  if (hoverCardEl && document.body.contains(hoverCardEl)) return hoverCardEl;
+  hoverCardEl = document.createElement("div");
+  hoverCardEl.className = "hover-card";
+  hoverCardEl.setAttribute("aria-hidden", "true");
+  document.body.appendChild(hoverCardEl);
+  return hoverCardEl;
+}
+
+function showPlantCard(target, plantId) {
+  const pl = state.plants.find((x) => x.id === plantId);
+  if (!pl) return;
+  const el = ensureHoverCard();
+  const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+  const loc = pl.location_id ? locationById(pl.location_id) : null;
+  const cover = plantCoverPhoto(pl);
+  const photos = plantPhotosOrdered(pl.id).length;
+  const st = checkInStatus(pl);
+
+  el.innerHTML = `
+    <div class="hover-card-media">${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}</div>
+    <div class="hover-card-body">
+      <div class="mono tag-id">${pl.accession_number}</div>
+      <div class="hover-card-name">${plantDisplayHtml(pl)}</div>
+      ${t && t.common_name ? `<div class="hover-card-sub">${escapeHtml(t.common_name)}</div>` : ""}
+      <div class="hover-card-meta">
+        ${loc ? `<div>${icon("pin")} ${escapeHtml(locationPath(loc))}</div>` : `<div class="value-blank">No location</div>`}
+        <div>${icon("photo")} ${escapeHtml(countLabel(photos, "photo", "photos").replace(/<[^>]*>/g, ""))}</div>
+        ${st ? `<div>${icon(st.due ? "alertTriangle" : "check")} ${escapeHtml(st.label)}</div>` : ""}
+      </div>
+      <span class="pill-solid ${healthPillClass(pl)}">${HEALTH_LABELS[pl.health_status] || pl.health_status}</span>
+    </div>`;
+
+  // The cover may not be cached yet; fetch it the same way every other image
+  // gets fetched, and it patches itself into the card when it lands.
+  if (cover) ensurePhotoLoaded(cover.drive_file_id);
+
+  const r = target.getBoundingClientRect();
+  el.classList.add("is-open");
+  const w = el.offsetWidth, h = el.offsetHeight;
+  // Flip above / left when there is not room below or right.
+  let top = r.bottom + 8;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 8);
+  let left = r.left;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w - 8);
+  el.style.top = `${top + window.scrollY}px`;
+  el.style.left = `${left + window.scrollX}px`;
+}
+
+function hidePlantCard() {
+  if (hoverCardEl) hoverCardEl.classList.remove("is-open");
+}
+
+// Attached once, at boot. Pointer events only — a touch device gets the tap
+// behaviour the element already has instead.
+function wireHoverCards() {
+  document.addEventListener("mouseover", (e) => {
+    const t = e.target && e.target.closest ? e.target.closest("[data-plant-card]") : null;
+    if (t) showPlantCard(t, t.getAttribute("data-plant-card"));
+  });
+  document.addEventListener("mouseout", (e) => {
+    const t = e.target && e.target.closest ? e.target.closest("[data-plant-card]") : null;
+    if (t) hidePlantCard();
+  });
+  // Scrolling or navigating away should not leave one floating.
+  window.addEventListener("scroll", hidePlantCard, { passive: true });
+}
 
 function bloomPhotosFor(plantId) {
   return plantPhotosOrdered(plantId).filter((p) => p.photo_type === "bloom");
@@ -4758,7 +4850,7 @@ function taskRow(t, compact) {
         ${t.detail && !compact ? `<div class="task-detail">${escapeHtml(t.detail)}</div>` : ""}
         ${t.due_date ? `<div class="task-due ${overdue ? "is-overdue" : ""}">${overdue ? "Due " : "Due "}${fmtDate(t.due_date)}${overdue ? " — overdue" : ""}</div>` : ""}
         ${subs.length ? `<div class="task-subjects">${subs.map((ts) => `
-          <button class="task-subject" onclick="event.stopPropagation();openSubjectFromTask('${ts.id}')">${subjectIcon(ts)} ${escapeHtml(subjectLabel(ts))}</button>`).join("")}</div>` : ""}
+          <button class="task-subject"${ts.plant_id ? ` data-plant-card="${ts.plant_id}"` : ""} onclick="event.stopPropagation();openSubjectFromTask('${ts.id}')">${subjectIcon(ts)} ${escapeHtml(subjectLabel(ts))}</button>`).join("")}</div>` : ""}
       </div>
     </div>`;
 }
@@ -5002,7 +5094,7 @@ function workQueueDetail() {
                     <div class="file-suggest">
                       <div style="flex:1;min-width:0;">
                         <div class="filter-note-head">The only plant here</div>
-                        <div style="font-size:13.5px;margin-top:2px;">${plantDisplayHtml(g.only)} <span class="mono subtle">${g.only.accession_number}</span></div>
+                        <div style="font-size:13.5px;margin-top:2px;" data-plant-card="${g.only.id}" onclick="openPlant('${g.only.id}')">${plantDisplayHtml(g.only)} <span class="mono subtle">${g.only.accession_number}</span></div>
                       </div>
                       <button class="btn btn-accent btn-sm" onclick="fileGroupToPlant(${idList}, '${g.only.id}')">File all ${g.photos.length}</button>
                     </div>`
@@ -5011,7 +5103,7 @@ function workQueueDetail() {
                       <div style="flex:1;min-width:0;">
                         <div class="filter-note-head">${countLabel(g.candidates.length, "plant is", "plants are")} here — pick one</div>
                         <div class="file-choices">${g.candidates.map((c) => `
-                          <button class="row-act" onclick="fileGroupToPlant(${idList}, '${c.id}')">${escapeHtml(plantPickerName(c).primary)} · ${c.accession_number}</button>`).join("")}</div>
+                          <button class="row-act" data-plant-card="${c.id}" onclick="fileGroupToPlant(${idList}, '${c.id}')">${escapeHtml(plantPickerName(c).primary)} · ${c.accession_number}</button>`).join("")}</div>
                       </div>
                     </div>`
                   : `
@@ -5029,7 +5121,7 @@ function workQueueDetail() {
                 <div class="row">
                   <div style="min-width:0;">
                     <div class="tag-id">${g.plant.accession_number}</div>
-                    <div style="font-size:14px;margin-top:2px;">${plantDisplayHtml(g.plant)}</div>
+                    <div style="font-size:14px;margin-top:2px;" data-plant-card="${g.plant.id}">${plantDisplayHtml(g.plant)}</div>
                     <div style="font-size:12.5px;color:var(--ink-soft);">${countLabel(g.photos.length, "photo needs", "photos need")} a location</div>
                   </div>
                   <button class="btn-ghost" style="font-size:12px;flex-shrink:0;" onclick="openPlant('${g.plant.id}')">Open</button>
@@ -9948,6 +10040,9 @@ async function boot() {
   if (cameFromDriveConnect) {
     history.replaceState(null, "", window.location.pathname);
   }
+
+  // Attached once — delegated from document, so it survives every re-render.
+  wireHoverCards();
 
   // Not awaited: a slow or failed check must never delay the app starting.
   checkForNewVersion();

@@ -272,6 +272,27 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ---
 
+## Version numbering — audited 2026-08-28
+
+Rules live in `CLAUDE.md`. All **102 recorded ships** were classified against
+them. **Two breaks, both mine:**
+
+| Ship | Shipped as | Should have been | Why |
+| --- | --- | --- | --- |
+| **v1.41.0** | minor | **2.0.0** | SPECIES-1 split taxa from specimens. The model changed and the Plants tab began browsing species rather than plants — the only true model change in the project's life. |
+| **v2.0.0** | major | **1.100.0** | A page layout. No model change, nothing to do differently. Bumped to avoid a three-digit minor, which is not a reason. |
+
+Everything else is correct. All 15 schema-carrying ships are minors, which is
+what the rule says; every `.x` is a genuine fix. **The rules describe what this
+project already did** — they were only ever broken by hand.
+
+**Not corrected, deliberately.** Renumbering downwards would break the ordering
+the stale-version banner relies on, and rewriting history means force-pushing a
+repo GitHub Pages serves. `2.x` is therefore read as "after the taxa/specimen
+split", which is true; the boundary simply landed 59 versions late.
+
+---
+
 ## Completed
 
 ### v2.0.1

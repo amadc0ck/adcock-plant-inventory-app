@@ -385,6 +385,25 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.94.0
+**STALE-1 — the app now tells you when the tab is running old code.**
+
+GitHub Pages serves `index.html` from cache, so a deploy can be live while an
+open tab still runs the previous build. That cost real time on 28 Aug: a
+`PGRST303` was investigated as a token bug through several rounds when the tab
+simply predated v1.93.0's fix. The version in Settings only helps if you think
+to look at it, and you only think to look once you already suspect it.
+
+On boot the app fetches its own page past the cache (`?v=<now>`,
+`cache: "no-store"`), reads `APP_VERSION` out of it and compares. If the server
+is ahead, an orange banner says so and reloads on tap. Not awaited, so a slow or
+failed check never delays startup, and it fails silently when the file cannot be
+fetched.
+
+The banner names both versions and warns that saving may fail until reloaded —
+which is the actual symptom, and the thing that makes the connection.
+
+
 ### v1.93.0
 **SESSION-1 — the access token was only ever refreshed on a full reload.**
 

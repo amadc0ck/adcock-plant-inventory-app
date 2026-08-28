@@ -583,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.93.0";
+const APP_VERSION = "1.94.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -618,6 +618,7 @@ const state = {
   locFieldOpen: "",       // which prefix has its picker expanded
   newPlantTaxon: "",      // an EXISTING species chosen in the New plant form
   newPlantTaxonSearch: "",
+  newVersion: "",         // a newer APP_VERSION seen on the server
   appSettings: {},
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
   taskSubjectSearch: "",
@@ -2835,7 +2836,33 @@ function closeModal() { state.modal = null; render(); }
 // Work that survives its modal needs a home. Without this, dismissing the
 // import dialog — including by tapping the backdrop — leaves the import running
 // with nothing on screen to say so.
+/* STALE-1. GitHub Pages serves index.html from cache, so a deploy can be live
+   while the open tab still runs old code. That has cost real time: a PGRST303
+   was chased as a token bug when the tab simply predated the fix, and the
+   version in Settings only helps if you think to look.
+
+   Fetch our own page past the cache and compare the constant. Cheap — one
+   request on boot — and it turns "why is this broken" into "there is a new
+   version, reload". */
+async function checkForNewVersion() {
+  try {
+    const res = await fetch(`${window.location.pathname}?v=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const m = (await res.text()).match(/const APP_VERSION = "([^"]+)"/);
+    if (m && m[1] !== APP_VERSION) {
+      state.newVersion = m[1];
+      render();
+    }
+  } catch (e) { /* offline, or served from somewhere that will not give us the file */ }
+}
+
 function taskBanner() {
+  if (state.newVersion) {
+    return `<div class="task-banner" style="background:var(--orange);color:#2A1A05;" onclick="location.reload(true)">
+      <div class="task-banner-text">Version ${escapeHtml(state.newVersion)} is available<div class="task-banner-sub">You are running ${APP_VERSION} — tap to reload. Saving may fail until you do.</div></div>
+      <button class="btn-ghost" style="padding:0 4px;font-size:12px;color:#2A1A05;flex-shrink:0;" onclick="event.stopPropagation();state.newVersion='';render()">Later</button>
+    </div>`;
+  }
   if (state.resumableImport) {
     const r = state.resumableImport;
     return `<div class="task-banner" style="background:var(--blue);color:#0E2320;" onclick="resumePhotosImport()">
@@ -9429,6 +9456,9 @@ async function boot() {
   if (cameFromDriveConnect) {
     history.replaceState(null, "", window.location.pathname);
   }
+
+  // Not awaited: a slow or failed check must never delay the app starting.
+  checkForNewVersion();
 
   const stored = loadStoredSession();
   if (stored) {

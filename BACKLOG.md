@@ -264,6 +264,31 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.89.0
+**BATCH-1 — record a group of plants before planting them.** Amanda buys
+succulents as a group and wants them in the system before they are planted and
+photographed.
+
+**Rows, not a quantity box.** A nursery trip is several *different* plants, not
+five of the same, so the form is a list where each row carries its own count.
+"Six species, one each" and "one species, five offsets" are then the same form.
+Acquisition source, date, health and identification are shared across the batch,
+because that is the one thing genuinely identical about a purchase — which is
+what makes this faster than the single-plant form six times over.
+
+Location is optional and defaults to **not planted yet**, which is the whole
+point: they sit in the tray, land in "Plants with no location", and get filed
+when they go in the ground.
+
+A typed name creates or finds its taxon **once per row**, so five offsets of a
+new species share one taxon instead of making five. Specimens are inserted one
+at a time — the accession trigger fires per row, and a failure partway reports
+how many were made rather than losing the batch.
+
+15 assertions on the row logic, including the quantity guards (0, negative, 999,
+junk and decimals all clamp), run under node.
+
+
 ### v1.88.0
 Four of the six things Amanda raised on 28 Aug. Batch entry and the render
 performance are queued behind these — see Ready now.

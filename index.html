@@ -279,6 +279,8 @@
   .stay-when{font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);margin-top:2px;}
   .timeline-move{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.3px;color:var(--moss-dim);display:flex;align-items:center;gap:6px;margin:-4px 0 10px 2px;}
   .timeline-move svg{width:12px;height:12px;flex-shrink:0;}
+  .batch-row{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:9px 11px;}
+  .batch-qty{width:62px;flex-shrink:0;margin:0;padding:7px 8px;text-align:center;}
   .stay-edit{padding:0;flex-shrink:0;opacity:0.45;}
   .stay-edit:hover{opacity:1;}
   .stay-note{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.4;}
@@ -579,7 +581,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.88.0";
+const APP_VERSION = "1.89.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -603,6 +605,8 @@ const state = {
   taskSubjects: [],
   plantLocationHistory: [],
   moveTarget: "",          // location picked in the Move modal
+  batchRows: [],           // BATCH-1: [{ taxaId, newName, qty }]
+  batchSearch: "",
   appSettings: {},
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
   taskSubjectSearch: "",
@@ -2652,6 +2656,7 @@ function openModal(type, data = {}) {
   // edited, or from the record she opened the modal from ("new task about this
   // bucket" should arrive with the bucket already attached).
   if (type === "movePlant") { state.moveTarget = ""; locPickerReset(); }
+  if (type === "batchAdd") { state.batchRows = []; state.batchSearch = ""; }
   if (type === "newTask" || type === "editTask") {
     state.taskSubjectSearch = "";
     if (type === "editTask") {
@@ -3225,6 +3230,7 @@ function screenTaxa() {
       <input class="search-input" placeholder="Search name, genus, family…" value="${escapeHtml(state.taxaSearch || "")}" id="search-taxa" oninput="state.taxaSearch=this.value;render()" />
       <div class="row" style="margin-bottom:16px;">
         <span class="subtle">${q ? `${list.length} of ${state.taxa.length}` : countLabel(state.taxa.length, "kind", "kinds")} · ${countLabel(state.plants.length, "specimen", "specimens")}</span>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('batchAdd')">+ Batch</button>
         <button class="btn btn-accent btn-sm" onclick="openModal('newPlant')">+ New Plant</button>
       </div>
       ${list.length === 0 ? `
@@ -5030,6 +5036,71 @@ function locationSelectOptions(selectedId) {
 function modalContent() {
   if (!state.modal) return "";
   const { type, data } = state.modal;
+
+  if (type === "batchAdd") {
+    const q = (state.batchSearch || "").trim().toLowerCase();
+    const chosen = new Set(state.batchRows.map((r) => r.taxaId).filter(Boolean));
+    const matches = q
+      ? state.taxa
+          .filter((t) => !chosen.has(t.id))
+          .filter((t) => [taxonDisplayName(t), t.common_name, t.genus, t.family, t.working_label]
+            .filter(Boolean).join(" ").toLowerCase().includes(q))
+          .slice(0, 8)
+      : [];
+    const exact = q && state.taxa.some((t) => nameKey(taxonDisplayName(t)) === nameKey(q));
+    const total = batchTotal();
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Add several plants</h3>
+      <p class="subtle" style="margin:0 0 14px;">For a nursery trip or a box of offsets. Record them now, plant and photograph them later &mdash; each one gets its own accession number.</p>
+
+      ${state.batchRows.length ? `
+        <div class="section-label">This batch &mdash; ${countLabel(total, "specimen", "specimens")}</div>
+        <div class="stack" style="margin-bottom:14px;">
+          ${state.batchRows.map((r, i) => {
+            const t = r.taxaId ? taxonById(r.taxaId) : null;
+            return `
+            <div class="batch-row">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13.5px;">${t ? taxonDisplayHtml(t) : escapeHtml(r.newName)}</div>
+                <div class="mono tag-id">${t ? "existing species" : "new species — will be created"}</div>
+              </div>
+              <input type="number" min="1" max="99" value="${r.qty}" class="batch-qty"
+                onchange="setBatchQty(${i}, this.value)" title="How many of this one" />
+              <button class="btn-ghost icon-btn" style="padding:0;color:var(--terracotta);" title="Remove"
+                onclick="removeBatchRow(${i})">${icon("close")}</button>
+            </div>`;
+          }).join("")}
+        </div>` : ""}
+
+      <label>Add a plant</label>
+      <input id="ba-search" placeholder="Search your species, or type a new name…"
+        value="${escapeHtml(state.batchSearch || "")}" oninput="state.batchSearch=this.value;render()" />
+      ${q ? `
+        <div class="stack" style="margin-top:8px;max-height:30vh;overflow-y:auto;">
+          ${matches.map((t) => `
+            <button class="task-pick" onclick="addBatchRow('${t.id}')">
+              ${icon("leaf")}<span style="flex:1;text-align:left;">${escapeHtml(taxonDisplayName(t))}</span>
+            </button>`).join("")}
+          ${!exact ? `
+            <button class="task-pick" onclick="addBatchRow(null, ${JSON.stringify(state.batchSearch)})">
+              ${icon("plus")}<span style="flex:1;text-align:left;">Add &ldquo;${escapeHtml(state.batchSearch)}&rdquo; as a new species</span>
+            </button>` : ""}
+        </div>` : ""}
+
+      <div class="section-label">Shared by everything in this batch</div>
+      <label>Location</label>
+      <select id="ba-location">
+        <option value="">&mdash; Not planted yet &mdash;</option>
+        ${locationSelectOptions(null)}
+      </select>
+      <div class="field-help">Leave unset if they are still in the tray. They will show in &ldquo;Plants with no location&rdquo; until you file them.</div>
+      ${acquisitionFields("ba", { defaultId: "confirmed" })}
+
+      <button class="btn btn-primary btn-block" style="margin-top:18px;" id="ba-submit"
+        ${total ? "" : "disabled"} onclick="createBatch()">${total ? `Create ${total} specimen${total === 1 ? "" : "s"}` : "Add a plant first"}</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
 
   if (type === "stayNote") {
     const h = state.plantLocationHistory.find((x) => x.id === data.stayId);
@@ -7144,6 +7215,69 @@ function setMoveTarget(locationId) {
 // note. Re-running it through the Move modal is not the answer: the plant is
 // already where it belongs, so that would record a fake round trip. The stay
 // itself is what needs annotating.
+/* ---------- BATCH-1 ----------
+   A nursery trip is several DIFFERENT plants, not five of the same, so the form
+   is a list of rows rather than one species and a quantity. A row carries its
+   own count, so "six species, one each" and "one species, five offsets" are the
+   same form. Acquisition details are shared, because they are the one thing
+   genuinely identical across a purchase — that is what makes this faster than
+   the single-plant form six times over. */
+function addBatchRow(taxaId, newName) {
+  state.batchRows.push({ taxaId: taxaId || null, newName: newName || "", qty: 1 });
+  state.batchSearch = "";
+  render();
+}
+function removeBatchRow(i) { state.batchRows.splice(i, 1); render(); }
+function setBatchQty(i, v) {
+  const n = Math.max(1, Math.min(99, parseInt(v, 10) || 1));
+  state.batchRows[i].qty = n;
+  render();
+}
+function batchTotal() {
+  return state.batchRows.reduce((n, r) => n + (r.qty || 0), 0);
+}
+
+async function createBatch() {
+  const rows = state.batchRows.filter((r) => r.taxaId || (r.newName || "").trim());
+  if (!rows.length) { toast("Add at least one plant", true); return; }
+  const shared = readAcquisitionFields("ba");
+  const locEl = document.getElementById("ba-location");
+  const locationId = locEl && locEl.value ? locEl.value : null;
+  const total = rows.reduce((n, r) => n + r.qty, 0);
+  if (!confirm(`Create ${total} specimen${total === 1 ? "" : "s"}? Each gets its own accession number.`)) return;
+  const btn = document.getElementById("ba-submit");
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Creating…'; }
+  let made = 0;
+  try {
+    for (const r of rows) {
+      // A typed name creates or finds the taxon ONCE for the row, so five
+      // offsets of a new species share one taxon rather than making five.
+      const taxaId = r.taxaId || await ensureTaxonForName(r.newName.trim(), "", {});
+      const body = {
+        taxa_id: taxaId || null,
+        location_id: locationId,
+        ...shared,
+        ...(taxaId ? {} : { identification_status: "unidentified" }),
+        collection_category: "current",
+        status: "active",
+      };
+      // Inserted one at a time: the accession trigger fires per row, and a
+      // single failure should not cost the whole batch.
+      for (let k = 0; k < r.qty; k++) {
+        await restPost("plants", body);
+        made++;
+      }
+    }
+    state.batchRows = [];
+    closeModal();
+    toast(`Created ${countLabel(made, "specimen", "specimens")}`);
+    await loadAll();
+  } catch (e) {
+    toast(`Stopped after ${made} — ${e.message}`, true);
+    if (made) { closeModal(); await loadAll(); }
+  }
+}
+
 async function saveStayNote(stayId) {
   const note = (document.getElementById("stay-note").value || "").trim();
   try {

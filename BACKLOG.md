@@ -91,7 +91,13 @@ Worth remembering only if a large archive import ever lands again.
 
 Shipped and working in v1.80–1.82. **`suggest-species` is good**: the *Dracaena angolensis* pass filled eight blank fields correctly, including Angola, Zone 9-10 and clumping.
 
-**`suggest-photo`'s specimen matching is unproven.** It has produced plausible reasoning — it correctly noticed a specimen with no location and connected it to a photo of an unlabelled pot — but it has **not been run at volume**, and prompt tuning was expected to be the next step. Do not assume the accuracy is good enough for a large batch until it has been checked on ten or twenty.
+**`suggest-photo` — first real-world use, 2026-08-28: Amanda's verdict was "the suggestions are amazing, this works great."**
+
+That is the first evidence since v1.80.0. Caveats worth keeping honest: she was reacting to a batch she ran from To Do → "Needs a plant", and it is **not recorded how many she checked or how many she accepted**. Enthusiasm about seeing useful answers is not the same as a measured hit rate. Before a 400-photo run, ask her how many of the suggestions she actually accepted versus dismissed — that number is the one that matters, and it is cheap to get.
+
+**Why nobody could tell until now:** the suggestions were being generated correctly all along and the Gallery rendered them nowhere (fixed in v1.90.0). The tooling to evaluate accuracy did not exist, so "unproven" partly meant "unobservable".
+
+**This unblocks AI-3 layer 2** (photo match when creating a plant), which was gated on exactly this.
 
 Advice given and worth keeping: **try ten before four hundred.** Each photo is one vision call.
 
@@ -259,12 +265,14 @@ a plant with many photos. They have different causes and fixing the wrong one
 first wastes the day.
 
 ### AI-3 layer 2 — photo match when creating
-**Status:** gated · **Effort:** medium
+**Status:** ready (ungated 2026-08-28) · **Effort:** medium
 
 When creating a plant from an Inbox photo, have Claude suggest the existing
-specimen it most resembles. Layer 1 (name match) shipped in v1.83.0. Still gated
-on `suggest-photo` accuracy at volume, which is **unproven** — see the AI
-section above. Try ten before four hundred.
+specimen it most resembles. Layer 1 (name match) shipped in v1.83.0.
+
+**The gate was `suggest-photo` accuracy, and Amanda's first real use of it was
+positive** — see the AI section above. Get the accept-versus-dismiss count
+before a large batch, but this no longer blocks building layer 2.
 
 ### Waiting on Amanda at the SQL editor
 - **SPECIES-1 phase 3 column drop.** Statement in the v1.65.0 entry. Backup first.

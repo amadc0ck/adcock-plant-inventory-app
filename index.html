@@ -270,6 +270,16 @@
     background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.5);color:var(--ink);}
   .checkin-bar svg{width:16px;height:16px;flex-shrink:0;color:var(--terracotta);}
   .checkin-bar .checkin-text{flex:1;min-width:140px;}
+  /* MOVE-1 */
+  .move-summary{display:flex;align-items:center;gap:14px;background:var(--bg);border-radius:8px;padding:11px 13px;margin-bottom:14px;}
+  .stay-list{display:flex;flex-direction:column;gap:10px;}
+  .stay{display:flex;gap:10px;align-items:flex-start;position:relative;}
+  .stay-dot{width:8px;height:8px;border-radius:50%;background:var(--parchment-dim);border:2px solid var(--moss-dim);flex-shrink:0;margin-top:5px;}
+  .stay.is-current .stay-dot{background:var(--moss);border-color:var(--moss);}
+  .stay-when{font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);margin-top:2px;}
+  .timeline-move{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.3px;color:var(--moss-dim);display:flex;align-items:center;gap:6px;margin:-4px 0 10px 2px;}
+  .timeline-move svg{width:12px;height:12px;flex-shrink:0;}
+  .stay-note{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.4;}
   .assigned-row{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:9px 11px;}
   .assigned-row svg{width:13px;height:13px;flex-shrink:0;}
   .checkin-quiet{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);}
@@ -567,8 +577,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.85.0";
-const APP_UPDATED = "2026-08-27";
+const APP_VERSION = "1.86.0";
+const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -589,6 +599,8 @@ const state = {
   plantFilters: { category: "", status: "", idStatus: "", original: "", location: "" },
   tasks: [],
   taskSubjects: [],
+  plantLocationHistory: [],
+  moveTarget: "",          // location picked in the Move modal
   appSettings: {},
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
   taskSubjectSearch: "",
@@ -1218,7 +1230,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -1242,6 +1254,11 @@ async function loadAll() {
       restGetAll("tasks", "?select=*&order=created_at.desc").catch(() => null),
       restGetAll("task_subjects", "?select=*").catch(() => null),
       restGetAll("app_settings", "?select=*").catch(() => null),
+      // MOVE-1. The trigger has been writing this since the schema was built and
+      // NOTHING has ever read it — it was fetched in exactly one place, the JSON
+      // backup, so "where did this plant used to live?" was answerable only by
+      // exporting a backup and reading the JSON by hand.
+      restGetAll("plant_location_history", "?select=*&order=started_at.desc").catch(() => null),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -1259,6 +1276,7 @@ async function loadAll() {
     state.tasks = tasks || [];
     state.taskSubjects = taskSubjects || [];
     state.appSettings = Object.fromEntries((appSettings || []).map((r) => [r.key, r.value]));
+    state.plantLocationHistory = locHistory || [];
   } catch (e) {
     toast(e.message, true);
   }
@@ -2228,6 +2246,61 @@ function photoDate(p) {
   return p.taken_at || p.uploaded_at;
 }
 /* ------------------------------------------------------------
+   MOVE-1 — where a specimen has lived.
+
+   `plant_location_history` is populated by a database trigger on `plants` and,
+   until now, read by nothing. Moving a plant worked and was recorded; the
+   record was simply invisible. This makes it visible, and gives the move its
+   own action so it does not require opening the whole edit form.
+
+   A move is NOT a new specimen. SPECIES-2 split plants that were in several
+   places AT ONCE, because a physical individual is in one place. Moving is the
+   same individual changing place over time — same accession, same photos.
+   ------------------------------------------------------------ */
+function locationHistoryForPlant(plantId) {
+  return state.plantLocationHistory
+    .filter((h) => h.plant_id === plantId)
+    .sort((a, b) => String(b.started_at || "").localeCompare(String(a.started_at || "")));
+}
+
+// The stay a plant is in NOW: the open row, or failing that whatever the
+// specimen's location_id says. Written defensively because the trigger's exact
+// behaviour is not recorded anywhere in the repo.
+function currentStay(plantId) {
+  return locationHistoryForPlant(plantId).find((h) => !h.ended_at) || null;
+}
+
+// Past stays only, newest first, with the location resolved.
+function pastStays(plantId) {
+  const pl = state.plants.find((x) => x.id === plantId);
+  return locationHistoryForPlant(plantId)
+    .filter((h) => h.ended_at || (pl && h.location_id !== pl.location_id))
+    .map((h) => ({ ...h, loc: locationById(h.location_id) }));
+}
+
+// "What used to live here" — the other side of the same table.
+function plantsPreviouslyAt(locationId) {
+  const pl = (id) => state.plants.find((x) => x.id === id);
+  const rows = state.plantLocationHistory
+    .filter((h) => h.location_id === locationId)
+    .map((h) => ({ h, p: pl(h.plant_id) }))
+    .filter((x) => x.p && x.p.location_id !== locationId)   // still here = not "previously"
+    .sort((a, b) => String(b.h.started_at || "").localeCompare(String(a.h.started_at || "")));
+  // One row per plant. A plant that lived here, left, and came back before
+  // leaving again has two stays at this location, and listing it twice reads as
+  // two different plants. Sorted newest-first above, so the first hit is the
+  // most recent stay — which is the one worth showing.
+  const seen = new Set();
+  return rows.filter(({ p }) => !seen.has(p.id) && seen.add(p.id));
+}
+
+function stayRange(h) {
+  const from = h.started_at ? fmtDate(h.started_at) : "";
+  const to = h.ended_at ? fmtDate(h.ended_at) : "now";
+  return from ? `${from} – ${to}` : to;
+}
+
+/* ------------------------------------------------------------
    TASK-1 / RPT-3 — tasks, task subjects, and check-in staleness.
 
    Item 6 and RPT-3 turned out to be one feature. RPT-3's manual half is
@@ -2498,6 +2571,7 @@ function openModal(type, data = {}) {
   // re-render on every search keystroke. Seed it on open: from the task being
   // edited, or from the record she opened the modal from ("new task about this
   // bucket" should arrive with the bucket already attached).
+  if (type === "movePlant") { state.moveTarget = ""; locPickerReset(); }
   if (type === "newTask" || type === "editTask") {
     state.taskSubjectSearch = "";
     if (type === "editTask") {
@@ -3447,6 +3521,7 @@ function screenPlantDetail() {
         <div class="detail-actions">
           <div class="action-card">
             <button class="action-row" onclick="openModal('editPlant',{plantId:'${pl.id}'})">${icon("edit")}<span class="action-label">Edit full record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            <button class="action-row" onclick="openModal('movePlant',{plantId:'${pl.id}'})">${icon("pin")}<span class="action-label">Move to another location</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="moveToHospital('${pl.id}')">${icon("ambulance")}<span class="action-label">Move to Plant Hospital</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">${icon("seedling")}<span class="action-label">Propagate from this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row action-danger" onclick="deletePlant('${pl.id}')">${icon("trash")}<span class="action-label">Delete plant</span></button>
@@ -3498,6 +3573,43 @@ function screenPlantDetail() {
                   </span>
                 </div>`).join("")}` : ""}
           </div>`;
+        })()}
+
+        ${(() => {
+          // MOVE-1. The trigger has recorded every move since the schema was
+          // built; nothing has ever shown them.
+          const past = pastStays(pl.id);
+          const here = pl.location_id ? locationById(pl.location_id) : null;
+          if (!past.length && !here) return "";
+          const cur = currentStay(pl.id);
+          return `
+            <div class="section-card">
+              <div class="row" style="margin-bottom:10px;">
+                <h4 style="margin:0;">Where it has lived</h4>
+                <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;" onclick="openModal('movePlant',{plantId:'${pl.id}'})">${icon("pin")} Move</button>
+              </div>
+              <div class="stay-list">
+                ${here ? `
+                  <div class="stay is-current">
+                    <div class="stay-dot"></div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:13.5px;">${escapeHtml(locationPath(here))}</div>
+                      <div class="mono stay-when">${cur && cur.started_at ? `since ${escapeHtml(fmtDate(cur.started_at))}` : "now"}</div>
+                      ${cur && cur.notes ? `<div class="stay-note">${escapeHtml(cur.notes)}</div>` : ""}
+                    </div>
+                  </div>` : ""}
+                ${past.map((h) => `
+                  <div class="stay">
+                    <div class="stay-dot"></div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:13.5px;">${h.loc ? `<span style="cursor:pointer;" onclick="openLocation('${h.loc.id}')">${escapeHtml(locationPath(h.loc))}</span>` : `<span class="value-blank">A location that no longer exists</span>`}</div>
+                      <div class="mono stay-when">${escapeHtml(stayRange(h))}</div>
+                      ${h.notes ? `<div class="stay-note">${escapeHtml(h.notes)}</div>` : ""}
+                    </div>
+                  </div>`).join("")}
+              </div>
+              ${!past.length ? `<p class="subtle" style="margin:8px 0 0;font-size:12px;">No moves recorded yet &mdash; this is the only place it has lived.</p>` : ""}
+            </div>`;
         })()}
 
         ${taskSectionFor("plant", pl.id)}
@@ -3568,6 +3680,16 @@ function screenPlantDetail() {
           <div class="timeline-col-head">${icon("pin")}<span>${group.location ? escapeHtml(locationPath(group.location)) : "No location tagged"}</span>
             <span class="mono subtle" style="font-size:10.5px;">${fmtDate(photoDate(group.photos[0]))}${group.photos.length > 1 ? ` – ${fmtDate(photoDate(group.photos[group.photos.length - 1]))}` : ""} · ${countLabel(group.photos.length, "photo", "photos")}</span>
           </div>
+          ${/* MOVE-1. The timeline already broke into runs whenever the PHOTOS'
+               location changed. Now the recorded move is named alongside it, so
+               a gap in the pictures reads as "it moved on this date, for this
+               reason" rather than as an unexplained jump. */""}
+          ${(() => {
+            if (!group.location) return "";
+            const stay = locationHistoryForPlant(pl.id).find((h) => h.location_id === group.location.id);
+            if (!stay) return "";
+            return `<div class="timeline-move">${icon("pin")} Recorded move &mdash; ${escapeHtml(stayRange(stay))}${stay.notes ? ` &middot; ${escapeHtml(stay.notes)}` : ""}</div>`;
+          })()}
           <div class="card-grid">
             ${group.photos.map((p) => {
               const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
@@ -3763,6 +3885,31 @@ function screenLocationDetail() {
       </div>
 
       <div style="margin-top:18px;">${taskSectionFor("location", l.id)}</div>
+
+      ${(() => {
+        // The other side of the same table: standing at Bucket 32, what left it
+        // and where did it go.
+        const gone = plantsPreviouslyAt(l.id);
+        if (!gone.length) return "";
+        return `
+          <div class="section-card" style="margin-top:14px;">
+            <h4 style="margin:0 0 10px;">Previously here</h4>
+            <div class="stay-list">
+              ${gone.map(({ h, p }) => {
+                const now = p.location_id ? locationById(p.location_id) : null;
+                return `
+                <div class="stay">
+                  <div class="stay-dot"></div>
+                  <div style="flex:1;min-width:0;cursor:pointer;" onclick="openPlant('${p.id}')">
+                    <div style="font-size:13.5px;">${plantDisplayHtml(p)}</div>
+                    <div class="mono stay-when">${p.accession_number} · ${escapeHtml(stayRange(h))}${now ? ` · now in ${escapeHtml(locationPath(now))}` : ""}</div>
+                    ${h.notes ? `<div class="stay-note">${escapeHtml(h.notes)}</div>` : ""}
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>
+          </div>`;
+      })()}
 
       ${(() => {
         const children = directChildLocations(l.id);
@@ -4796,6 +4943,39 @@ function locationSelectOptions(selectedId) {
 function modalContent() {
   if (!state.modal) return "";
   const { type, data } = state.modal;
+
+  if (type === "movePlant") {
+    const pl = state.plants.find((x) => x.id === data.plantId);
+    if (!pl) return `<p class="subtle">Plant not found.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
+    const from = pl.location_id ? locationById(pl.location_id) : null;
+    const to = state.moveTarget ? locationById(state.moveTarget) : null;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Move this plant</h3>
+      <p class="subtle" style="margin:0 0 14px;">Same plant, new place. The accession number, photos and notes all stay with it &mdash; only where it lives changes, and the move is kept in its history.</p>
+
+      <div class="move-summary">
+        <div style="min-width:0;">
+          <div class="tag-id">From</div>
+          <div style="font-size:13.5px;">${from ? escapeHtml(locationPath(from)) : `<span class="value-blank">No location</span>`}</div>
+        </div>
+        <div style="color:var(--moss-dim);flex-shrink:0;">&rarr;</div>
+        <div style="min-width:0;">
+          <div class="tag-id">To</div>
+          <div style="font-size:13.5px;">${to ? escapeHtml(locationPath(to)) : `<span class="value-blank">Pick one below</span>`}</div>
+        </div>
+      </div>
+
+      ${locationPicker("setMoveTarget('{id}')", { onCreatePick: "setMoveTarget" })}
+
+      <label style="margin-top:14px;">Why (optional)</label>
+      <input id="move-note" placeholder="e.g. consolidating the wall collection" />
+      <div class="field-help">Worth a line. In six months &ldquo;why is this one in Bucket 01?&rdquo; is a real question.</div>
+
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" ${state.moveTarget && state.moveTarget !== pl.location_id ? "" : "disabled"}
+        onclick="confirmMovePlant('${pl.id}')">${to ? `Move to ${escapeHtml(to.name)}` : "Pick a location"}</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
 
   if (type === "attach" || type === "assignPlants") {
     // v1.85.0. Was two modals for one question. "Attach to a plant" set
@@ -6865,6 +7045,42 @@ async function saveAppSetting(key, value) {
     await restUpsert("app_settings", [{ key, value: String(value), updated_at: new Date().toISOString() }], "key");
     state.appSettings[key] = String(value);
     toast("Saved");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+function setMoveTarget(locationId) {
+  state.moveTarget = locationId || "";
+  state.locPickerNewOpen = false;
+  if (locationId) noteRecentLocation(locationId);
+  render();
+}
+
+async function confirmMovePlant(plantId) {
+  const pl = state.plants.find((x) => x.id === plantId);
+  const dest = state.moveTarget;
+  if (!pl || !dest || dest === pl.location_id) return;
+  const note = (document.getElementById("move-note")?.value || "").trim();
+  try {
+    await restPatch("plants", `id=eq.${plantId}`, { location_id: dest, updated_at: new Date().toISOString() });
+    // The note is attached AFTER the patch, to whichever history row the trigger
+    // just opened. Written defensively: the trigger's exact behaviour is not
+    // recorded anywhere in this repo, so if no row appears we write one
+    // ourselves rather than silently dropping what she typed.
+    if (note) {
+      const rows = await restGet("plant_location_history",
+        `?plant_id=eq.${plantId}&location_id=eq.${dest}&select=*&order=started_at.desc&limit=1`).catch(() => []);
+      if (rows && rows.length) {
+        await restPatch("plant_location_history", `id=eq.${rows[0].id}`, { notes: note });
+      } else {
+        await restPost("plant_location_history", {
+          plant_id: plantId, location_id: dest, started_at: new Date().toISOString(), notes: note,
+        });
+      }
+    }
+    state.moveTarget = "";
+    closeModal();
+    toast(`Moved to ${locationPath(locationById(dest))}`);
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

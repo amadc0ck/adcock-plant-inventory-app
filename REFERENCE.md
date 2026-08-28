@@ -223,7 +223,15 @@ Single-row table, one Google account ever. `access_token` (~1hr, auto-refreshed 
 - **`photo_locations`** — a photo tagged across multiple containers. `id, photo_id, location_id, created_at`, unique on `(photo_id, location_id)`.
 
 ### `plant_location_history`
-Auto-populated by trigger, never written to directly by the app. `id, plant_id FK, location_id FK, started_at, ended_at, notes, created_at`.
+Auto-populated by trigger. `id, plant_id FK, location_id FK, started_at, ended_at, notes, created_at`.
+
+**Read by the app since v1.86.0.** For its first years it was written by the trigger and read by *nothing* — it appeared in exactly one place, the JSON backup. Every plant move was recorded faithfully and was invisible in the UI; the only way to see one was to export a backup and read the JSON. It now loads into `state.plantLocationHistory` and drives three views: "Where it has lived" on Plant Detail, "Previously here" on Location Detail, and the recorded-move line in the photo timeline.
+
+**The app now writes `notes`**, which the previous note here forbade. `confirmMovePlant()` patches `plants.location_id`, then attaches the optional move note to the history row the trigger just opened — inserting the row itself if none is found, so a typed note is never silently dropped. **The trigger's exact behaviour is not recorded anywhere in this repo**; that function is written to survive either answer, and is the first place to look if moves start behaving oddly.
+
+**A move is not a new specimen.** SPECIES-2 split plants recorded in several places *at once*, because a physical individual is in exactly one place. A move is the same individual changing place *over time*: same accession number, same photos, same care notes, one more history row. The two cases look alike and are not.
+
+**Deduplicate when reading by location.** A plant can live somewhere, leave, and come back, producing two stays at the same location. `plantsPreviouslyAt()` keeps only the most recent per plant — without that the "Previously here" list reads as two different plants.
 
 ### `accession_counters`
 Internal only. `year int PK, last_number int`.

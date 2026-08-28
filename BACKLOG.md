@@ -247,6 +247,44 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.86.0
+**MOVE-1 — where a specimen has lived.** Amanda moved plants around and asked
+how to show that one used to be in Bucket 32 and is now in Bucket 01.
+
+The answer was uncomfortable: **the move was already being recorded and nothing
+could show it.** `plant_location_history` is populated by a database trigger and
+was read in exactly one place in the whole app — the JSON backup. It never
+reached `state`, so no screen could render it. The only way to answer "where did
+this plant used to live?" was to export a backup and read the JSON by hand.
+
+- Loaded into `state` and surfaced in three places: a **Where it has lived**
+  timeline on Plant Detail, a **Previously here** list on Location Detail (the
+  other side of the same table — what left this bucket and where it went), and
+  a **recorded-move line in the photo timeline**, which already broke into runs
+  whenever the photos' location changed but never said why.
+- **A dedicated Move action**, so relocating does not mean opening the full edit
+  form. Optional note per move, because "why is this one in Bucket 01?" is a
+  real question six months later.
+
+**A move is not a new specimen.** SPECIES-2 split plants that were in several
+places AT ONCE, because a physical individual is in one place. Moving is the
+same individual changing place over time — same accession, same photos, same
+care notes. Worth keeping straight; the two look similar and are not.
+
+**Caught by the tests:** `plantsPreviouslyAt()` listed a plant twice when it had
+lived at a location, left, and come back before leaving again — two stays, and
+the list read as two different plants. Deduped to the most recent stay.
+
+**Unverified assumption, flagged deliberately.** The trigger's exact behaviour
+is recorded nowhere in this repo — only that it exists. `confirmMovePlant()` is
+written defensively: it patches the location, then attaches the note to whatever
+history row it finds, and inserts the row itself if none appeared. If the
+verification query in the conversation shows the trigger does something else,
+revisit that function first.
+
+14 assertions on the history logic, run under node.
+
+
 ### v1.85.0
 **The consistency audit, and the refactor it demanded.** Amanda asked whether
 she gets the same ability to manage the collection from anywhere in the app.

@@ -385,6 +385,41 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.95.0
+**NAME-2 — Claude checks the name and splits it into parts.** Amanda asked
+whether the app could suggest the name corrections rather than her typing seven
+by hand. It can, and most of the pipeline already existed: the accept handler
+does `restPatch("taxa", {[sg.field]: v})`, so it has always been able to write
+any taxa column.
+
+What was missing was that `suggest-species` only ever asks about **blank**
+fields — "anything she has filled in is hers" — which is exactly why a
+misspelled name could never be corrected. A new `focus: "name"` mode inverts
+that for the name parts only, and every result still arrives as a suggestion to
+accept or dismiss; nothing is written behind her.
+
+It returns `genus`, `species_epithet`, `infraspecific`, `cultivar`, `is_hybrid`,
+a corrected `botanical_name` and `family` — and **only where the value differs
+from what is stored**, so a suggestion never just confirms the status quo. Case
+counts as a difference, because `Agavoides` → `agavoides` IS the correction.
+
+The prompt is told to leave a name it does not recognise alone rather than
+inventing a plausible replacement, and that a working label like "unidentified
+cactus" is not an error.
+
+**A bug this would have shipped with:** the accept handler special-cased
+`frost_tender` as a boolean because `suggestions.value_text` is text. `is_hybrid`
+needed the same treatment or it would have been written as the **string**
+`"false"`, which is truthy — every hybrid flag set, permanently. Now a
+`BOOL_FIELDS` list.
+
+Also added: a **"Names not split up"** queue tile and matching Plants filter, so
+the 61 records with no genus, epithet or cultivar are findable rather than
+hunted for. 12 assertions.
+
+**Needs `supabase functions deploy suggest-species`.**
+
+
 ### v1.94.0
 **STALE-1 — the app now tells you when the tab is running old code.**
 

@@ -583,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.94.0";
+const APP_VERSION = "1.95.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -671,6 +671,7 @@ const state = {
   currentTaxonId: null,
   taxaSearch: "",
   taxaOnlySuggestions: false,
+  taxaOnlyMissingParts: false,
   inboxLimit: 20,
   inboxSort: "newest",
   inboxPageSize: 20,
@@ -1905,6 +1906,8 @@ function listChoicesFor(listName, currentValue) {
 // Archive-ness now comes from the photo's location being an archive location.
 const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Species",
   infraspecific: "Infraspecific", parentage: "Parentage", description: "Description",
+  botanical_name: "Botanical name", common_name: "Common name", cultivar: "Cultivar",
+  is_hybrid: "Hybrid", working_label: "Working label",
   plant_type: "Type", growth_habit: "Growth habit", mature_size: "Mature size", bloom_season: "Bloom season",
   origin: "Origin", native_range: "Native range", hardy_to: "Hardy to", water_needs: "Water needs",
   frost_tender: "Frost tender" };
@@ -2136,6 +2139,20 @@ function taxonSecondaryName(t) {
   const primary = taxonDisplayName(t);
   return t.common_name && t.common_name !== primary ? t.common_name : "";
 }
+// NAME-2. A taxon whose name is only free text: no genus, no epithet, no
+// cultivar. 61 of 105 on 2026-08-28. Composed names, per-part italics,
+// infraspecific, parentage and species grouping all need the parts, so these
+// records are invisible to half the app's features.
+function taxonMissingNameParts(t) {
+  const has = (v) => !!(v && String(v).trim());
+  return !has(t.genus) && !has(t.species_epithet) && !has(t.cultivar);
+}
+function taxaMissingNameParts() {
+  return state.taxa.filter(taxonMissingNameParts)
+    .sort((a, b) => specimensOfTaxon(b.id).length - specimensOfTaxon(a.id).length
+      || taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
+}
+
 function specimensOfTaxon(taxonId) {
   return state.plants
     .filter((p) => p.taxa_id === taxonId)
@@ -2676,7 +2693,7 @@ function icon(name) {
 /* ============================================================
    ROUTER / NAV
    ============================================================ */
-function goTab(tab) { state.tab = tab; state.modal = null; state.reportView = null; state.backTo = null; state.taxaOnlySuggestions = false; render(); }
+function goTab(tab) { state.tab = tab; state.modal = null; state.reportView = null; state.backTo = null; state.taxaOnlySuggestions = false; state.taxaOnlyMissingParts = false; render(); }
 function toggleInboxSelectMode() {
   state.inboxSelectMode = !state.inboxSelectMode;
   state.inboxSelected = new Set();
@@ -2937,6 +2954,13 @@ function showGalleryInBloom() {
 }
 // One waiting species should land on that species, not on a list of 33 where
 // nothing says which one it meant.
+function showTaxaMissingParts() {
+  state.tab = "plants";
+  state.taxaOnlyMissingParts = true;
+  state.taxaOnlySuggestions = false;
+  state.taxaSearch = "";
+  render();
+}
 function showTaxaWithSuggestions() {
   const ids = [...new Set(state.suggestions.filter((x) => x.taxa_id).map((x) => x.taxa_id))];
   if (ids.length === 1) { state.backTo = { tab: "inbox", reportView: null, label: "To Do" }; openTaxon(ids[0]); return; }
@@ -3374,6 +3398,7 @@ function screenTaxa() {
   const q = (state.taxaSearch || "").toLowerCase();
   const list = state.taxa.filter((t) => {
     if (state.taxaOnlySuggestions && !suggestionsForTaxon(t.id).length) return false;
+    if (state.taxaOnlyMissingParts && !taxonMissingNameParts(t)) return false;
     if (!q) return true;
     const hay = [taxonDisplayName(t), t.common_name, t.botanical_name, t.genus, t.family, t.working_label]
       .filter(Boolean).join(" ").toLowerCase();
@@ -3384,6 +3409,14 @@ function screenTaxa() {
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
+      ${state.taxaOnlyMissingParts ? `
+        <div class="on-cream-ground" style="margin-bottom:14px;">
+          <div class="row">
+            <span class="suggestion-head">Names stored as free text only</span>
+            <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaOnlyMissingParts=false;render()">Show all</button>
+          </div>
+          <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">No genus, epithet or cultivar recorded, so these cannot group with their relatives and the name cannot be styled per part. Open one and use <strong>Check the name and split it up</strong>.</p>
+        </div>` : ""}
       ${state.taxaOnlySuggestions ? `
         <div class="row" style="margin-bottom:12px;">
           <span class="subtle">Showing only species Claude has suggestions for</span>
@@ -3489,6 +3522,14 @@ function screenTaxonDetail() {
               <button class="action-row" onclick="openModal('editTaxon',{taxonId:'${t.id}'})">${icon("edit")}<span class="action-label">Edit species record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
               ${/* AI-2. No photograph: every field here follows from the name,
                    so a text call answers it for a tenth of the cost. */""}
+              ${/* NAME-2. A separate ask, because it is a different question:
+                   "fill the blanks" never touches what she has already typed,
+                   which is exactly why a misspelled name could not be fixed. */""}
+              <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}',{focus:'name'})">
+                ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("claude")}
+                <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Check the name and split it up"}</span>
+                <span class="action-chevron">${icon("chevronRight")}</span>
+              </button>
               <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}')">
                 ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("claude")}
                 <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Ask Claude to fill the blanks"}</span>
@@ -4593,6 +4634,13 @@ function workQueue() {
 
     ${group("Photos to file", photoTotal, photoBuckets.map((b) =>
       tile(b.count, b.title, b.sub, `showGalleryNeeds('${b.needs}')`)))}
+
+    ${(() => {
+      const n = taxaMissingNameParts().length;
+      return n ? group("Species names", n, [
+        tile(n, "Names not split up", "Only free text — no genus or epithet, so they cannot group", "showTaxaMissingParts()"),
+      ]) : "";
+    })()}
 
     ${group("Records to finish", attentionTotal, [
       sect("plantsNoPhotos"),
@@ -7051,14 +7099,15 @@ async function askClaudeAboutPhoto(photoId, opts) {
   }
 }
 
-async function askClaudeAboutSpecies(taxaId) {
+async function askClaudeAboutSpecies(taxaId, opts) {
+  const focus = (opts && opts.focus) || "all";
   state.suggestingTaxaId = taxaId;
   render();
   try {
     const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-species`, () => ({
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ taxa_id: taxaId }),
+      body: JSON.stringify({ taxa_id: taxaId, focus }),
     }));
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -7166,7 +7215,12 @@ async function acceptSuggestion(id) {
       if (!ph || !ph.plant_id) { toast("Attach the photo to a plant first", true); return; }
       await restPatch("plants", `id=eq.${ph.plant_id}`, { health_status: sg.value_text, updated_at: new Date().toISOString() });
     } else if (sg.kind === "species_field") {
-      const v = sg.field === "frost_tender" ? String(sg.value_text) === "true" : sg.value_text;
+      // Both booleans, and both arrive as the STRING "true"/"false" because
+      // suggestions.value_text is text. frost_tender was special-cased; NAME-2
+      // adds is_hybrid, which would otherwise be written as the string "true"
+      // and read as truthy forever after.
+      const BOOL_FIELDS = ["frost_tender", "is_hybrid"];
+      const v = BOOL_FIELDS.includes(sg.field) ? String(sg.value_text) === "true" : sg.value_text;
       await restPatch("taxa", `id=eq.${sg.taxa_id}`, { [sg.field]: v, updated_at: new Date().toISOString() });
     }
     await restPatch("suggestions", `id=eq.${id}`, { status: "accepted" });

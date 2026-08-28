@@ -267,16 +267,32 @@ on `suggest-photo` accuracy at volume, which is **unproven** — see the AI
 section above. Try ten before four hundred.
 
 ### Waiting on Amanda at the SQL editor
-- **Bucket 32–61 renumber.** She reported 61 should be 32 and 32–60 each +1.
-  Blocked on `select name, code, sort_order from locations where name ~ '^Bucket (3[2-9]|[45][0-9]|6[01])$'` —
-  `code` is displayed AND searchable, so if it encodes the number it must shift
-  in the same transaction. It is a **rotation, not a shift**: every new name is
-  an existing name, so a one-at-a-time rename collides. Park-then-rewrite in a
-  transaction. Renaming creates **no history** — `plant_location_history` keys
-  on `location_id`.
 - **SPECIES-1 phase 3 column drop.** Statement in the v1.65.0 entry. Backup first.
 - **NAME-1 leftovers.** 'fuzzy navel' casing; *Echeveria* 'Purple Perle' pedigree
   into `taxa.parentage`, which now exists and is wired up.
+
+### Bucket 32–61 renumber — DONE 2026-08-28
+
+Physical bucket 61 was labelled 32 in the app, and 32–60 were each one low.
+Rotated: 61 → 32, and 32–60 → 33–61. **No specimen, photo, tag, task or move
+record was touched** — everything references `location_id`, the uuid never
+changed, and `code` was null on all thirty.
+
+Two things worth keeping:
+- **`sort_order` already had the physical truth in it.** Bucket 61 carried
+  `sort_order = 1`, i.e. it really was first in the row, which independently
+  confirmed the renumbering before anything was changed. It also held a
+  **duplicate 2** (Buckets 32 and 33), fixed in the same pass — the range is now
+  1–30, each once.
+- **A rotation is not a shift.** Every new name was an existing name, so renaming
+  one at a time collides. Park the whole range behind a `TMP-` prefix, then
+  rewrite. The statement carried a guard refusing to run unless Bucket 61 had
+  `sort_order = 1`, so a double-run was impossible.
+
+**Numbers in older notes shifted.** Anything recorded against buckets 32–60
+before this now displays one higher: ABG-2026-0041's origin "Bucket 32" reads
+Bucket 33, the Bucket 39 question below is now **Bucket 40**, and 0134's origin
+"Bucket 58" reads Bucket 59.
 
 ### Waiting on Amanda in the garden
 From the 28 Aug rollback audit — all seven moves after 27 Aug 5PM turned out to
@@ -284,8 +300,9 @@ be intentional, so nothing to revert. What is left:
 - **ABG-2026-0150** *Curio repens*, Below Wall, **0 photos**, and another
   *Curio repens* exists. The one plausible accidental duplicate. Merge if so.
 - **ABG-2026-0145** *Euphorbia mammillaris* has **no location** — created, never placed.
-- **Bucket 39:** 0029 moved out at 02:34, 0151 created there at 03:16. Two
-  different plants, or one plant recorded twice? She can see by looking.
+- **Bucket 40** (labelled Bucket 39 before the 28 Aug renumber): 0029 moved out
+  at 02:34, 0151 created there at 03:16. Two different plants, or one plant
+  recorded twice? She can see by looking.
 
 ---
 

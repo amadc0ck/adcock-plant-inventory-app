@@ -167,108 +167,89 @@ order by location_count desc;
 
 ---
 
-## Ready now — the actual open list, verified 2026-08-28
+## Open — verified 2026-08-28, end of session
 
-### Edge Functions — all deployed, verified 2026-08-28 20:09 UTC
-`suggest-photo` v10 and `suggest-species` v6. Carries the health focus, the
-cultivar-aware name composition, and NAME-2's `focus: "name"`. Nothing pending.
+Everything below is either **waiting on Amanda** or **decided but unbuilt**.
+Nothing here is blocked on code that has not shipped.
 
-**Check `supabase functions list` before assuming a function is live** — the
-health focus sat written-but-undeployed for a day, and the symptom was a feature
-that silently did nothing.
+### Code, ready to build
 
-**PERF-2 shipped in v1.98.0.** See Completed.
+**AI-3 layer 2 — photo match when creating.** When creating a plant from an
+Inbox photo, have Claude suggest the existing specimen it most resembles.
+Layer 1 (name match) shipped in v1.83.0. **Ungated 2026-08-28** — the gate was
+`suggest-photo` accuracy and Amanda's first real use of it was positive. Worth
+getting an accept-versus-dismiss count before a large batch.
 
-### AI-3 layer 2 — photo match when creating
-**Status:** ready (ungated 2026-08-28) · **Effort:** medium
-
-When creating a plant from an Inbox photo, have Claude suggest the existing
-specimen it most resembles. Layer 1 (name match) shipped in v1.83.0.
-
-**The gate was `suggest-photo` accuracy, and Amanda's first real use of it was
-positive** — see the AI section above. Get the accept-versus-dismiss count
-before a large batch, but this no longer blocks building layer 2.
+**"In bloom now" is in the wrong group.** It sits under *Records to finish*,
+which is not what it is — a current bloom is a status, not a record gap.
+Options: move it to *Needs you now* beside the other bloom prompts, or drop it
+from To Do entirely since the Gallery has an In Bloom row. Raised 2026-08-28,
+not answered.
 
 ### Waiting on Amanda at the SQL editor
-- **SPECIES-1 phase 3 column drop — PROVEN LOSSLESS 2026-08-28, ready to run.**
-  All 16 columns compared across all **167 specimens** against their taxon:
-  every column returned **zero** specimens holding a value the species lacks,
-  except a single `family`, which Amanda promoted to its taxon. The comparison
-  then returned zeros throughout. **This is the first time v1.65.0's claim that
-  nothing writes species data onto specimens has been measured rather than
-  asserted, and it held.**
 
-  Code side matches: the only remaining `species` string in `index.html` is a
-  CSV header label whose value already comes from `tv("species_epithet")` off
-  the taxon; the apparent `pl.botanical_name` / `p.genus` / `p.cultivar` hits
-  are a comment and the local `parts` object inside `taxonDisplayName()`.
+**SPECIES-1 phase 3 column drop — PROVEN LOSSLESS, ready to run.** All 16
+columns compared across all 167 specimens: every column returned zero specimens
+holding a value the species lacks, except one `family`, which she promoted. The
+comparison then returned zeros throughout — **the first time v1.65.0's claim
+that nothing writes species data onto specimens has been measured rather than
+asserted.** Statement is in the v1.65.0 entry. Take a JSON backup first anyway:
+`drop column` is irreversible, and a restore adds and updates by id — it cannot
+bring a dropped column back.
 
-  Statement is in the v1.65.0 entry. **Take a JSON backup from Settings first
-  anyway** — `drop column` is irreversible and there is no migration tool. The
-  backup restores by upsert and will not re-create dropped columns: it is a
-  reference copy, not a rollback.
-- **NAME-1 leftovers.** 'fuzzy navel' casing; *Echeveria* 'Purple Perle' pedigree
-  into `taxa.parentage`, which now exists and is wired up.
-
-### Bucket 32–61 renumber — DONE 2026-08-28
-
-Physical bucket 61 was labelled 32 in the app, and 32–60 were each one low.
-Rotated: 61 → 32, and 32–60 → 33–61. **No specimen, photo, tag, task or move
-record was touched** — everything references `location_id`, the uuid never
-changed, and `code` was null on all thirty.
-
-Two things worth keeping:
-- **`sort_order` already had the physical truth in it.** Bucket 61 carried
-  `sort_order = 1`, i.e. it really was first in the row, which independently
-  confirmed the renumbering before anything was changed. It also held a
-  **duplicate 2** (Buckets 32 and 33), fixed in the same pass — the range is now
-  1–30, each once.
-- **A rotation is not a shift.** Every new name was an existing name, so renaming
-  one at a time collides. Park the whole range behind a `TMP-` prefix, then
-  rewrite. The statement carried a guard refusing to run unless Bucket 61 had
-  `sort_order = 1`, so a double-run was impossible.
-
-**Numbers in older notes shifted.** Anything recorded against buckets 32–60
-before this now displays one higher: ABG-2026-0041's origin "Bucket 32" reads
-Bucket 33, the Bucket 39 question below is now **Bucket 40**, and 0134's origin
-"Bucket 58" reads Bucket 59.
+**NAME-1 leftovers.** 'fuzzy navel' casing; *Echeveria* 'Purple Perle' pedigree
+into `taxa.parentage`, which now exists and is wired up.
 
 ### Waiting on Amanda in the garden
-From the 28 Aug rollback audit — all seven moves after 27 Aug 5PM turned out to
-be intentional, so nothing to revert. What is left:
+
+From the 28 Aug rollback audit — all seven moves after 27 Aug 5PM were
+intentional, so nothing to revert. What is left:
+
 - **ABG-2026-0150** *Curio repens*, Below Wall, **0 photos**, and another
-  *Curio repens* exists. The one plausible accidental duplicate. Merge if so.
-- **ABG-2026-0145** *Euphorbia mammillaris* has **no location** — created, never placed.
-- **Bucket 40** (labelled Bucket 39 before the 28 Aug renumber): 0029 moved out
-  at 02:34, 0151 created there at 03:16. Two different plants, or one plant
-  recorded twice? She can see by looking.
+  *Curio repens* exists. The one plausible accidental duplicate — merge if so.
+- **ABG-2026-0145** *Euphorbia mammillaris* has **no location** — created, never
+  placed.
+- **Bucket 40** (labelled 39 before the renumber): 0029 moved out at 02:34,
+  0151 created there at 03:16. Two plants, or one recorded twice?
 
----
+### The name cleanup, in progress
 
-## Gallery rebuild — largest net-new area
+31 species still stored as free text only, down from 61. Findable via the
+**Names not split up** tile. Each is one Ask and a few taps via *Check the name
+and split it up*.
 
+**NAME-3 (v2.5.0) stops the list growing** — every species created from a typed
+name now arrives with its parts parsed. It does not shrink it; the existing
+records still need the Claude pass.
 
-### GAL-2 (original scope) — **closed 2026-08-26, not built**
-**Status:** done (closed as unnecessary)
+Seven names are known-wrong and listed in the species-data section above.
 
-Resolved without a junction table. `taxa.plant_type` already **is** plant-level category tagging, so the Gallery filters on it; and v1.62.0 made **favourites** the highlight mechanism, which covers the per-photo half of the intent with one gesture instead of a tagging vocabulary. Building the category junction table would have been a second source of truth for a fact `plant_type` already holds.
+### Deferred / known gaps
 
----
+- **CSV import.** Export exists (plants CSV, full JSON backup). Import is
+  JSON-only, upsert-based.
+- **Guest / read-only view.** RLS grants full access to any authenticated user,
+  so this is a real design change, not a UI toggle.
+- **Bucket-level physical inventory.** All 92 wall buckets exist as rows;
+  assigning actual plants to each is manual work, not automatable.
+- **Pl@ntNet per-specimen limitation.** Identifies the whole frame, not one
+  specimen in a multi-plant container photo. Claude has the same limitation but
+  can at least reason about the dominant subject.
 
-## Open decisions
+### Reference — settled today, do not re-derive
 
-**OPEN-1 — Build order.** Amanda sets priority across Plant Detail, Locations, Reports, and Gallery. Current call: **PD-1 first**, then LOC-1. Reversed from the original LOC-1-first call once the card-media image treatment moved to PD-1 — the pattern is designed once there and applied in LOC-1 second. LOC-2 shipped the Locations data defects ahead of both.
-
-**OPEN-2 — In Bloom behavior.** *Closed 2026-08-26: derived from `bloom_events`, shipped in v1.59.0.* Written when the Gallery was expected to be curated. Since then albums, highlights and archives all derive from data, so a hand-curated In Bloom row would be the sole exception, and a stale one — blooming ends, and nothing would prompt anyone to remove it. Derive from `bloom_events` where `end_date` is null. Needs a nod from Amanda, not a decision from scratch.
-
----
-
-## Deferred / known gaps
-
-- **CSV import.** Export exists (plants CSV, full JSON backup). Import is JSON-only, upsert-based. No CSV import path.
-- **Guest / read-only view.** Scoped as a question early on, never built. RLS currently grants full access to any authenticated user, so this is a real design change, not a UI toggle.
-- **Bucket-level physical inventory.** All 92 wall buckets exist as location rows. Assigning actual plants to each is ongoing manual work, not automatable.
-- **Pl@ntNet per-specimen limitation.** Identifies the whole frame, not individual specimens in a multi-plant container photo. Claude has the same limitation but can at least reason about the dominant subject.
+- **Edge Functions are current.** `suggest-photo` v10, `suggest-species` v6,
+  verified 20:09 UTC. **Check `supabase functions list` before assuming a
+  function is live** — the health focus sat written-but-undeployed for a day and
+  the symptom was a feature that silently did nothing.
+- **Bucket 32–61 renumber is done.** 61 → 32, 32–60 → 33–61, `sort_order`
+  renumbered 1–30. No specimen, photo, tag, task or move record was touched:
+  everything keys on `location_id`. **Numbers in older notes shifted** — anything
+  recorded against buckets 32–60 before this reads one higher.
+- **`taxa` has no constraints**, so a failed taxa write is never a constraint
+  violation. Full constraint list in REFERENCE.
+- **PERF-2, NAV-1, HEAD-1, TODO-1/2/3, FILE-1, HOVER-1, LAYER-1, NAME-2, NAME-3**
+  all shipped — see Completed.
 
 ---
 

@@ -198,17 +198,21 @@ asserted.** Statement is in the v1.65.0 entry. Take a JSON backup first anyway:
 bring a dropped column back.
 
 
-### Waiting on Amanda in the garden
+### Garden questions — ALL CLOSED 2026-08-28
 
-From the 28 Aug rollback audit — all seven moves after 27 Aug 5PM were
-intentional, so nothing to revert. What is left:
+The three left over from the rollback audit, resolved by Amanda from the app:
 
-- **ABG-2026-0150** *Curio repens*, Below Wall, **0 photos**, and another
-  *Curio repens* exists. The one plausible accidental duplicate — merge if so.
-- **ABG-2026-0145** *Euphorbia mammillaris* has **no location** — created, never
-  placed.
-- **Bucket 40** (labelled 39 before the renumber): 0029 moved out at 02:34,
-  0151 created there at 03:16. Two plants, or one recorded twice?
+- **ABG-2026-0150** *Curio repens* — **a real plant, not a duplicate.** Three
+  specimens now (0062, 0150, 0197) in different places. The "0 photos" that made
+  it suspicious was just an unphotographed plant.
+- **ABG-2026-0145** *Euphorbia mammillaris* — placed. "1 specimen in 1 location".
+- **Bucket 40** — **two different plants.** *Previously here* shows 0029 moved
+  out to Propagation / Work Area and 0013 gone to In Ground, while 0151 is the
+  plant there now.
+
+**The Bucket 40 question was only unanswerable this morning because nothing
+rendered `plant_location_history`.** MOVE-1 (v1.86.0) surfaced a table the
+trigger had been filling for months, and it answered the question the same day.
 
 ### The name cleanup, in progress
 

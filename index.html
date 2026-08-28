@@ -646,7 +646,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.3.1";
+const APP_VERSION = "2.4.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4824,6 +4824,12 @@ function reportSections() {
       items: state.plants
         .filter((pl) => HEALTH_ATTENTION.includes(pl.health_status))
         .filter((pl) => !openTasksForSubject("plant", pl.id).length)
+        // TODO-3. `next_check_date` used to speak only to the check-in queue,
+        // so completing a task about an unwell plant put it straight back into
+        // "needs attention" with no way to say when to look again. One date,
+        // one meaning: "look at this plant on this day" silences both queues
+        // until the day arrives.
+        .filter((pl) => !(pl.next_check_date && pl.next_check_date > todayISO()))
         .sort((a, b) => (isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0)
           || (a.accession_number || "").localeCompare(b.accession_number || "")), kind: "plant" },
     // RPT-3. Two reasons a specimen wants a look, in one list: a scheduled
@@ -5258,7 +5264,10 @@ function reportRowActions(pl) {
   const open = state.bloomEvents.find((x) => x.plant_id === pl.id && !x.ended_on);
 
   if (v === "plantsAttention" && pl.health_status !== "healthy") out.push(btn("Healthy again", `setPlantHealth('${pl.id}','healthy')`));
-  if (v === "plantsAttention") out.push(btn("To hospital", `moveToHospital('${pl.id}')`));
+  if (v === "plantsAttention") {
+    out.push(btn("To hospital", `moveToHospital('${pl.id}')`));
+    out.push(btn("Check again…", `openModal('recheck',{plantIds:['${pl.id}']})`));
+  }
   if (v === "checkIns") {
     out.push(btn("Checked it", `clearCheckIn('${pl.id}')`));
     out.push(btn("Remind me in 14d", `snoozeCheckIn('${pl.id}', 14)`));
@@ -5877,6 +5886,44 @@ function modalContent() {
       <div class="field-help">Annotates a move that already happened. Use this rather than moving the plant again &mdash; it is already where it belongs.</div>
       <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="saveStayNote('${h.id}')">Save</button>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "recheck") {
+    const ids = data.plantIds || [];
+    const plants = ids.map((id) => state.plants.find((p) => p.id === id)).filter(Boolean);
+    const many = plants.length > 1;
+    const idList = JSON.stringify(ids).replace(/"/g, "&quot;");
+    const opt = (label, days) =>
+      `<button class="btn btn-secondary btn-block" style="margin-bottom:8px;" onclick="setRecheck(${idList}, ${days})">${label}</button>`;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">When should you look again?</h3>
+      <p class="subtle" style="margin:0 0 14px;">${data.from === "task"
+        ? `The task is done, but ${many ? "these are" : "this is"} still marked as needing attention. Pick a date and ${many ? "they stay" : "it stays"} off the list until then.`
+        : `${many ? "These plants stay" : "This plant stays"} off the attention list until the date you pick.`}</p>
+
+      <div class="stack" style="margin-bottom:14px;">
+        ${plants.map((pl) => `
+          <div class="tag-card" style="padding:8px 10px;display:flex;align-items:center;gap:10px;">
+            <div class="plant-list-thumb" style="width:40px;height:40px;flex-shrink:0;">
+              ${plantCoverPhoto(pl) ? photoImg(plantCoverPhoto(pl)) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div class="mono tag-id">${pl.accession_number}</div>
+              <div style="font-size:13px;">${plantDisplayHtml(pl)}</div>
+            </div>
+            <span class="pill-solid ${healthPillClass(pl)}" style="flex-shrink:0;">${HEALTH_LABELS[pl.health_status] || pl.health_status}</span>
+          </div>`).join("")}
+      </div>
+
+      ${opt("In a week", 7)}
+      ${opt("In two weeks", 14)}
+      ${opt("In a month", 30)}
+      <label style="margin-top:6px;">Or a date</label>
+      <input type="date" id="recheck-date" min="${todayISO()}" />
+      <button class="btn btn-primary btn-block" style="margin-top:10px;" onclick="setRecheck(${idList}, 'pick')">Use that date</button>
+      ${/* Not a cancel — an explicit "keep nagging me", which is a real answer. */""}
+      <button class="btn-ghost" style="margin-top:12px;" onclick="closeModal()">Leave ${many ? "them" : "it"} on the list</button>`;
   }
 
   if (type === "movePlant") {
@@ -7980,7 +8027,42 @@ async function toggleTaskDone(taskId) {
       status: done ? "done" : "open",
       completed_at: done ? new Date().toISOString() : null,
     });
-    toast(done ? "Task done" : "Task reopened");
+    await loadAll();
+    // Finishing the task does not make the plant well. Ask when to look again
+    // rather than dropping it back into "needs attention" the moment the task
+    // closes — which is what happened, and made completing one pointless.
+    const stillUnwell = done
+      ? subjectsOfTask(taskId).map((ts) => ts.plant_id)
+          .filter(Boolean)
+          .map((id) => state.plants.find((p) => p.id === id))
+          .filter((pl) => pl && HEALTH_ATTENTION.includes(pl.health_status)
+            && !(pl.next_check_date && pl.next_check_date > todayISO()))
+      : [];
+    if (stillUnwell.length) {
+      openModal("recheck", { plantIds: stillUnwell.map((p) => p.id), from: "task" });
+    } else {
+      toast(done ? "Task done" : "Task reopened");
+    }
+  } catch (e) { toast(e.message, true); }
+}
+
+// Sets the same "look again on" date across one or more specimens.
+async function setRecheck(plantIds, days) {
+  const ids = Array.isArray(plantIds) ? plantIds : [plantIds];
+  let date = null;
+  if (days === "pick") {
+    date = document.getElementById("recheck-date")?.value || null;
+    if (!date) { toast("Choose a date first", true); return; }
+  } else if (days > 0) {
+    const d = new Date(); d.setDate(d.getDate() + days);
+    date = d.toISOString().slice(0, 10);
+  }
+  try {
+    for (const id of ids) {
+      await restPatch("plants", `id=eq.${id}`, { next_check_date: date, updated_at: new Date().toISOString() });
+    }
+    closeModal();
+    toast(date ? `Back on the list ${fmtDate(date)}` : "Cleared the recheck date");
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

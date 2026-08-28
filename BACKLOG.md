@@ -295,6 +295,34 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.4.0
+**TODO-3 — completing a task put the plant straight back on the urgent list.**
+Amanda made a task for each plant needing attention, did the work, marked them
+done, and they reappeared immediately. v2.0.1 made an open task hide a plant
+from the queue — but completing the task removed the only thing keeping it
+quiet, and the plant is still marked urgent because **finishing the task does
+not make it well**.
+
+The missing step was hers exactly: *complete the task and say when to look
+again.*
+
+**One field, one meaning.** `plants.next_check_date` already existed and already
+governed the check-in queue; it now silences **"Plants needing attention"** too.
+"Look at this plant on this day" is one idea, not two.
+
+Completing a task whose subjects are still unwell now asks **when to look
+again** — a week, a fortnight, a month, or a date — showing each plant with its
+photo and current health so the answer is informed. Declining is an explicit
+*"leave it on the list"*, not a cancel, because "keep nagging me" is a real
+answer.
+
+The same **Check again…** action is on every attention row, so a plant can be
+deferred without inventing a task first.
+
+8 assertions: the full make-task → complete → recheck cycle, plus a date in the
+past, a date today, a cleared date, and a healthy plant.
+
+
 ### v2.3.1
 **The Pl@ntNet suggestion was invisible in the lightbox.** The badge rendered
 "PLANTNET" and "— compare →" with a **gap where the species name should be** —

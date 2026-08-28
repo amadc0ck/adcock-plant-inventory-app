@@ -343,6 +343,32 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.93.0
+**SESSION-1 — the access token was only ever refreshed on a full reload.**
+
+`ensureFreshSession()` was called in exactly **one** place: inside `loadAll()`.
+So sitting on a form for longer than the token's life meant every write failed
+with `PGRST303 "JWT expired"` and nothing in the app recovered — the only cure
+was reloading the page. Amanda lost an edit to a species name that way.
+
+Every authenticated request now goes through `authedFetch()`, which refreshes
+before the request when the token is near expiry and, if the server still says
+the JWT is expired, forces a refresh and retries **once**. Headers are built from
+a factory rather than passed in, because a retry that reuses the original headers
+resends the dead token.
+
+**15 call sites**: all five REST helpers plus every Edge Function call
+(`upload-photo`, `drive-oauth-start`, `get-photo` ×2, `identify-plant`,
+`suggest-photo`, `suggest-species`, `photos-picker`). The two `/auth/v1/` calls
+are deliberately NOT wrapped — they mint the token, so wrapping them would
+recurse.
+
+`isExpiredAuth()` matches a 401 or a `PGRST303` / "JWT expired" body, and
+deliberately does **not** match other 4xx: a `23514` constraint failure must
+surface as itself rather than being retried and masked. 8 assertions cover that,
+including Amanda's exact error body.
+
+
 ### v1.92.0
 **You could not pick an existing species when creating a plant from a photo.**
 

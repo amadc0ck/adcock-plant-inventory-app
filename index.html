@@ -583,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.92.0";
+const APP_VERSION = "1.93.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -739,6 +739,58 @@ async function ensureFreshSession() {
 /* ============================================================
    API HELPERS
    ============================================================ */
+/* SESSION-1. `ensureFreshSession()` was called in exactly ONE place — inside
+   loadAll() — so the access token was only refreshed when a full reload
+   happened. Sit on a form for longer than the token's life and every write
+   failed with PGRST303 "JWT expired", with nothing in the app to recover it.
+   Amanda lost an edit to a species name that way, and the same expiry made
+   "Ask Claude" report "no suggestions" because the Edge Function call failed
+   too.
+
+   Every authenticated request now goes through authedFetch(), which refreshes
+   before the request when the token is close to expiry and, if the server still
+   says the JWT is expired, forces a refresh and retries exactly once. Headers
+   are built AFTER the refresh, or the retry would resend the dead token. */
+async function forceRefreshSession() {
+  if (!state.session || !state.session.refresh_token) return false;
+  try {
+    const data = await refreshAccessToken(state.session.refresh_token);
+    state.session = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      email: data.user?.email || state.session.email,
+      expires_at: Date.now() + data.expires_in * 1000,
+    };
+    saveSession(state.session);
+    return true;
+  } catch (e) {
+    clearStoredSession();
+    state.session = null;
+    toast("Your session expired — please sign in again.", true);
+    render();
+    return false;
+  }
+}
+
+function isExpiredAuth(status, bodyText) {
+  return status === 401 || (typeof bodyText === "string" && /PGRST303|JWT expired/i.test(bodyText));
+}
+
+// makeInit is a FUNCTION so the headers are rebuilt with the new token on retry.
+async function authedFetch(url, makeInit) {
+  await ensureFreshSession();
+  let res = await fetch(url, makeInit());
+  if (!res.ok) {
+    const clone = res.clone();
+    let text = "";
+    try { text = await clone.text(); } catch (e) {}
+    if (isExpiredAuth(res.status, text) && await forceRefreshSession()) {
+      res = await fetch(url, makeInit());
+    }
+  }
+  return res;
+}
+
 function apiHeaders(extra = {}) {
   return {
     apikey: state.configKey,
@@ -770,42 +822,42 @@ async function restGetAll(table, query = "") {
 }
 
 async function restGet(table, query = "") {
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}${query}`, { headers: apiHeaders() });
+  const res = await authedFetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}${query}`, () => ({ headers: apiHeaders() }));
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 async function restPost(table, body) {
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}`, {
+  const res = await authedFetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}`, () => ({
     method: "POST",
     headers: apiHeaders({ "Content-Type": "application/json", Prefer: "return=representation" }),
     body: JSON.stringify(body),
-  });
+  }));
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 async function restPatch(table, idFilter, body) {
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?${idFilter}`, {
+  const res = await authedFetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?${idFilter}`, () => ({
     method: "PATCH",
     headers: apiHeaders({ "Content-Type": "application/json", Prefer: "return=representation" }),
     body: JSON.stringify(body),
-  });
+  }));
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 async function restDelete(table, idFilter) {
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?${idFilter}`, {
+  const res = await authedFetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?${idFilter}`, () => ({
     method: "DELETE",
     headers: apiHeaders(),
-  });
+  }));
   if (!res.ok) throw new Error(await res.text());
 }
 async function restUpsert(table, rows, conflictCol = "id") {
   if (!rows || rows.length === 0) return;
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictCol}`, {
+  const res = await authedFetch(`${CONFIG.SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictCol}`, () => ({
     method: "POST",
     headers: apiHeaders({ "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }),
     body: JSON.stringify(rows),
-  });
+  }));
   if (!res.ok) throw new Error(`${table}: ${await res.text()}`);
 }
 
@@ -1078,21 +1130,21 @@ async function uploadPhoto(file, plantId, locationId, notes) {
   if (locationId) fd.append("location_id", locationId);
   if (notes) fd.append("notes", notes);
   if (takenAt) fd.append("taken_at", takenAt);
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/upload-photo`, {
+  const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/upload-photo`, () => ({
     method: "POST",
     headers: { apikey: state.configKey, Authorization: `Bearer ${state.session.access_token}` },
     body: fd,
-  });
+  }));
   const data = await res.json();
   if (!res.ok || !data.success) throw new Error(driveErrorMessage(res.status, data.error || "Upload failed"));
   return data.photo;
 }
 
 async function startDriveConnect() {
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/drive-oauth-start`, {
+  const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/drive-oauth-start`, () => ({
     method: "POST",
     headers: apiHeaders(),
-  });
+  }));
   const data = await res.json();
   if (!data.url) throw new Error("Could not start Google Drive connection");
   window.location.href = data.url;
@@ -1204,9 +1256,8 @@ function ensurePhotoLoaded(driveFileId) {
   if (state.photoUrlCache[driveFileId] || state.photoFetchInFlight.has(driveFileId)) return;
   state.photoFetchInFlight.add(driveFileId);
 
-  fetch(`${CONFIG.SUPABASE_URL}/functions/v1/get-photo?id=${encodeURIComponent(driveFileId)}`, {
-    headers: apiHeaders(),
-  })
+  authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/get-photo?id=${encodeURIComponent(driveFileId)}`,
+    () => ({ headers: apiHeaders() }))
     .then((res) => (res.ok ? res.blob() : Promise.reject(new Error("Failed to load photo"))))
     .then((blob) => {
       const url = URL.createObjectURL(blob);
@@ -6713,11 +6764,11 @@ async function identifyPhoto(photoId) {
   state.identifyingPhotoId = photoId;
   render();
   try {
-    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/identify-plant`, {
+    const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/identify-plant`, () => ({
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ photo_id: photoId }),
-    });
+    }));
     const data = await res.json();
     state.identifyingPhotoId = null;
     if (data.error) {
@@ -6938,11 +6989,11 @@ async function askClaudeAboutPhoto(photoId, opts) {
   const focus = (opts && opts.focus) || "all";
   if (!quiet) { state.suggestingPhotoId = photoId; render(); }
   try {
-    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-photo`, {
+    const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-photo`, () => ({
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ photo_id: photoId, focus }),
-    });
+    }));
     // A function that is not deployed answers with an HTML 404, which is not
     // JSON — and res.json() throwing looked identical to "Claude failed".
     // Reporting the status is the difference between a diagnosis and a shrug.
@@ -6977,11 +7028,11 @@ async function askClaudeAboutSpecies(taxaId) {
   state.suggestingTaxaId = taxaId;
   render();
   try {
-    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-species`, {
+    const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-species`, () => ({
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ taxa_id: taxaId }),
-    });
+    }));
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     state.suggestions = state.suggestions.filter((x) => x.taxa_id !== taxaId);
@@ -8089,12 +8140,12 @@ async function photosPickerCall(action, body) {
   const timer = setTimeout(() => controller.abort(), PHOTOS_IMPORT_TIMEOUT_MS);
   let res;
   try {
-    res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/photos-picker?action=${action}`, {
+    res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/photos-picker?action=${action}`, () => ({
       method: "POST",
       headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body || {}),
       signal: controller.signal,
-    });
+    }));
   } catch (e) {
     if (e.name === "AbortError") {
       const err = new Error(`Timed out after ${Math.round(PHOTOS_IMPORT_TIMEOUT_MS / 1000)}s`);
@@ -8364,7 +8415,7 @@ async function backfillPhotoDates() {
     while (cursor < pending.length && !state.backfill.cancel) {
       const photo = pending[cursor++];
       try {
-        const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/get-photo?id=${encodeURIComponent(photo.drive_file_id)}`, { headers: apiHeaders() });
+        const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/get-photo?id=${encodeURIComponent(photo.drive_file_id)}`, () => ({ headers: apiHeaders() }));
         if (!res.ok) throw new Error("fetch failed");
         const blob = await res.blob();
         // get-photo does not always report image/jpeg, and extractExifDate

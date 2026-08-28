@@ -579,7 +579,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.87.0";
+const APP_VERSION = "1.88.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1783,7 +1783,14 @@ const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Speci
   plant_type: "Type", growth_habit: "Growth habit", mature_size: "Mature size", bloom_season: "Bloom season",
   origin: "Origin", native_range: "Native range", hardy_to: "Hardy to", water_needs: "Water needs",
   frost_tender: "Frost tender" };
-const PHOTO_TYPE_LABELS = { general: "General", bloom: "Bloom", detail: "Detail", condition: "Condition" };
+// `overview` and `progress` are photos OF A PLACE, not of a plant: a wide shot
+// of the wall, or the same section re-shot over months to watch it fill in.
+// Neither will ever get a specimen attached, and nagging about it is noise.
+const PHOTO_TYPE_LABELS = { general: "General", bloom: "Bloom", detail: "Detail", condition: "Condition", overview: "Overview", progress: "Progress" };
+const PLACE_PHOTO_TYPES = ["overview", "progress"];
+function isPlacePhoto(p) {
+  return !!p && PLACE_PHOTO_TYPES.includes(p.photo_type);
+}
 
 // A photo is archival because of where it was taken, not because of a flag.
 function isArchivePhoto(p) {
@@ -1819,10 +1826,14 @@ function photoLocationExpectsPlants(p) {
   return locationHoldsPlants(locationById(p.location_id));
 }
 function photoAwaitsPlant(p) {
-  return !!(p.location_id && !p.plant_id && photoLocationExpectsPlants(p));
+  // The location test alone was not enough. A wide shot of the whole wall taken
+  // while standing at one bucket gets filed to that bucket — a container, which
+  // does expect plants — so it was flagged as a gap forever. The type says what
+  // the photo IS, and travels with it wherever it is filed.
+  return !!(p.location_id && !p.plant_id && !isPlacePhoto(p) && photoLocationExpectsPlants(p));
 }
 function photoIsUntaggedArchiveOrArea(p) {
-  return !!(p.location_id && !p.plant_id && !photoLocationExpectsPlants(p));
+  return !!(p.location_id && !p.plant_id && !isPlacePhoto(p) && !photoLocationExpectsPlants(p));
 }
 
 function locationTypeLabel(t) {
@@ -2259,6 +2270,52 @@ function photoDate(p) {
    places AT ONCE, because a physical individual is in one place. Moving is the
    same individual changing place over time — same accession, same photos.
    ------------------------------------------------------------ */
+/* Every create path grew its own subset of these fields: "New plant" had the
+   full set behind More details, "Add a specimen" had source and date, and
+   "New specimen here" had source only. Same block everywhere now.
+
+   Identification status is included deliberately (Amanda, 2026-08-28). Two
+   paths used to hardcode `confirmed` on the reasoning that a specimen of a
+   known taxon is identified by definition — which is true of Agave americana
+   and false of a catch-all taxon like "unidentified cactus", where the link
+   says "some kind of cactus", not "this species". She chooses per specimen
+   rather than the taxon carrying a flag. */
+function acquisitionFields(prefix, opts) {
+  const o = opts || {};
+  return `
+    <label>Identification</label>
+    <select id="${prefix}-idstatus">
+      ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${k === (o.defaultId || "confirmed") ? "selected" : ""}>${v}</option>`).join("")}
+    </select>
+    <div class="field-help">Linking to a catch-all species like &ldquo;unidentified cactus&rdquo; is not a confirmed identification &mdash; set this to Unidentified and it stays in the queue until you can name it.</div>
+    <label>Acquisition source</label>
+    <select id="${prefix}-acqtype">
+      <option value="">&mdash; Unspecified &mdash;</option>
+      ${Object.entries(ACQ_SOURCE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+    </select>
+    <label>Where from</label>
+    <input id="${prefix}-acqname" placeholder="e.g. Ruth Bancroft Garden" />
+    <label>Date acquired</label>
+    <input type="date" id="${prefix}-dateacquired" />
+    <label>Health</label>
+    <select id="${prefix}-health">
+      ${Object.entries(HEALTH_LABELS).map(([k, v]) => `<option value="${k}" ${k === "healthy" ? "selected" : ""}>${v}</option>`).join("")}
+    </select>`;
+}
+
+// Read back whatever acquisitionFields() rendered. Defensive on every id: a
+// form that omits the block must not throw.
+function readAcquisitionFields(prefix) {
+  const v = (id) => { const el = document.getElementById(`${prefix}-${id}`); return el && el.value ? el.value : null; };
+  return {
+    identification_status: v("idstatus") || "confirmed",
+    acquisition_source_type: v("acqtype"),
+    acquisition_source_name: v("acqname"),
+    date_acquired: v("dateacquired"),
+    health_status: v("health") || "healthy",
+  };
+}
+
 function locationHistoryForPlant(plantId) {
   // The trigger fires on ANY update to a plant, not only a location change, so
   // the table holds redundant no-op stays: ABG-2026-0137 has two rows both
@@ -3914,6 +3971,11 @@ function screenLocationDetail() {
       ${(() => {
         // The other side of the same table: standing at Bucket 32, what left it
         // and where did it go.
+        // v1.86.0 shipped this without asking whether the location expects
+        // plants at all. Front Yard is an area — plants live in the containers
+        // inside it — so "Previously here" was noise on exactly the screens
+        // that had already opted out of plant tracking.
+        if (!locationHoldsPlants(l)) return "";
         const gone = plantsPreviouslyAt(l.id);
         if (!gone.length) return "";
         return `
@@ -5913,15 +5975,7 @@ function modalContent() {
           <label>Botanical name</label>
           <input id="nsh-newname" placeholder="e.g. Echeveria elegans" />
         </div>
-        <label>Acquisition source</label>
-        <select id="nsh-acqtype">
-          <option value="">— Unspecified —</option>
-          ${Object.entries(ACQ_SOURCE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
-        </select>
-        <label>Health</label>
-        <select id="nsh-health">
-          ${Object.entries(HEALTH_LABELS).map(([k, v]) => `<option value="${k}" ${k === "healthy" ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
+        ${acquisitionFields("nsh")}
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Create here</button>
       </form>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
@@ -5938,23 +5992,13 @@ function modalContent() {
       <form id="new-specimen-form">
         <label>Location *</label>
         <select id="ns-location" required>${locationSelectOptions(null)}</select>
-        <label>Acquisition source</label>
-        <select id="ns-acqtype">
-          <option value="">— Unspecified —</option>
-          ${Object.entries(ACQ_SOURCE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
-        </select>
         <label>Propagated from</label>
         <select id="ns-parent">
           <option value="">— Not a propagation —</option>
           ${siblings.map((sp) => `<option value="${sp.id}">${sp.accession_number}${sp.location_id && locationById(sp.location_id) ? " — " + escapeHtml(locationById(sp.location_id).name) : ""}</option>`).join("")}
         </select>
         <div class="field-help">Pick the specimen this one was taken off, if it was propagated. It will nest underneath that plant.</div>
-        <label>Date acquired</label>
-        <input type="date" id="ns-dateacquired" />
-        <label>Health</label>
-        <select id="ns-health">
-          ${Object.entries(HEALTH_LABELS).map(([k, v]) => `<option value="${k}" ${k === "healthy" ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
+        ${acquisitionFields("ns")}
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Create specimen</button>
       </form>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
@@ -8465,7 +8509,12 @@ function render() {
   measureStickyOffset();
   wireModalForms();
   restoreFocus(focusSnapshot);
+  // Scroll was preserved when the view stayed the same and simply left alone
+  // when it changed — so arriving somewhere new kept the previous page's Y
+  // offset. Scrolled far down the Plants list, opening a species landed you at
+  // the bottom of a shorter page with the header off screen.
   if (sameView) restoreScroll(scrollSnapshot);
+  else window.scrollTo(0, 0);
   lastRenderKey = currentViewKey();
   observeLazyPhotos();
 }
@@ -8847,9 +8896,9 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
         const [created] = await restPost("plants", {
           taxa_id: taxaId,
           location_id: state.modal.data.locationId,
-          acquisition_source_type: document.getElementById("nsh-acqtype").value || null,
-          health_status: document.getElementById("nsh-health").value,
-          identification_status: taxaId ? "confirmed" : "unidentified",
+          ...readAcquisitionFields("nsh"),
+          // No taxon at all still means unidentified, whatever the dropdown says.
+          ...(taxaId ? {} : { identification_status: "unidentified" }),
           collection_category: "current",
           status: "active",
         });
@@ -8871,13 +8920,11 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
         const body = {
           taxa_id: taxonId,
           location_id: document.getElementById("ns-location").value || null,
-          acquisition_source_type: document.getElementById("ns-acqtype").value || null,
           parent_plant_id: parentId,
-          date_acquired: document.getElementById("ns-dateacquired").value || null,
-          health_status: document.getElementById("ns-health").value,
-          // A specimen of a known taxon is identified by definition — the link
-          // IS the identification. See REFERENCE section 3.
-          identification_status: "confirmed",
+          // Was hardcoded `confirmed` on the reasoning that a specimen of a
+          // known taxon is identified by definition. True of a real species,
+          // false of a catch-all like "unidentified cactus" — so she picks.
+          ...readAcquisitionFields("ns"),
           collection_category: "current",
           status: "active",
         };

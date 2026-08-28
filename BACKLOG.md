@@ -247,6 +247,43 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.88.0
+Four of the six things Amanda raised on 28 Aug. Batch entry and the render
+performance are queued behind these — see Ready now.
+
+**Landing at the bottom of a species page.** `render()` restored scroll when the
+view stayed the same and **left it alone when the view changed**, so arriving
+somewhere new inherited the previous page's Y offset. Scrolled down the Plants
+list, opening a species put you at the bottom of a shorter page. Resets to top
+on a view change now.
+
+**A catch-all species no longer forces "confirmed".** Two create paths hardcoded
+`identification_status: "confirmed"` on the reasoning that a specimen of a known
+taxon is identified by definition. True of *Agave americana*; false of
+"unidentified cactus", where the link means "some kind of cactus". **Amanda
+chose per-specimen control over a taxon-level flag** — so no schema change, and
+the identification dropdown is now on every create form.
+
+**`overview` and `progress` photo types.** The exemption logic already existed
+but keyed off the LOCATION, so a wide shot of the whole wall taken while
+standing at one bucket was filed to that bucket — a container, which does expect
+plants — and flagged as a gap forever. The type travels with the photo wherever
+it is filed. Both types are exempt from "needs a plant" and from the
+archive/area bucket.
+
+**"Previously here" appeared on locations that opted out of plants.** A bug
+introduced in v1.86.0 — it was never gated on `locationHoldsPlants`, so Front
+Yard, an area whose plants live in the containers inside it, was showing a
+plant-history list. Gated.
+
+**Acquisition fields were three different subsets.** "New plant" had the full
+set behind More details, "Add a specimen" had source and date, "New specimen
+here" had source only. One `acquisitionFields()` / `readAcquisitionFields()`
+pair now, used by both specimen paths.
+
+13 assertions on the photo-type gating, run under node.
+
+
 ### v1.87.0
 **Annotate a move that already happened.** Amanda reviewed the seven moves made
 after 27 Aug 5PM and confirmed **all were intentional** — so there was nothing to

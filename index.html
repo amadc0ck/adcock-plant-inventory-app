@@ -279,6 +279,8 @@
   .stay-when{font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);margin-top:2px;}
   .timeline-move{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.3px;color:var(--moss-dim);display:flex;align-items:center;gap:6px;margin:-4px 0 10px 2px;}
   .timeline-move svg{width:12px;height:12px;flex-shrink:0;}
+  .stay-edit{padding:0;flex-shrink:0;opacity:0.45;}
+  .stay-edit:hover{opacity:1;}
   .stay-note{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.4;}
   .assigned-row{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:9px 11px;}
   .assigned-row svg{width:13px;height:13px;flex-shrink:0;}
@@ -577,7 +579,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.86.1";
+const APP_VERSION = "1.87.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3618,6 +3620,7 @@ function screenPlantDetail() {
                       <div class="mono stay-when">${cur && cur.started_at ? `since ${escapeHtml(fmtDate(cur.started_at))}` : "now"}</div>
                       ${cur && cur.notes ? `<div class="stay-note">${escapeHtml(cur.notes)}</div>` : ""}
                     </div>
+                    ${cur ? `<button class="btn-ghost icon-btn stay-edit" title="${cur.notes ? "Edit this note" : "Say why it moved here"}" onclick="openModal('stayNote',{stayId:'${cur.id}'})">${icon("edit")}</button>` : ""}
                   </div>` : ""}
                 ${past.map((h) => `
                   <div class="stay">
@@ -3627,6 +3630,7 @@ function screenPlantDetail() {
                       <div class="mono stay-when">${escapeHtml(stayRange(h))}</div>
                       ${h.notes ? `<div class="stay-note">${escapeHtml(h.notes)}</div>` : ""}
                     </div>
+                    <button class="btn-ghost icon-btn stay-edit" title="${h.notes ? "Edit this note" : "Say why it moved"}" onclick="openModal('stayNote',{stayId:'${h.id}'})">${icon("edit")}</button>
                   </div>`).join("")}
               </div>
               ${!past.length ? `<p class="subtle" style="margin:8px 0 0;font-size:12px;">No moves recorded yet &mdash; this is the only place it has lived.</p>` : ""}
@@ -4964,6 +4968,21 @@ function locationSelectOptions(selectedId) {
 function modalContent() {
   if (!state.modal) return "";
   const { type, data } = state.modal;
+
+  if (type === "stayNote") {
+    const h = state.plantLocationHistory.find((x) => x.id === data.stayId);
+    if (!h) return `<p class="subtle">That stay no longer exists.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
+    const loc = locationById(h.location_id);
+    const plt = state.plants.find((x) => x.id === h.plant_id);
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Why this move?</h3>
+      <p class="subtle" style="margin:0 0 14px;">${plt ? `${escapeHtml(plt.accession_number)} &middot; ` : ""}${loc ? escapeHtml(locationPath(loc)) : "Unknown location"}<br>${escapeHtml(stayRange(h))}</p>
+      <textarea id="stay-note" rows="3" placeholder="e.g. consolidating the wall collection">${escapeHtml(h.notes || "")}</textarea>
+      <div class="field-help">Annotates a move that already happened. Use this rather than moving the plant again &mdash; it is already where it belongs.</div>
+      <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="saveStayNote('${h.id}')">Save</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
+  }
 
   if (type === "movePlant") {
     const pl = state.plants.find((x) => x.id === data.plantId);
@@ -7075,6 +7094,20 @@ function setMoveTarget(locationId) {
   state.locPickerNewOpen = false;
   if (locationId) noteRecentLocation(locationId);
   render();
+}
+
+// A move made before the Move action existed — or made in a hurry — has no
+// note. Re-running it through the Move modal is not the answer: the plant is
+// already where it belongs, so that would record a fake round trip. The stay
+// itself is what needs annotating.
+async function saveStayNote(stayId) {
+  const note = (document.getElementById("stay-note").value || "").trim();
+  try {
+    await restPatch("plant_location_history", `id=eq.${stayId}`, { notes: note || null });
+    closeModal();
+    toast(note ? "Note saved" : "Note cleared");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
 }
 
 async function confirmMovePlant(plantId) {

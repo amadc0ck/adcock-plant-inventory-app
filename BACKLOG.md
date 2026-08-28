@@ -247,6 +247,26 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.87.0
+**Annotate a move that already happened.** Amanda reviewed the seven moves made
+after 27 Aug 5PM and confirmed **all were intentional** — so there was nothing to
+roll back. What she wanted was to capture them properly, and the obvious route
+was wrong: re-running an intentional move through the Move action would either
+be blocked (the button disables when the destination is already the current
+location) or record a **fake round trip**. The plant is already where it belongs.
+
+What was actually missing is the *note*. All seven history rows had
+`notes = null`, because the old edit path had nowhere to put one and the Move
+action did not exist yet.
+
+So: a pencil on every stay in "Where it has lived" opens a small modal writing
+straight to `plant_location_history.notes`. It annotates history rather than
+manufacturing new history — which is the distinction that matters, and one the
+Move action alone could not make.
+
+**Rule worth keeping: a move that already happened is edited, not repeated.**
+
+
 ### v1.86.1
 **The trigger fires on any plant update, not just a location change.** Found
 while helping Amanda roll back a batch of moves, by reading her actual rows:

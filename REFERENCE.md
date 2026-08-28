@@ -231,6 +231,10 @@ Auto-populated by trigger. `id, plant_id FK, location_id FK, started_at, ended_a
 
 **A move is not a new specimen.** SPECIES-2 split plants recorded in several places *at once*, because a physical individual is in exactly one place. A move is the same individual changing place *over time*: same accession number, same photos, same care notes, one more history row. The two cases look alike and are not.
 
+**The trigger fires on ANY update to a plant, not just a location change** (confirmed against live data, v1.86.1). One move can leave two rows, and two rows 0.2ms apart have been observed. `locationHistoryForPlant()` collapses **consecutive** same-location rows into one stay — consecutive only, because leaving and coming back is real history that must stay visible.
+
+**Annotating a past move is editing, not re-moving** (v1.87.0). If a move was made before the Move action existed, the fix is the note, not the move: the plant is already in the right place, so repeating it records a fake round trip — and the Move modal disables its button when the destination already matches. The pencil on each stay writes to `plant_location_history.notes` directly.
+
 **Deduplicate when reading by location.** A plant can live somewhere, leave, and come back, producing two stays at the same location. `plantsPreviouslyAt()` keeps only the most recent per plant — without that the "Previously here" list reads as two different plants.
 
 ### `accession_counters`

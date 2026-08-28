@@ -298,6 +298,33 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.97.0
+**Settings had become a wall.** Six full-width cards, every one expanded, most of
+them set once and never touched again.
+
+Now: **Google Drive stays open and first** — its access expires roughly weekly,
+so it is the only thing here she has to come back and act on. Everything else
+collapses into named sections: **Your data**, **Preferences** (check-in interval
+and the dropdown lists), **Account**.
+
+**"Photo capture dates" is gone unless there is something to repair.** Amanda's
+words: "I don't even know what that is there." Fair — it was a permanent card
+reading "Every photo has a capture date", explaining a problem that no longer
+exists. **A finished repair job is not a setting.** It now appears only when
+photos are actually missing dates or a job is running, with a count badge and
+copy that explains what the repair *does for her* — puts a photo in the right
+place on a plant's timeline — rather than describing EXIF.
+
+**Removed a note that had been false for months:** "sessions aren't remembered
+across page reloads yet — you'll need to sign in again if you refresh."
+`loadStoredSession()` has restored the session on boot since session persistence
+shipped.
+
+The Data section also now says plainly what a restore will and will not do: it
+adds and updates by id, never deletes, and **cannot bring back a dropped
+column** — which matters this week.
+
+
 ### v1.96.0
 **The JSON backup could not run at all** — `column accession_counters.id does
 not exist`. Found at the worst possible moment: Amanda was taking the backup

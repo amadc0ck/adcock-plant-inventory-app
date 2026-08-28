@@ -281,6 +281,15 @@
   .timeline-move svg{width:12px;height:12px;flex-shrink:0;}
   .ident-badge{margin-top:6px;padding:7px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;color:var(--ink);line-height:1.4;}
   .ident-source{display:block;font-size:9.5px;color:var(--blue);text-transform:uppercase;letter-spacing:0.4px;}
+  /* Settings sections. Collapsed by default so the page is a short menu rather
+     than a wall — most of it is set once and never touched again. */
+  .set-section{padding:0;overflow:hidden;margin-bottom:0;}
+  .set-head{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;padding:15px 16px;cursor:pointer;color:var(--cream);font-family:inherit;}
+  .set-chevron{display:flex;flex-shrink:0;opacity:0.5;transition:transform .15s;}
+  .set-chevron svg{width:16px;height:16px;}
+  .set-section.is-open .set-chevron{transform:rotate(90deg);opacity:0.9;}
+  .set-body{padding:0 16px 16px;}
+  .set-section + .set-section{margin-top:10px;}
   .batch-row{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:9px 11px;}
   .batch-qty{width:62px;flex-shrink:0;margin:0;padding:7px 8px;text-align:center;}
   .stay-edit{padding:0;flex-shrink:0;opacity:0.45;}
@@ -583,7 +592,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.96.0";
+const APP_VERSION = "1.97.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -672,6 +681,7 @@ const state = {
   taxaSearch: "",
   taxaOnlySuggestions: false,
   taxaOnlyMissingParts: false,
+  settingsOpen: {},       // which Settings sections are expanded
   inboxLimit: 20,
   inboxSort: "newest",
   inboxPageSize: 20,
@@ -5155,12 +5165,34 @@ function screenGallery() {
   ${bulkBar}`;
 }
 
+function settingsSection(key, title, sub, body) {
+  const open = !!state.settingsOpen[key];
+  return `
+    <div class="surface set-section ${open ? "is-open" : ""}">
+      <button class="set-head" onclick="state.settingsOpen['${key}'] = !state.settingsOpen['${key}'];render()">
+        <div style="flex:1;min-width:0;text-align:left;">
+          <div style="font-weight:600;font-size:14.5px;">${title}</div>
+          ${sub ? `<div class="subtle" style="font-size:12.5px;margin-top:2px;">${sub}</div>` : ""}
+        </div>
+        <span class="set-chevron">${icon("chevronRight")}</span>
+      </button>
+      ${open ? `<div class="set-body">${body()}</div>` : ""}
+    </div>`;
+}
+
 function screenSettings() {
   const connected = !!state.driveToken;
+  // Only photos that still lack a capture date AND could get one from Drive.
+  const missingDates = state.photos.filter((p) => !p.taken_at && p.drive_file_id).length;
+  const b = state.backfill;
+
   return `
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 20px;">Settings</h2>
+
+      ${/* Drive stays open and first: its access expires about weekly, so it is
+           the one thing here she has to come back and act on. */""}
       <div class="surface" style="padding:16px;">
         <div class="row">
           <div class="connect-status">
@@ -5169,50 +5201,49 @@ function screenSettings() {
           </div>
           <button class="btn btn-primary btn-sm" onclick="handleConnectDrive()">${connected ? "Reconnect" : "Connect"}</button>
         </div>
+        ${connected ? "" : `<p class="subtle" style="margin-top:12px;line-height:1.5;">Photos cannot upload or display until this is connected.</p>`}
         <p class="subtle" style="margin-top:12px;line-height:1.5;">
-          Drive access can expire roughly every 7 days while this app is in personal-use (unverified) mode.
-          If uploads start failing, come back here and tap Reconnect — takes about 10 seconds.
+          Access expires roughly every 7 days while this app is in personal-use (unverified) mode. If uploads start failing, tap Reconnect &mdash; about 10 seconds.
         </p>
       </div>
+
       <div class="divider"></div>
-      ${/* RPT-3. The interval that decides when an unscheduled specimen goes
-           stale. A per-plant next_check_date overrides it. */""}
-      <div class="surface" style="padding:16px;">
-        <div style="font-weight:600;font-size:14.5px;">Check-in interval</div>
+
+      ${settingsSection("data", "Your data", "Export a backup, or restore one", () => `
+        <p class="subtle" style="margin:0 0 12px;line-height:1.5;">
+          The full backup is the only copy of your collection you hold outside Supabase. Take one before any change you cannot undo.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          <button class="btn btn-accent btn-sm" onclick="exportFullBackup()">Export full backup (JSON)</button>
+          <button class="btn btn-secondary btn-sm" onclick="exportPlantsCsv()">Export plants (CSV)</button>
+        </div>
+        <div style="margin-top:16px;">
+          <label style="margin-top:0;">Restore from a backup</label>
+          <input type="file" id="import-backup-file" accept="application/json" style="padding:8px;" />
+          <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="handleImportBackup()">Import</button>
+          <p class="subtle" style="margin-top:8px;line-height:1.5;">
+            Matches existing records by id and updates them rather than duplicating, so it is safe to re-run. It <strong>adds and updates only</strong> &mdash; it never deletes, and it cannot bring back a dropped column. Best for restoring onto an empty or partly empty database, not for merging two datasets that grew separately.
+          </p>
+        </div>`)}
+
+      ${settingsSection("prefs", "Preferences", "Check-in interval and the dropdown lists", () => `
+        ${/* RPT-3. The interval that decides when an unscheduled specimen goes
+             stale. A per-plant next_check_date overrides it. */""}
+        <div style="font-weight:600;font-size:13.5px;">Check-in interval</div>
         <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
-          A specimen with no check-in date of its own is flagged when nothing has been
-          photographed for this many days. Currently ${countLabel(plantsNeedingCheckIn().length, "plant is", "plants are")} due.
+          A specimen with no check-in date of its own is flagged when nothing has been photographed for this many days. Currently ${countLabel(plantsNeedingCheckIn().length, "plant is", "plants are")} due.
         </p>
         <div style="display:flex;gap:10px;align-items:center;">
           <input type="number" id="setting-checkin" min="1" max="365" value="${checkInIntervalDays()}" style="max-width:110px;" />
           <span class="subtle" style="font-size:12.5px;">days</span>
           <button class="btn btn-secondary btn-sm" onclick="saveAppSetting('check_in_interval_days', document.getElementById('setting-checkin').value)">Save</button>
         </div>
-      </div>
-      <div class="divider"></div>
-      ${(() => {
-        const missing = state.photos.filter((p) => !p.taken_at && p.drive_file_id).length;
-        const b = state.backfill;
-        return `
-        <div class="surface" style="padding:16px;">
-          <div style="font-weight:600;font-size:14.5px;">Photo capture dates</div>
-          <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
-            Photos uploaded before the capture date was being stored show their upload date instead. Their EXIF is still intact in Drive — this reads it back.
-          </p>
-          ${b ? `
-            <div class="mono" style="font-size:12px;">${b.done} of ${b.total} · ${b.found} dated${b.failed ? ` · ${b.failed} unreadable` : ""}</div>
-            <button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="cancelBackfill()">Stop</button>`
-          : missing === 0 ? `<p class="subtle" style="margin:0;">Every photo has a capture date.</p>`
-          : `
-            <div class="mono subtle" style="font-size:12px;">${countLabel(missing, "photo", "photos")} without one</div>
-            <button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="backfillPhotoDates()">Read dates from Drive</button>`}
-        </div>
-        <div class="divider"></div>`;
-      })()}
-      <div class="surface" style="padding:16px;">
-        <div style="font-weight:600;font-size:14.5px;">Dropdown lists</div>
+
+        <div class="divider" style="margin:18px 0;"></div>
+
+        <div style="font-weight:600;font-size:13.5px;">Dropdown lists</div>
         <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
-          Add and rename the options offered when editing a species. Values are permanent once created — only the label and the order change — so nothing already recorded can be orphaned.
+          The options offered when editing a species. Values are permanent once created &mdash; only the label and the order change &mdash; so nothing already recorded can be orphaned.
         </p>
         ${state.listOptions.length === 0 ? `<p class="subtle" style="margin:0 0 12px;">Using the built-in lists. They become editable once the <span class="mono">list_options</span> table exists.</p>` : ""}
         <div class="stack">
@@ -5225,45 +5256,36 @@ function screenSettings() {
               <span class="action-chevron">${icon("chevronRight")}</span>
             </button>`;
           }).join("")}
-        </div>
-      </div>
+        </div>`)}
 
-      <div class="divider"></div>
-      <div class="surface" style="padding:16px;">
-        <div style="font-weight:600;font-size:14.5px;">Signed in as</div>
-        <div class="subtle" style="margin-top:4px;">${state.session?.email || ""}</div>
-        <button class="btn btn-danger btn-sm" style="margin-top:14px;" onclick="logout()">Sign out</button>
-      </div>
-      <div class="divider"></div>
-      <div class="surface" style="padding:16px;">
-        <div style="font-weight:600;font-size:14.5px;">Data</div>
-        <p class="subtle" style="margin-top:6px;line-height:1.5;">
-          Export a full backup any time — it's the only copy of your data you hold outside Supabase.
-        </p>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-          <button class="btn btn-secondary btn-sm" onclick="exportFullBackup()">Export full backup (JSON)</button>
-          <button class="btn btn-secondary btn-sm" onclick="exportPlantsCsv()">Export plants (CSV)</button>
-        </div>
-        <div style="margin-top:14px;">
-          <label style="margin-top:0;">Import backup (JSON)</label>
-          <input type="file" id="import-backup-file" accept="application/json" style="padding:8px;" />
-          <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="handleImportBackup()">Import</button>
-          <p class="subtle" style="margin-top:8px;line-height:1.5;">
-            Safe to re-run — matches existing records by ID and updates them rather than duplicating. Best used to restore onto an empty or partially-empty database, not to merge two separately-grown datasets.
+      ${/* A finished repair job is not a setting. This was a permanent card
+           reading "Every photo has a capture date" — a thing to read past
+           forever, explaining a problem that no longer exists. It appears only
+           when there is something to repair, or while one is running. */""}
+      ${(missingDates > 0 || b) ? `
+        <div class="surface" style="padding:16px;">
+          <div style="font-weight:600;font-size:14.5px;">Photo capture dates ${b ? "" : `<span class="pill pill-terracotta" style="vertical-align:middle;">${missingDates}</span>`}</div>
+          <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
+            ${countLabel(missingDates, "photo shows", "photos show")} the date ${missingDates === 1 ? "it was" : "they were"} uploaded rather than the date the picture was taken, because ${missingDates === 1 ? "it was" : "they were"} added before the app stored capture dates. The original date is still in the file in Drive; this reads it back, which puts ${missingDates === 1 ? "it" : "them"} in the right place on a plant's timeline.
           </p>
+          ${b ? `
+            <div class="mono" style="font-size:12px;">${b.done} of ${b.total} · ${b.found} dated${b.failed ? ` · ${b.failed} unreadable` : ""}</div>
+            <button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="cancelBackfill()">Stop</button>`
+          : `<button class="btn btn-secondary btn-sm" onclick="backfillPhotoDates()">Read dates from Drive</button>`}
         </div>
-      </div>
-      <p class="subtle" style="margin-top:20px;line-height:1.5;">
-        Note: sessions aren't remembered across page reloads yet — you'll need to sign in again if you refresh. Expected for now.
-      </p>
-      <p class="mono subtle" style="margin-top:24px;opacity:0.5;">v${APP_VERSION} · ${APP_UPDATED}</p>
+        <div class="divider"></div>` : ""}
+
+      ${settingsSection("account", "Account", state.session?.email || "", () => `
+        <button class="btn btn-danger btn-sm" onclick="logout()">Sign out</button>`)}
+
+      ${/* The note that used to live here said sessions are not remembered
+           across reloads. They have been since session persistence shipped —
+           loadStoredSession() restores one on boot. */""}
+      <p class="mono subtle" style="margin-top:24px;opacity:0.5;">v${APP_VERSION} &middot; ${APP_UPDATED}</p>
     </div>
   </div>`;
 }
 
-/* ============================================================
-   MODALS
-   ============================================================ */
 function locationSelectOptions(selectedId) {
   return `<option value="">— None —</option>` + locationOptionList().map((o) =>
     `<option value="${o.id}" ${selectedId === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`

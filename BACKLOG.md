@@ -295,6 +295,35 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.4.1
+**The Pl@ntNet comparison opened behind the photograph.** `.modal-backdrop` was
+`z-index: 50` and `.lightbox-backdrop` was `80`, so any modal opened from inside
+the lightbox rendered underneath it. The compare badge is *in* the lightbox, so
+it could never be seen.
+
+**LAYER-1: the stacking order is now written down** in the stylesheet, because it
+was ad-hoc and two of the numbers were wrong:
+
+```
+ 28  bulk action bar        80  lightbox
+ 30  bottom nav             90  modal   — ALWAYS above the lightbox
+ 60  task banner           100  reference-image overlay
+                           110  hover card
+                           120  toast   — errors readable over anything
+```
+
+**Two latent bugs found by writing it out.** The reference-image overlay set
+`z-index: 60` — *below* the lightbox — so enlarging a Pl@ntNet reference photo
+would have opened it behind the picture too. And the toast sat at 100, level
+with that overlay, so an error raised while it was open could have been hidden
+underneath. Both are the same fault as the modal: a number picked because it
+worked at the time, against a scale nobody had written down.
+
+Modals stay **above** the lightbox rather than closing it, deliberately: several
+are opened from inside it, and the photograph behind is the thing you are
+comparing against.
+
+
 ### v2.4.0
 **TODO-3 — completing a task put the plant straight back on the urgent list.**
 Amanda made a task for each plant needing attention, did the work, marked them

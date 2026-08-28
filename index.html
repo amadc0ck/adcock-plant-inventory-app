@@ -583,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.95.2";
+const APP_VERSION = "1.96.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -810,13 +810,19 @@ function apiHeaders(extra = {}) {
 // unique tiebreaker is appended: offset paging over a non-unique sort can skip
 // or repeat rows across page boundaries when values tie.
 const PAGE_SIZE = 1000;
-async function restGetAll(table, query = "") {
+// Paging needs a stable tiebreaker or rows can repeat or vanish between pages,
+// and `id` was hardcoded as that key. `accession_counters` is keyed on `year`
+// and has no `id` at all, so the full JSON backup — the one thing standing
+// between an irreversible column drop and losing data — failed outright with
+// `column accession_counters.id does not exist`. The key is a parameter now.
+async function restGetAll(table, query = "", key = "id") {
   const out = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const sep = query.includes("?") ? "&" : (query ? "&" : "?");
     let q = `${query}${sep}limit=${PAGE_SIZE}&offset=${offset}`;
-    if (!/[?&]order=/.test(q)) q += "&order=id.asc";
-    else if (!/order=[^&]*\bid\./.test(q)) q = q.replace(/([?&]order=[^&]*)/, "$1,id.asc");
+    const hasKey = new RegExp(`order=[^&]*\\b${key}\\.`).test(q);
+    if (!/[?&]order=/.test(q)) q += `&order=${key}.asc`;
+    else if (!hasKey) q = q.replace(/([?&]order=[^&]*)/, `$1,${key}.asc`);
     const page = await restGet(table, q);
     out.push(...page);
     if (page.length < PAGE_SIZE) return out;
@@ -895,7 +901,8 @@ async function exportFullBackup() {
       restGetAll("photo_plants", "?select=*"),
       restGetAll("plant_locations", "?select=*"),
       restGetAll("photo_locations", "?select=*"),
-      restGetAll("accession_counters", "?select=*"),
+      // Keyed on `year`, not `id`.
+      restGetAll("accession_counters", "?select=*", "year"),
       restGetAll("care_notes", "?select=*"),
       restGetAll("taxa", "?select=*"),
       // Trigger-populated audit trail of every plant move. Its absence meant a
@@ -1323,7 +1330,11 @@ async function loadAll() {
       // migration and simply has no tasks to show.
       restGetAll("tasks", "?select=*&order=created_at.desc").catch(() => null),
       restGetAll("task_subjects", "?select=*").catch(() => null),
-      restGetAll("app_settings", "?select=*").catch(() => null),
+      // Keyed on `key`, not `id`. This was failing on every load since v1.84.0
+      // and the .catch() swallowed it, so state.appSettings was always {} —
+      // the check-in interval silently fell back to 14 no matter what Settings
+      // said, and Settings showed 14 back because it reads the same empty map.
+      restGetAll("app_settings", "?select=*", "key").catch(() => null),
       // MOVE-1. The trigger has been writing this since the schema was built and
       // NOTHING has ever read it — it was fetched in exactly one place, the JSON
       // backup, so "where did this plant used to live?" was answerable only by

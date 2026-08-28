@@ -298,6 +298,31 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.96.0
+**The JSON backup could not run at all** — `column accession_counters.id does
+not exist`. Found at the worst possible moment: Amanda was taking the backup
+that stands between an irreversible column drop and losing data.
+
+`restGetAll()` hardcoded `id` as its paging tiebreaker. Paging needs a stable
+key or rows repeat or vanish between pages, but **two tables have no `id`**:
+`accession_counters` is keyed on `year` and `app_settings` on `key`. The key is
+a parameter now, and every one of the 17 tables it is called with was audited —
+those two are the only ones.
+
+**The second one had been failing silently since v1.84.0.** `app_settings` is
+loaded with `.catch(() => null)`, so the error was swallowed and
+`state.appSettings` was **always `{}`** — the check-in interval fell back to 14
+on every load no matter what was saved, and Settings displayed 14 back because
+it reads the same empty map. Saving worked; loading never did.
+
+**The defensive catch that made the app resilient to a missing table also hid a
+bug for twelve versions.** A `.catch()` that swallows every error cannot tell
+"this table does not exist yet" from "this query is malformed".
+
+7 assertions on the paging keys, including that an existing `order=` clause
+still gets the tiebreaker appended and never duplicated.
+
+
 ### v1.95.2
 **Batch entry could not create a new species** — `ensureTaxonForName is not
 defined`. It was defined **inside** `wireModalForms()`, so it existed only while

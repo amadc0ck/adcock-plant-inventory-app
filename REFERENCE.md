@@ -88,6 +88,29 @@ Two shapes the composition must handle, both present in the real data:
 
 This replaced a comparison against `botanical_name` alone, which had become **actively wrong** once composition landed: a taxon built from parts often has no `botanical_name` at all, so typing an existing species name matched nothing and created a duplicate species record. Any future "does this already exist" check must go through `findTaxonByName()` rather than comparing a column.
 
+**Vocabulary columns are CHECK-constrained in the database, whatever this file used to say.** PD-4 recorded `health_status` as "free text standardized by the dropdown, so no migration" — that is **wrong**, and it shipped a broken tier: `plants_health_status_check` rejected `urgent`, so Move to Plant Hospital, the edit dropdown and Claude's health suggestion all failed with `23514` until the constraint was widened.
+
+**Adding a value to any of these lists is a schema change.** `health_status`, and by the same pattern `photo_type`, `status`, `identification_status`, `collection_category`. Widen the constraint in the same ship as the code, inside a transaction so a failed `add` cannot leave the table unconstrained:
+
+```sql
+begin;
+alter table plants drop constraint if exists plants_health_status_check;
+alter table plants add constraint plants_health_status_check
+  check (health_status in ('healthy','watch','urgent','recovery','unknown'));
+commit;
+```
+
+**Probing PostgREST does not reveal constraints.** The column-existence probe (see the schema-state notes in BACKLOG) proves a column resolves; it says nothing about what values it accepts, because an anonymous read cannot see `pg_constraint`. Before adding a value to a vocabulary, ask for:
+
+```sql
+select rel.relname, con.conname, pg_get_constraintdef(con.oid)
+from pg_constraint con
+join pg_class rel on rel.oid = con.conrelid
+join pg_namespace n on n.oid = rel.relnamespace
+where n.nspname = 'public' and con.contype = 'c'
+order by rel.relname;
+```
+
 **Health tiers are branched on by exact value, in three places** (v1.83.0, PD-4). `healthy` / `watch` / `urgent` / `recovery` / `unknown`. The branching is centralised in `needsAttention()`, `isUrgent()` and `healthPillClass()` — before that the test was an inline expression copied into each screen, and adding the `urgent` tier meant an urgent plant was **missing from the work queue** because the third copy, `plantsAttention`, was not on anyone's list. `moveToHospital()` sets `urgent`. Add a tier by editing `HEALTH_LABELS` and `HEALTH_ATTENTION` only.
 
 **Check-ins are derived, not stored** (RPT-3, v1.84.0). `plants.next_check_date` is the only stored part, and it is an override. `checkInStatus()` returns due/not-due for one specimen from two independent rules: an explicit `next_check_date` that has arrived, or nothing photographed for longer than `check_in_interval_days` (default 14). The explicit date wins whenever it is set. Two exclusions matter and are easy to get wrong: a **non-active** specimen is not a chore, and a **never-photographed** one is excluded here — it belongs to the "missing photos" queue, or every new specimen would be overdue the day it is created.

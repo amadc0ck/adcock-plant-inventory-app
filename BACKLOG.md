@@ -11,6 +11,23 @@ Item IDs are permanent. Never renumber.
 
 Written so a session with no memory of the conversation can continue without asking. Everything below is either **waiting on Amanda** or **decided but unbuilt**. Delete an entry when it is resolved.
 
+### Vocabulary columns are CHECK-constrained — adding a value is a schema change
+
+**Learned the hard way 2026-08-28.** PD-4 shipped the `urgent` health tier on the
+recorded assumption that `health_status` was free text. It is not:
+`plants_health_status_check` rejected it, so Move to Plant Hospital and the edit
+dropdown both failed with `23514` for five days.
+
+**The column-existence probe cannot catch this.** It proves a column resolves; it
+says nothing about accepted values, because an anonymous read cannot see
+`pg_constraint`. Before adding any value to a vocabulary, ask Amanda for the
+constraint list (the query is in REFERENCE under `taxa`).
+
+Pending: `photo_type` gained `overview` and `progress` in v1.88.0 and **may hit
+the same wall**. Needs `select photo_type, count(*) from photos group by 1;`
+first — an `identification` type existed once and was retired, so unknown values
+may still be present.
+
 ### Schema state — VERIFIED against the live database 2026-08-27
 
 No longer guesswork. Probed `fsckwgicmvviefuivgza` via PostgREST (an unknown

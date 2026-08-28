@@ -48,109 +48,11 @@ file claimed it does. Use the Supabase dashboard for Edge Function logs.
   (cultivars are sibling rows, not children) — they just need their parts filled
   so they group.
 
-### NAME-2 — let Claude propose name corrections and parse the parts
-**Status:** designed, not built · **Blocked on:** species saves failing
+**NAME-2 shipped in v1.95.0 and is confirmed working.** See Completed.
 
-Amanda asked whether Claude can suggest these edits in-app. **Most of the
-plumbing already exists**: `suggestions.kind = "species_field"` and the accept
-handler at `index.html:7143` does `restPatch("taxa", {[sg.field]: v})` — it
-writes any taxa column generically. So a suggestion for `genus`,
-`species_epithet` or `cultivar` would already accept correctly.
-
-Missing: `suggest-species` only asks about **blank** fields (a correction is
-what it is designed never to propose), and `FIELDS` omits `cultivar`,
-`infraspecific`, `is_hybrid` and `botanical_name`.
-
-Build a `focus: "name"` mode mirroring `suggest-photo`'s focus: validate and
-parse the existing name, return suggestions for the parts plus a corrected free
-text. Fixes the 7 bad names and the 61 unstructured records with one feature.
-Also extend the accept handler's boolean special-case from `frost_tender` to
-`is_hybrid`, or it writes the string "true".
-
-**Do not build until species edits save** — accepting a suggestion uses the same
-`restPatch("taxa", ...)` that is currently failing.
-
-### Schema state — VERIFIED against the live database 2026-08-27
-
-No longer guesswork. Probed `fsckwgicmvviefuivgza` via PostgREST (an unknown
-column returns `42703`, a known one returns a row set), so these are facts:
-
-| Column | Live? | Meaning |
-| --- | --- | --- |
-| `taxa.frost_tender` | **exists** | v1.78.0 SQL was run. Nothing pending. |
-| `taxa.infraspecific` | **exists** | Run at some point, but **no app code reads or writes it** (0 hits in `index.html`). Column without a feature. |
-| `taxa.parentage` | **exists** | Same — column exists, **0 hits in `index.html`**. |
-| `taxa.dormancy` | does not exist | Still an open decision. |
-| `plants.species` | **still exists** | **SPECIES-1 Phase 3 drop has NOT been run.** |
-| `tasks` / `task_subjects` | **exist** | TASK-1, created 2026-08-27, **with RLS policies**. |
-| `app_settings` | **exists** | key/value, RLS on. Holds `check_in_interval_days` (14). |
-| `plants.next_check_date` | **exists** | RPT-3. Null means fall back to the interval. |
-| `locations.period` | does not exist | Not a gap — `archivePeriod()` (index.html:4034) derives it from `active_from` / `active_to` / `locality`. v1.82.0 is fine. |
-
-**What this changes.** Two of the three "decisions offered, never answered"
-below were in fact answered — Amanda added `infraspecific` and `parentage` to
-the database. The build never followed. Those are now **implementation work,
-not decisions**: the storage is there and the app ignores it, so the
-silently-dropped-variety trap the entries describe is still live.
-
-**Still to run: the SPECIES-1 Phase 3 drop.** Statement is in the v1.65.0 entry
-under Completed. Checked and safe: the only remaining `species` string in
-`index.html` is a **CSV header label** (line 797), whose value already comes
-from `tv("species_epithet")` off the taxon. **Take a JSON backup from Settings
-immediately before running it** — irreversible, no migration tool.
-
-### NAME-1 leftovers — still unconfirmed
-
-```sql
--- lowercase cultivar in the free text, already correct in the cultivar column
-update taxa set botanical_name = replace(botanical_name, 'fuzzy navel', 'Fuzzy Navel')
-where botanical_name like '%fuzzy navel%';
-```
-And the **Echeveria 'Purple Perle'** rename — its `botanical_name` still holds
-the cross formula rather than the name. Now that `taxa.parentage` exists, the
-fix is to move the pedigree there rather than discard it.
-
-### Decisions offered, never answered
-
-**`taxa.dormancy` — DECIDED 2026-08-27: no.** Amanda chose to leave seasonal
-dormancy in `description` rather than add a column. *Kalanchoe* 'Roseleaf'
-being summer-dormant is recorded there. Do not re-offer this.
-
-**`infraspecific` and `parentage` — CLOSED 2026-08-27, built in v1.83.0.** They
-were never really decisions: both columns already existed in the database and no
-code touched them. The app now composes the variety into the displayed name,
-renders the rank upright and the epithet italic, offers both fields on the taxon
-form, shows them on taxon detail, and appends them to the CSV export. The
-silently-dropped-variety trap is closed.
-
-**Time-cluster location filing — CLOSED 2026-08-27, not built.** Amanda finished
-filing all 932 photos to locations by hand before this was picked up. The idea
-was to let one filing decision carry a whole burst of photos taken within
-minutes of each other; there is no longer a backlog of photos for it to act on.
-Worth remembering only if a large archive import ever lands again.
-
-### AI — where the tuning stands
-
-Shipped and working in v1.80–1.82. **`suggest-species` is good**: the *Dracaena angolensis* pass filled eight blank fields correctly, including Angola, Zone 9-10 and clumping.
-
-**`suggest-photo` — first real-world use, 2026-08-28: Amanda's verdict was "the suggestions are amazing, this works great."**
-
-That is the first evidence since v1.80.0. Caveats worth keeping honest: she was reacting to a batch she ran from To Do → "Needs a plant", and it is **not recorded how many she checked or how many she accepted**. Enthusiasm about seeing useful answers is not the same as a measured hit rate. Before a 400-photo run, ask her how many of the suggestions she actually accepted versus dismissed — that number is the one that matters, and it is cheap to get.
-
-**Why nobody could tell until now:** the suggestions were being generated correctly all along and the Gallery rendered them nowhere (fixed in v1.90.0). The tooling to evaluate accuracy did not exist, so "unproven" partly meant "unobservable".
-
-**This unblocks AI-3 layer 2** (photo match when creating a plant), which was gated on exactly this.
-
-Advice given and worth keeping: **try ten before four hundred.** Each photo is one vision call.
-
-The `focus` parameter (v1.82.0) is the lever for the 932: location-only is cheaper and more accurate, and locations now carry their period so the capture date does most of the work for archive photos.
-
-### Two things about how to work here
-
-Both are also saved as memories.
-
-- **Give Amanda shell commands as plain lines to paste into Terminal.** Never with the Claude Code `!` prefix — in zsh that is history expansion. She lost two rounds to this on the Edge Function deploys.
-- **Check the live state before diagnosing.** The Supabase CLI is installed and the project is linked (`fsckwgicmvviefuivgza`), so `supabase functions list`, `secrets list` and `functions logs <name>` all work from `~/Projects/adcock-plant-inventory`. The AI functions failing with "failed to fetch" was simply that they had never deployed — one command would have shown it, and instead two rounds went into improving error messages.
+**The name cleanup itself is now Amanda's to work through**: 61 species with no
+structured parts, findable via the "Names not split up" tile, plus the 7 known
+misspellings. Each is one Ask and a few taps, not a retype.
 
 ---
 
@@ -267,18 +169,13 @@ order by location_count desc;
 
 ## Ready now — the actual open list, verified 2026-08-28
 
-### DEPLOY — `suggest-photo` is a version behind
-**Status:** blocked on one command · **Effort:** trivial
+### Edge Functions — all deployed, verified 2026-08-28 20:09 UTC
+`suggest-photo` v10 and `suggest-species` v6. Carries the health focus, the
+cultivar-aware name composition, and NAME-2's `focus: "name"`. Nothing pending.
 
-`focus: "health"` was written 27 Aug and **committed 28 Aug, never deployed**.
-`supabase functions list` shows version 6, last updated 2026-08-27 17:24 UTC —
-before the health code existed. Until this runs, the "How is it doing?" button
-is inert and answers with a 502 or nothing:
-
-```
-cd ~/Projects/adcock-plant-inventory
-supabase functions deploy suggest-photo
-```
+**Check `supabase functions list` before assuming a function is live** — the
+health focus sat written-but-undeployed for a day, and the symptom was a feature
+that silently did nothing.
 
 ### PERF-2 — the app blinks while images load
 **Status:** ready · **Effort:** high (a day) · **Schema:** none
@@ -417,7 +314,7 @@ Also added: a **"Names not split up"** queue tile and matching Plants filter, so
 the 61 records with no genus, epithet or cultivar are findable rather than
 hunted for. 12 assertions.
 
-**Needs `supabase functions deploy suggest-species`.**
+**Deployed and confirmed working by Amanda 2026-08-28.**
 
 
 ### v1.94.0

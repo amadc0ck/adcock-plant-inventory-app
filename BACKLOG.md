@@ -295,6 +295,20 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.0.2
+**The back link wrapped onto two lines.** v1.99.0 made the label the *place* it
+returns to rather than always a tab name — which is the point, but it means the
+label can now be long: "Names to split", a bucket name, a quoted search.
+"Names to split" broke beside its chevron and read as two loose words.
+
+One `.back-link` class replaces the same inline style repeated at **six** call
+sites, with the label in its own span that never wraps and truncates with an
+ellipsis instead. Larger chevron, tighter gap, consistent opacity.
+
+First ship under the numbering rules agreed today: a fix to something that
+shipped wrong, so a patch.
+
+
 ### v2.0.1
 **"Make a task" did not clear the count it was supposed to clear.** Amanda made
 tasks for two plants and they stayed in "Plants needing attention" — so the

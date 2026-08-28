@@ -177,31 +177,7 @@ cultivar-aware name composition, and NAME-2's `focus: "name"`. Nothing pending.
 health focus sat written-but-undeployed for a day, and the symptom was a feature
 that silently did nothing.
 
-### PERF-2 — the app blinks while images load
-**Status:** ready · **Effort:** high (a day) · **Schema:** none
-
-**The last of the six things Amanda raised on 28 Aug.** She asked whether this is
-a hosting limitation or the 2,664 photos. **Neither.**
-
-`render()` replaces `app.innerHTML` wholesale on every state change — **80 call
-sites, 9 of them `oninput` handlers** — so one keystroke in the Gallery search
-destroys and rebuilds every DOM node on screen, images included. Cached images
-re-decode (the flash); uncached ones go blank and refetch.
-
-Compounding it: `PHOTO_CACHE_LIMIT` is **180 blob URLs against 2,664 photos**, so
-a gallery scroll thrashes the cache and refetches through the Edge Function.
-
-PERF-1 already fixed the *loading* flash — `ensurePhotoLoaded()` patches the
-`<img>` directly rather than re-rendering. What remains is the re-render itself.
-This is the cost of the no-framework single-innerHTML-swap design, which was
-right at 300 photos and is not at 2,664. Fixable without a framework:
-1. Decouple search inputs from the full render (debounce, or update only the result list).
-2. Raise the cache limit — memory tradeoff, needs measuring.
-3. Stop rebuilding image nodes that have not changed.
-
-**Ask her which screen it bites on first** — Gallery scroll, typing in search, or
-a plant with many photos. They have different causes and fixing the wrong one
-first wastes the day.
+**PERF-2 shipped in v1.98.0.** See Completed.
 
 ### AI-3 layer 2 — photo match when creating
 **Status:** ready (ungated 2026-08-28) · **Effort:** medium
@@ -297,6 +273,38 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 ---
 
 ## Completed
+
+### v1.98.0
+**PERF-2 — the blinking.** Amanda asked whether it was a hosting limit or the
+2,664 photos. Neither. Three causes, all fixed; she reported To Do as the worst
+screen, which turned out to be the third and largest.
+
+**1. Typing rebuilt the page.** Eleven `oninput` handlers called `render()` on
+every keystroke, and `render()` replaces `app.innerHTML` wholesale — one
+character in the Gallery search destroyed and recreated every node on screen,
+images included. State still updates immediately; the repaint is coalesced to
+90ms after typing pauses.
+
+**2. Eviction threw away pictures that were on screen.** `PHOTO_CACHE_LIMIT` was
+180 blob URLs against 2,664 photos, evicted in pure insertion order. Scrolling a
+gallery revoked images still being displayed, which then refetched through the
+Edge Function. Now 600, and eviction **skips anything currently rendered** — if
+the whole window is live it holds extra rather than blanking the page.
+
+**3. Every photo arrival could trigger a full re-render — this was the To Do
+blinking.** `ensurePhotoLoaded()` patches the waiting `<img>` in place (PERF-1)
+and falls back to `debouncedRender()` when nothing is waiting. Cause 2 fed it:
+an evicted-but-still-displayed image kept its `src` attribute pointing at a
+revoked blob, so it never matched "waiting", and **every arrival fell through to
+a full rebuild**. On a photo-dense screen that is a rebuild every few hundred
+milliseconds. The fallback now fires **only when the lightbox is open** — the
+one caller that renders its `<img>` from state rather than a placeholder.
+
+**A bug caught by the tests:** the rewritten eviction could revoke a blob while a
+duplicate entry for the same id was still queued, leaving an id in the cache
+queue with a dead URL — precisely the state that caused cause 3. 13 assertions,
+including the invariant that every queued id still has a live blob.
+
 
 ### v1.97.0
 **Settings had become a wall.** Six full-width cards, every one expanded, most of

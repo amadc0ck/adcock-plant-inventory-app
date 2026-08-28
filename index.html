@@ -592,7 +592,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.97.0";
+const APP_VERSION = "1.98.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1197,12 +1197,39 @@ function debouncedRender() {
 //
 // Evicting one still on screen is harmless: its <img> has already decoded, and
 // if it is re-rendered ensurePhotoLoaded simply fetches it again.
-const PHOTO_CACHE_LIMIT = 180;
+/* PERF-2 (2 of 3). 180 blob URLs against 2,664 photos, evicted in pure
+   insertion order — so scrolling a gallery threw away images that were still on
+   screen, and they were refetched through the Edge Function the moment the row
+   re-rendered. That is the other half of the flashing, and it is also why the
+   Gallery got slower the further you scrolled.
+
+   Two changes: a larger window, and eviction that skips anything currently
+   rendered. An <img> already showing a blob must keep its URL, because revoking
+   it blanks a picture the user is looking at. */
+const PHOTO_CACHE_LIMIT = 600;
+function idsOnScreen() {
+  const live = new Set();
+  document.querySelectorAll("img[data-drive-id]").forEach((el) => {
+    if (el.getAttribute("src")) live.add(el.dataset.driveId);
+  });
+  return live;
+}
 function evictPhotoCache() {
   const order = state.photoCacheOrder;
-  while (order.length > PHOTO_CACHE_LIMIT) {
-    const id = order.shift();
-    // Skip if it was re-loaded since and re-queued further along.
+  if (order.length <= PHOTO_CACHE_LIMIT) return;
+  const live = idsOnScreen();
+  let i = 0;
+  // Oldest first, but skip the on-screen ones rather than revoking them. If the
+  // whole window is live there is nothing safe to drop, and holding a few extra
+  // blobs is better than blanking the page.
+  while (order.length > PHOTO_CACHE_LIMIT && i < order.length) {
+    const id = order[i];
+    if (live.has(id)) { i++; continue; }
+    order.splice(i, 1);
+    // An id can appear twice if it was re-fetched. Removing one entry must not
+    // revoke the blob the other still stands for — that would leave the id in
+    // the queue with a dead URL, which is the exact state that made every later
+    // arrival fall through to a full re-render.
     if (order.includes(id)) continue;
     const url = state.photoUrlCache[id];
     if (url) {
@@ -1297,9 +1324,20 @@ function ensurePhotoLoaded(driveFileId) {
           patched++;
         }
       });
-      // Nothing was waiting — either the blob beat its first render, or the
-      // call site still emits its own <img> (the lightbox). Fall back.
-      if (!patched) debouncedRender();
+      // PERF-2 (3 of 3). Nothing was waiting, so fall back to a re-render —
+      // except that fallback was firing constantly on the To Do page and
+      // rebuilding the whole screen each time, which is the blinking Amanda
+      // reported. Two causes, both now addressed: eviction used to revoke
+      // blobs still on screen, leaving <img> elements holding a dead URL and a
+      // src attribute, so they never matched "waiting" and every arrival fell
+      // through to here; and the fallback did not check whether anything
+      // actually needed redrawing.
+      //
+      // The only caller that genuinely needs a render is the lightbox, which
+      // emits its own <img> from state rather than a data-drive-id placeholder.
+      // Everything else has already been patched in place or does not need the
+      // image at all.
+      if (!patched && state.lightbox) debouncedRender();
     })
     .catch(() => {
       state.photoFetchInFlight.delete(driveFileId);
@@ -1434,7 +1472,7 @@ function plantPicker(onPick, opts) {
     .sort((a, b) => taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
   return `
     <input placeholder="Search name or accession…" id="search-picker" value="${escapeHtml(state.pickerSearch || "")}"
-           oninput="state.pickerSearch=this.value;render()" />
+           oninput="state.pickerSearch=this.value;scheduleRender()" />
     <div class="wrap-gap" style="margin:8px 0 10px;">
       <select style="width:auto;font-size:12.5px;padding:6px 8px;" onchange="state.pickerTaxon=this.value;render()">
         <option value="">Any species</option>
@@ -1806,7 +1844,7 @@ function locationPicker(onPick, opts) {
       .slice(0, 40);
     return `
       <input class="search-input" id="loc-picker-search" placeholder="Search locations…" style="margin-bottom:10px;"
-             value="${escapeHtml(state.locPickerSearch || "")}" oninput="state.locPickerSearch=this.value;render()" />
+             value="${escapeHtml(state.locPickerSearch || "")}" oninput="state.locPickerSearch=this.value;scheduleRender()" />
       <div class="subtle" style="font-size:11.5px;margin-bottom:8px;">${countLabel(hits.length, "match", "matches")}${hits.length === 40 ? " (first 40)" : ""}</div>
       <div class="stack" style="max-height:46vh;overflow-y:auto;">
         ${hits.length ? hits.map((l) => row(l, true)).join("") : `<p class="subtle">No locations match.</p>`}
@@ -1821,7 +1859,7 @@ function locationPicker(onPick, opts) {
 
   return `
     <input class="search-input" id="loc-picker-search" placeholder="Search locations…" style="margin-bottom:10px;"
-           value="${escapeHtml(state.locPickerSearch || "")}" oninput="state.locPickerSearch=this.value;render()" />
+           value="${escapeHtml(state.locPickerSearch || "")}" oninput="state.locPickerSearch=this.value;scheduleRender()" />
     <div class="wrap-gap" style="margin-bottom:10px;font-size:12px;">
       <button class="btn-ghost" style="padding:0;font-size:12px;${here ? "color:var(--blue);" : "font-weight:600;"}" onclick="locPickerGo('')">All locations</button>
       ${crumbs.map((c, i) => `<span style="color:var(--moss-dim);">/</span>
@@ -3271,7 +3309,7 @@ function screenInbox() {
             </select>` : ""}
           <input id="search-inbox" placeholder="Search notes…" value="${escapeHtml(state.inboxSearch || "")}"
                  style="width:auto;flex:1;min-width:130px;font-size:13px;padding:7px 9px;"
-                 oninput="state.inboxSearch=this.value;state.inboxLimit=${pageSize};render()" />
+                 oninput="state.inboxSearch=this.value;state.inboxLimit=${pageSize};scheduleRender()" />
           <button class="btn btn-secondary btn-sm icon-btn" onclick="setInboxView('${state.inboxView === "compact" ? "grid" : "compact"}')" title="Switch between full cards and compact rows">
             ${state.inboxView === "compact" ? icon("photo") + " Full" : icon("clipboard") + " Compact"}
           </button>
@@ -3443,7 +3481,7 @@ function screenTaxa() {
           <span class="subtle">Showing only species Claude has suggestions for</span>
           <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaOnlySuggestions=false;render()">Show all</button>
         </div>` : ""}
-      <input class="search-input" placeholder="Search name, genus, family…" value="${escapeHtml(state.taxaSearch || "")}" id="search-taxa" oninput="state.taxaSearch=this.value;render()" />
+      <input class="search-input" placeholder="Search name, genus, family…" value="${escapeHtml(state.taxaSearch || "")}" id="search-taxa" oninput="state.taxaSearch=this.value;scheduleRender()" />
       <div class="row" style="margin-bottom:16px;">
         <span class="subtle">${q ? `${list.length} of ${state.taxa.length}` : countLabel(state.taxa.length, "kind", "kinds")} · ${countLabel(state.plants.length, "specimen", "specimens")}</span>
         <button class="btn btn-secondary btn-sm" onclick="openModal('batchAdd')">+ Batch</button>
@@ -3693,7 +3731,7 @@ function screenPlants() {
   <div class="screen">
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
-      <input class="search-input" placeholder="Search name, accession #, cultivar…" value="${escapeHtml(state.plantSearch || "")}" id="search-plants" oninput="state.plantSearch=this.value;render()" />
+      <input class="search-input" placeholder="Search name, accession #, cultivar…" value="${escapeHtml(state.plantSearch || "")}" id="search-plants" oninput="state.plantSearch=this.value;scheduleRender()" />
       <div class="row" style="margin-bottom:16px;">
         <button class="btn btn-secondary btn-sm" onclick="openModal('plantFilters')">
           Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
@@ -5046,7 +5084,7 @@ function screenGallery() {
       ${searching ? "" : collectionStats()}
 
       <div class="sticky-controls">
-      <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" id="search-gallery" oninput="state.galleryFilters.search=this.value;render()" />
+      <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" id="search-gallery" oninput="state.galleryFilters.search=this.value;scheduleRender()" />
       <div class="row" style="margin-bottom:16px;">
         <button class="btn btn-secondary btn-sm" onclick="openModal('galleryFilters')">
           Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
@@ -5334,7 +5372,7 @@ function modalContent() {
 
       <label>Add a plant</label>
       <input id="ba-search" placeholder="Search your species, or type a new name…"
-        value="${escapeHtml(state.batchSearch || "")}" oninput="state.batchSearch=this.value;render()" />
+        value="${escapeHtml(state.batchSearch || "")}" oninput="state.batchSearch=this.value;scheduleRender()" />
       ${q ? `
         <div class="stack" style="margin-top:8px;max-height:30vh;overflow-y:auto;">
           ${matches.map((t) => `
@@ -5686,7 +5724,7 @@ function modalContent() {
           return `
             <label>Species &mdash; pick one you already have</label>
             <input id="np-taxonsearch" placeholder="Search your species…" value="${escapeHtml(state.newPlantTaxonSearch || "")}"
-              oninput="state.newPlantTaxonSearch=this.value;render()" />
+              oninput="state.newPlantTaxonSearch=this.value;scheduleRender()" />
             ${q ? `<div class="stack" style="margin-top:8px;max-height:26vh;overflow-y:auto;">
               ${matches.length === 0 ? `<p class="subtle" style="font-size:12.5px;margin:0;">Nothing matches &mdash; name it below to create a new species.</p>`
                 : matches.map((t) => `
@@ -5954,7 +5992,7 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Link existing plant</h3>
       <p class="subtle" style="margin:0 0 14px;">Adds this location to the plant — either as its main location (if it doesn't have one) or as an additional one.</p>
-      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" id="search-attach" oninput="state.attachSearch=this.value;render()" style="margin-bottom:14px;" />
+      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" id="search-attach" oninput="state.attachSearch=this.value;scheduleRender()" style="margin-bottom:14px;" />
       <div class="stack" style="max-height:44vh;overflow-y:auto;">
         ${candidates.length === 0 ? `<p class="subtle">No plants match.</p>` : candidates.map((p) => `
           <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="linkPlantToLocation('${p.id}','${data.locationId}')">
@@ -6640,7 +6678,7 @@ function modalContent() {
         <button class="task-chip" onclick="toggleTaskSubjectDraft('${d.kind}','${d.id}')">${escapeHtml(pickedLabel(d))} ${icon("close")}</button>`).join("")}</div>`
         : `<p class="subtle" style="margin:0 0 8px;font-size:12.5px;">Nothing yet. A task with no subjects is fine &mdash; it just won't appear on any record.</p>`}
       <input placeholder="Search buckets, plants, species…" value="${escapeHtml(state.taskSubjectSearch || "")}"
-        oninput="state.taskSubjectSearch=this.value;render()" />
+        oninput="state.taskSubjectSearch=this.value;scheduleRender()" />
       ${q ? `<div class="stack" style="max-height:34vh;overflow-y:auto;margin-top:10px;">
         ${matches.length === 0 ? `<p class="subtle">Nothing matches.</p>` : matches.map((m) => `
           <button class="task-pick ${isPicked(m.kind, m.id) ? "is-picked" : ""}" onclick="toggleTaskSubjectDraft('${m.kind}','${m.id}')">
@@ -8918,7 +8956,24 @@ function restoreFocus(snap) {
   try { el.setSelectionRange(snap.start, snap.end); } catch (e) {}
 }
 
+/* PERF-2 (1 of 3). Eleven `oninput` handlers called render() on every keystroke,
+   and render() replaces app.innerHTML wholesale — so typing one character into
+   the Gallery search destroyed and rebuilt every node on screen, every <img>
+   included. That is most of the flashing.
+
+   State updates immediately (so the input keeps its value and nothing is lost);
+   the repaint is coalesced to one frame after the typing pauses. 90ms is below
+   the ~100ms threshold where a UI stops feeling immediate, and comfortably
+   above a fast typist's inter-key gap. */
+let renderTimer = null;
+function scheduleRender(delay = 90) {
+  if (renderTimer) clearTimeout(renderTimer);
+  renderTimer = setTimeout(() => { renderTimer = null; render(); }, delay);
+}
+
 function render() {
+  // A pending debounce is now redundant — this render supersedes it.
+  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
   const app = document.getElementById("app");
   const focusSnapshot = captureFocus();
   const scrollSnapshot = captureScroll();

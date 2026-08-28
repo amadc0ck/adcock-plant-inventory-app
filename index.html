@@ -701,7 +701,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.6.1";
+const APP_VERSION = "2.7.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2619,6 +2619,38 @@ function wireHoverCards() {
   });
   // Scrolling or navigating away should not leave one floating.
   window.addEventListener("scroll", hidePlantCard, { passive: true });
+}
+
+/* AI-3 layer 2. Layer 1 catches a duplicate by NAME, as she types it. This
+   catches one by PHOTO, at the only moment it can be prevented: the form that
+   is about to create a second record for a plant she already has.
+
+   Two sources, cheapest first:
+     1. Specimens already at the photo's location. Deterministic, free, and
+        usually right — the same reasoning FILE-1 uses.
+     2. Claude's plant_tag suggestion, if `suggest-photo` has run on this photo.
+
+   The location candidates come first deliberately: they cost nothing and need
+   no call, so a duplicate is often caught before Claude is asked at all. */
+function duplicateGuardForPhoto(photoId) {
+  const p = state.photos.find((x) => x.id === photoId);
+  if (!p) return { here: [], suggested: null, asked: false };
+  const here = p.location_id ? plantsAtLocation(p.location_id) : [];
+  const sug = suggestionsForPhoto(photoId).find((sg) => sg.kind === "plant_tag");
+  const suggested = sug ? state.plants.find((x) => x.id === sug.value_id) : null;
+  return {
+    here,
+    suggested: suggested && !here.some((x) => x.id === suggested.id) ? suggested : null,
+    asked: !!suggestionsForPhoto(photoId).length,
+  };
+}
+
+// "That is the plant" — attach the photo and stop, rather than creating a
+// second record for something already in the collection.
+async function usePlantInsteadOfNew(photoId, plantId) {
+  await assignPlantToPhoto(photoId, plantId);
+  closeModal();
+  maybeResumeLightbox();
 }
 
 function bloomPhotosFor(plantId) {
@@ -6261,6 +6293,31 @@ function modalContent() {
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">New plant</h3>
       <p class="subtle" style="margin:0 0 14px;">Accession number is generated automatically. The botanical name creates or finds the <strong>species</strong>; this plant becomes a specimen of it. Everything here can be set later.</p>
       ${suggestion ? `<p style="font-size:12.5px;color:var(--blue);margin:0 0 14px;">Pre-filled from AI suggestion — double check before saving.</p>` : ""}
+      ${/* AI-3 layer 2. The last moment a duplicate can be prevented. */""}
+      ${type === "newPlantFromPhoto" ? (() => {
+        const g = duplicateGuardForPhoto(data.photoId);
+        const cands = [...g.here, ...(g.suggested ? [g.suggested] : [])];
+        if (!cands.length) {
+          return g.asked ? "" : `
+            <div class="filter-note" style="margin-bottom:14px;">
+              <span class="filter-note-head">Before you create a new one</span>
+              <p class="subtle" style="margin:6px 0 8px;font-size:12.5px;">Nothing is recorded at this photo's location, so there is nothing obvious to match it against.</p>
+              <button type="button" class="btn btn-secondary btn-sm icon-btn" ${state.suggestingPhotoId === data.photoId ? "disabled" : ""}
+                onclick="askClaudeAboutPhoto('${data.photoId}',{focus:'plant'})">${state.suggestingPhotoId === data.photoId ? '<span class="spinner"></span>' : icon("claude")} Ask Claude if it is one you have</button>
+            </div>`;
+        }
+        return `
+          <div class="filter-note" style="margin-bottom:14px;">
+            <span class="filter-note-head">${g.here.length ? "Already recorded where this photo was taken" : "Claude thinks you already have this"}</span>
+            <p class="subtle" style="margin:6px 0 8px;font-size:12.5px;">If this photo shows one of these, attach it rather than creating a second record.</p>
+            <div class="file-choices">
+              ${cands.map((c) => `
+                <button type="button" class="row-act" data-plant-card="${c.id}" onclick="usePlantInsteadOfNew('${data.photoId}','${c.id}')">
+                  ${escapeHtml(plantPickerName(c).primary)} · ${c.accession_number}
+                </button>`).join("")}
+            </div>
+          </div>`;
+      })() : ""}
       <form id="new-plant-form">
         ${/* "New specimen here" has offered a species list since it was built;
              this form never did, so from the Gallery the only way to reach an

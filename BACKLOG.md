@@ -174,11 +174,7 @@ Nothing here is blocked on code that has not shipped.
 
 ### Code, ready to build
 
-**AI-3 layer 2 — photo match when creating.** When creating a plant from an
-Inbox photo, have Claude suggest the existing specimen it most resembles.
-Layer 1 (name match) shipped in v1.83.0. **Ungated 2026-08-28** — the gate was
-`suggest-photo` accuracy and Amanda's first real use of it was positive. Worth
-getting an accept-versus-dismiss count before a large batch.
+**Nothing.** AI-3 layer 2 shipped in v2.7.0 — the last code item on the list.
 
 ### SQL — NOTHING OUTSTANDING
 
@@ -264,6 +260,31 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.7.0
+**AI-3 layer 2 — catch a duplicate by photo, in the form that would create it.**
+Layer 1 (v1.83.0) catches a duplicate by NAME as she types. This catches one by
+PHOTO, at the only moment it can still be prevented.
+
+**Two sources, cheapest first.** Specimens already at the photo's location come
+first — deterministic, free, no call, and usually right, the same reasoning
+FILE-1 uses. Claude's `plant_tag` suggestion is offered alongside when
+`suggest-photo` has already run. **A duplicate is often caught before Claude is
+asked at all**, and when there is nothing to match against the form says so and
+offers the ask rather than leaving her to guess.
+
+A candidate Claude names that is already at the location is not listed twice.
+Every candidate carries the v2.3.0 hover card, so the plant can be seen before
+committing.
+
+**No Edge Function change and no deploy** — `focus: "plant"` has existed since
+v1.82.0 and its suggestions were already stored. What was missing was surfacing
+them **where the duplicate gets made**. Three times today a feature turned out to
+be built but unreachable; this is the fourth.
+
+10 assertions: location candidates, no location, a Claude suggestion, the
+overlap case, an unknown photo, and a non-plant suggestion.
+
 
 ### v2.6.1
 **Two bugs from the last two ships, both visible in one screenshot.**

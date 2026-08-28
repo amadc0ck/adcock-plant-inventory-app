@@ -581,7 +581,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.89.1";
+const APP_VERSION = "1.89.2";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4817,7 +4817,7 @@ function screenGallery() {
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Gallery</h2>
       <p class="subtle" style="margin-bottom:16px;">${countLabel(state.photos.length, "photograph", "photographs")} documenting the collection.</p>
-      ${collectionStats()}
+      ${searching ? "" : collectionStats()}
 
       <div class="sticky-controls">
       <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" id="search-gallery" oninput="state.galleryFilters.search=this.value;render()" />
@@ -4836,9 +4836,16 @@ function screenGallery() {
       </div>
 
       ${searching ? `
+        ${/* Opening an album is a drill-in, and every other drill-in in the app
+             carries a back button at top left: "← Plants", "← Locations",
+             "← To Do". The Gallery had none. The only way out was the "Clear"
+             button in the controls row, which reads as "clear the search box",
+             not "leave this album" — so an album was a dead end. Same
+             affordance, same place, same words as everywhere else. */""}
+        <button class="btn-ghost" style="padding:4px 0 10px;display:flex;align-items:center;gap:4px;" onclick="clearGalleryView()">${icon("back")} Gallery</button>
         ${/* A search or a chosen row collapses to one flat result set. */""}
         <div class="row" style="margin-bottom:12px;">
-          <span class="subtle">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : f.inBloom ? "In bloom now" : f.favorites ? "Favourites" : "Results"}</span>
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : f.inBloom ? "In bloom now" : f.favorites ? "Favourites" : "Results"}</h3>
           <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
         </div>
           ${/* Select all stays inline — it belongs with the result count it

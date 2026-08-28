@@ -264,6 +264,24 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.89.2
+**Opening a Gallery album was a dead end.** Every other drill-in in the app
+carries a back button at top left — "← Plants", "← Locations", "← To Do". The
+Gallery had none. The only way out was the **Clear** button in the controls row,
+which reads as "clear the search box", not "leave this album", and sits nowhere
+near where the app has trained you to look.
+
+Now: a "← Gallery" button in the same place, with the same words, on every
+drilled-in view — albums, highlights, needs-buckets, In Bloom, Favourites. The
+album name is promoted from a grey subtitle to a heading, and the
+whole-collection stat tiles are hidden while drilled in, because "94 species,
+2664 photos" on top of one album is the wrong signal about where you are.
+
+**Worth generalising:** the app has one back pattern and this screen simply
+never adopted it. When adding a view that filters down to a subset, give it the
+same affordance in the same place.
+
+
 ### v1.89.1
 **The plant picker leads with the newest specimens.** Straight out of BATCH-1:
 after entering a group, the plants she is assigning photos to are the ones she

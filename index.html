@@ -283,6 +283,8 @@
   .ident-source{display:block;font-size:9.5px;color:var(--blue);text-transform:uppercase;letter-spacing:0.4px;}
   /* Settings sections. Collapsed by default so the page is a short menu rather
      than a wall — most of it is set once and never touched again. */
+  .filter-note{background:rgba(124,167,161,0.14);border:1px solid rgba(124,167,161,0.4);border-radius:8px;padding:11px 13px;color:var(--cream);}
+  .filter-note-head{font-size:10.5px;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);font-family:'IBM Plex Mono',monospace;}
   .set-section{padding:0;overflow:hidden;margin-bottom:0;}
   .set-head{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;padding:15px 16px;cursor:pointer;color:var(--cream);font-family:inherit;}
   .set-chevron{display:flex;flex-shrink:0;opacity:0.5;transition:transform .15s;}
@@ -592,7 +594,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.98.0";
+const APP_VERSION = "1.99.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -657,7 +659,6 @@ const state = {
   photosImport: null,
   resumableImport: null,
   attachPhotoLimit: 24,
-  backTo: null,
   galleryView: "grid",
   gallerySelectMode: false,
   gallerySelected: new Set(),
@@ -682,6 +683,7 @@ const state = {
   taxaOnlySuggestions: false,
   taxaOnlyMissingParts: false,
   settingsOpen: {},       // which Settings sections are expanded
+  navStack: [],           // NAV-1: where you came from, with the filter intact
   inboxLimit: 20,
   inboxSort: "newest",
   inboxPageSize: 20,
@@ -2752,7 +2754,105 @@ function icon(name) {
 /* ============================================================
    ROUTER / NAV
    ============================================================ */
-function goTab(tab) { state.tab = tab; state.modal = null; state.reportView = null; state.backTo = null; state.taxaOnlySuggestions = false; state.taxaOnlyMissingParts = false; render(); }
+/* NAV-1. Back used to mean "go to the Plants tab", not "go back". Filter the
+   Plants list to the 61 names needing cleanup, open one, and Back dropped the
+   filter and your scroll position — so working a list meant re-filtering and
+   re-scrolling after every single record. `state.backTo` existed but only the
+   work queue set it, and it only remembered a tab.
+
+   A snapshot remembers the whole view: which list, which filter, what was
+   typed, and how far down you were. Capped at 12, which is deeper than any
+   real path through this app and stops a long session growing without bound. */
+function viewSnapshot() {
+  return {
+    tab: state.tab,
+    reportView: state.reportView,
+    currentPlantId: state.currentPlantId,
+    currentLocationId: state.currentLocationId,
+    currentTaxonId: state.currentTaxonId,
+    taxaSearch: state.taxaSearch,
+    taxaOnlySuggestions: state.taxaOnlySuggestions,
+    taxaOnlyMissingParts: state.taxaOnlyMissingParts,
+    plantSearch: state.plantSearch,
+    plantFilters: { ...state.plantFilters },
+    galleryFilters: { ...state.galleryFilters },
+    inboxSearch: state.inboxSearch,
+    scrollY: window.scrollY || 0,
+    label: viewLabel(),
+  };
+}
+
+// What the back button should say. Names the place you would return to, which
+// is the thing that makes a back button trustworthy.
+function viewLabel() {
+  if (state.tab === "plants") {
+    if (state.taxaOnlyMissingParts) return "Names to split";
+    if (state.taxaOnlySuggestions) return "Suggestions";
+    if (state.taxaSearch) return `“${state.taxaSearch}”`;
+    return "Plants";
+  }
+  if (state.tab === "inbox") return state.reportView ? "To Do list" : "To Do";
+  if (state.tab === "locations") return "Locations";
+  if (state.tab === "gallery") {
+    const f = state.galleryFilters;
+    if (f.album) return locationById(f.album)?.name || "Album";
+    if (f.needs || f.highlight || f.favorites || f.inBloom || f.search) return "Gallery results";
+    return "Gallery";
+  }
+  if (state.tab === "taxonDetail") {
+    const t = taxonById(state.currentTaxonId);
+    return t ? taxonDisplayName(t) : "Species";
+  }
+  if (state.tab === "locationDetail") {
+    const l = locationById(state.currentLocationId);
+    return l ? l.name : "Location";
+  }
+  if (state.tab === "plantDetail") {
+    const pl = state.plants.find((x) => x.id === state.currentPlantId);
+    return pl ? pl.accession_number : "Specimen";
+  }
+  if (state.tab === "settings") return "Settings";
+  return "Back";
+}
+
+function navPush() {
+  state.navStack.push(viewSnapshot());
+  if (state.navStack.length > 12) state.navStack.shift();
+}
+
+function navBack() {
+  const snap = state.navStack.pop();
+  if (!snap) { goTab("plants"); return; }
+  Object.assign(state, {
+    tab: snap.tab,
+    reportView: snap.reportView,
+    currentPlantId: snap.currentPlantId,
+    currentLocationId: snap.currentLocationId,
+    currentTaxonId: snap.currentTaxonId,
+    taxaSearch: snap.taxaSearch,
+    taxaOnlySuggestions: snap.taxaOnlySuggestions,
+    taxaOnlyMissingParts: snap.taxaOnlyMissingParts,
+    plantSearch: snap.plantSearch,
+    plantFilters: { ...snap.plantFilters },
+    galleryFilters: { ...snap.galleryFilters },
+    inboxSearch: snap.inboxSearch,
+    modal: null,
+  });
+  render();
+  // After the DOM exists again, not before.
+  requestAnimationFrame(() => window.scrollTo(0, snap.scrollY || 0));
+}
+
+// The label for the button itself: where popping would actually land you.
+function navBackLabel(fallback) {
+  const top = state.navStack[state.navStack.length - 1];
+  return top ? top.label : fallback;
+}
+
+function goTab(tab) {
+  // A tab is a fresh start, so the trail from the previous one is not a path
+  // back to anywhere she would recognise.
+  state.navStack = []; state.tab = tab; state.modal = null; state.reportView = null; state.taxaOnlySuggestions = false; state.taxaOnlyMissingParts = false; render(); }
 function toggleInboxSelectMode() {
   state.inboxSelectMode = !state.inboxSelectMode;
   state.inboxSelected = new Set();
@@ -2996,7 +3096,7 @@ function taskBanner() {
   return "";
 }
 
-function openPlant(id) { state.tab = "plantDetail"; state.currentPlantId = id; render(); }
+function openPlant(id) { navPush(); state.tab = "plantDetail"; state.currentPlantId = id; render(); window.scrollTo(0, 0); }
 function showGalleryAlbum(locationId) {
   state.galleryFilters = { ...state.galleryFilters, album: locationId, highlight: "" };
   render();
@@ -3022,7 +3122,7 @@ function showTaxaMissingParts() {
 }
 function showTaxaWithSuggestions() {
   const ids = [...new Set(state.suggestions.filter((x) => x.taxa_id).map((x) => x.taxa_id))];
-  if (ids.length === 1) { state.backTo = { tab: "inbox", reportView: null, label: "To Do" }; openTaxon(ids[0]); return; }
+  if (ids.length === 1) { openTaxon(ids[0]); return; }
   state.taxaOnlySuggestions = true;
   state.taxaSearch = "";
   state.tab = "plants";
@@ -3093,11 +3193,12 @@ function clearGalleryView() {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false, favorites: false };
   render();
 }
-function openTaxon(id) { state.tab = "taxonDetail"; state.currentTaxonId = id; state.taxonPhotoLimit = 24; render(); }
+function openTaxon(id) { navPush(); state.tab = "taxonDetail"; state.currentTaxonId = id; state.taxonPhotoLimit = 24; render(); window.scrollTo(0, 0); }
 function openLocation(id) {
   // Select mode is per-screen. Carrying it across meant arriving somewhere new
   // with a selection you could no longer see.
-  state.gallerySelectMode = false; state.gallerySelected = new Set(); state.tab = "locationDetail"; state.currentLocationId = id; render(); }
+  navPush();
+  state.gallerySelectMode = false; state.gallerySelected = new Set(); state.tab = "locationDetail"; state.currentLocationId = id; render(); window.scrollTo(0, 0); }
 
 function plantPhotosOrdered(plantId) {
   const taggedPhotoIds = new Set(state.photoPlants.filter((pp) => pp.plant_id === plantId).map((pp) => pp.photo_id));
@@ -3469,9 +3570,12 @@ function screenTaxa() {
     <div class="container">
       <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
       ${state.taxaOnlyMissingParts ? `
-        <div class="on-cream-ground" style="margin-bottom:14px;">
+        ${/* Was `on-cream-ground`, which sets dark ink and supplies NO
+             background — it exists for use inside a cream card. On the dark
+             Plants page that rendered near-invisible. */""}
+        <div class="filter-note" style="margin-bottom:14px;">
           <div class="row">
-            <span class="suggestion-head">Names stored as free text only</span>
+            <span class="filter-note-head">Names stored as free text only</span>
             <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaOnlyMissingParts=false;render()">Show all</button>
           </div>
           <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">No genus, epithet or cultivar recorded, so these cannot group with their relatives and the name cannot be styled per part. Open one and use <strong>Check the name and split it up</strong>.</p>
@@ -3544,7 +3648,7 @@ function screenTaxonDetail() {
   return `
   <div class="screen">
     <div class="container">
-      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="goTab('plants')">${icon("back")} Plants</button>
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="navBack()">${icon("back")} ${escapeHtml(navBackLabel("Plants"))}</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
@@ -3806,7 +3910,7 @@ function screenPlantDetail() {
   return `
   <div class="screen">
     <div class="container">
-      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${state.backTo ? "goBackTo()" : taxon ? `openTaxon('${taxon.id}')` : "goTab('plants')"}">${icon("back")} ${state.backTo ? escapeHtml(state.backTo.label) : taxon ? escapeHtml(taxonDisplayName(taxon)) : "Plants"}</button>
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="navBack()">${icon("back")} ${escapeHtml(navBackLabel(taxon ? taxonDisplayName(taxon) : "Plants"))}</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
@@ -4183,7 +4287,7 @@ function screenLocationDetail() {
   return `
   <div class="screen">
     <div class="container">
-      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="${state.backTo ? "goBackTo()" : l.parent_location_id ? `openLocation('${l.parent_location_id}')` : "goTab('locations')"}">${icon("back")} ${state.backTo ? escapeHtml(state.backTo.label) : l.parent_location_id ? escapeHtml(locationById(l.parent_location_id).name) : "Locations"}</button>
+      <button class="btn-ghost" style="padding:4px 0 14px;display:flex;align-items:center;gap:4px;" onclick="navBack()">${icon("back")} ${escapeHtml(navBackLabel(l.parent_location_id && locationById(l.parent_location_id) ? locationById(l.parent_location_id).name : "Locations"))}</button>
 
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
@@ -4798,24 +4902,15 @@ function collectionStats() {
 function openSubjectFromTask(subjectId) {
   const ts = state.taskSubjects.find((x) => x.id === subjectId);
   if (!ts) return;
-  state.backTo = { tab: "inbox", reportView: "tasks", label: "Tasks" };
   closeModal();
   openSubject(ts);
 }
 
 function openFromReport(kind, id, reportKey) {
-  state.backTo = { tab: "inbox", reportView: reportKey || null, label: "To Do" };
+  // The snapshot inside openPlant/openLocation already captures the queue view
+  // it is being called from, so this no longer needs its own bookkeeping.
   if (kind === "plant") openPlant(id); else openLocation(id);
 }
-function goBackTo() {
-  const b = state.backTo;
-  state.backTo = null;
-  if (!b) { goTab("plants"); return; }
-  state.tab = b.tab;
-  state.reportView = b.reportView || null;
-  render();
-}
-
 function reportLocationItem(l) {
   const cover = locationCoverPhoto(l);
   return `

@@ -274,6 +274,39 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.99.0
+**NAV-1 — Back now means back.** Amanda, working the 61-name cleanup: filter the
+Plants list, open a species, and Back dropped the filter *and* the scroll
+position. Every single record meant re-filtering and re-scrolling. Her words:
+"that #1 is HUGE."
+
+Back was never really a back button. Taxon Detail hardcoded `goTab('plants')`.
+`state.backTo` existed but **only the work queue ever set it**, and it
+remembered a tab and a label — not a filter, not a search, not where you were on
+the page.
+
+`state.navStack` now holds a snapshot per level: which list, which filter, what
+was typed, and the scroll offset. `navBack()` restores all of it and scrolls
+back to where you were, on a `requestAnimationFrame` so the DOM exists first.
+Capped at 12; `goTab()` clears it, because a tab is a fresh start.
+
+**The button also says where it goes** — "Names to split", "Bucket 18",
+"&ldquo;echeveria&rdquo;" — rather than always naming a tab. A back button that
+names its destination is one you can trust without trying it.
+
+Retired `state.backTo`, `goBackTo()` and the two places that set them by hand;
+`openPlant` / `openTaxon` / `openLocation` snapshot for themselves, so every
+route in gets a route out for free.
+
+**Also fixed: the filter banner was invisible.** v1.95.0 used
+`.on-cream-ground`, which sets dark ink and supplies **no background** — it
+exists for use inside a cream card. On the dark Plants page it was dark on dark.
+Now a `.filter-note` with its own background.
+
+13 assertions, including the filter surviving a round trip and a two-level path
+back out.
+
+
 ### v1.98.0
 **PERF-2 — the blinking.** Amanda asked whether it was a hosting limit or the
 2,664 photos. Neither. Three causes, all fixed; she reported To Do as the worst

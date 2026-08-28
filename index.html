@@ -279,6 +279,8 @@
   .stay-when{font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);margin-top:2px;}
   .timeline-move{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.3px;color:var(--moss-dim);display:flex;align-items:center;gap:6px;margin:-4px 0 10px 2px;}
   .timeline-move svg{width:12px;height:12px;flex-shrink:0;}
+  .ident-badge{margin-top:6px;padding:7px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;color:var(--ink);line-height:1.4;}
+  .ident-source{display:block;font-size:9.5px;color:var(--blue);text-transform:uppercase;letter-spacing:0.4px;}
   .batch-row{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:9px 11px;}
   .batch-qty{width:62px;flex-shrink:0;margin:0;padding:7px 8px;text-align:center;}
   .stay-edit{padding:0;flex-shrink:0;opacity:0.45;}
@@ -581,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.90.1";
+const APP_VERSION = "1.90.2";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3130,13 +3132,9 @@ function photoRow(p, selectMode) {
   const isIdentifying = state.identifyingPhotoId === p.id;
   const isSelected = state.inboxSelected.has(p.id);
 
-  function suggestionBadge(s) {
-    return `
-      <div style="margin-top:6px;padding:7px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;${selectMode ? "" : "cursor:pointer;"}" ${selectMode ? "" : `onclick="event.stopPropagation();openModal('identificationDetail',{identificationId:'${s.id}'})"`}>
-        <span class="mono" style="font-size:9.5px;color:var(--blue);text-transform:uppercase;">${s.source}</span><br/>
-        <em>${escapeHtml(s.suggested_name)}</em>${s.confidence ? ` (${Math.round(s.confidence * 100)}%)` : ""}${selectMode ? "" : ` <span style="color:var(--blue);">— compare →</span>`}
-      </div>`;
-  }
+  // Shared with the Location feed and the Gallery. Inert while selecting: a tap
+  // there is choosing the photo, not opening a comparison.
+  const suggestionBadge = (sg) => identificationBadge(sg, { inert: selectMode });
 
   return `
   <div class="tag-card" style="padding:0;overflow:hidden;${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
@@ -4163,7 +4161,7 @@ function screenLocationDetail() {
             const claimedBy = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
             const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
             const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
-            const suggestionBadge = (s) => `<div style="margin-top:6px;padding:6px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;cursor:pointer;" onclick="openModal('identificationDetail',{identificationId:'${s.id}'})"><span class="mono" style="font-size:9px;color:var(--blue);text-transform:uppercase;">${s.source}</span> <em>${escapeHtml(s.suggested_name)}</em>${s.confidence ? ` (${Math.round(s.confidence * 100)}%)` : ""} <span style="color:var(--blue);">— compare →</span></div>`;
+            const suggestionBadge = (sg) => identificationBadge(sg);
             return `
             <div class="tag-card" style="position:relative;${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}"
                  onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : ""}">
@@ -4766,6 +4764,7 @@ function screenGallery() {
           ${/* The Gallery rendered suggestions NOWHERE — and "Needs a plant"
                and "Photos with suggestions" both route here, so Ask Claude
                answered onto a screen that could not show the answer. */""}
+          ${identificationBadges(p.id)}
           <div onclick="event.stopPropagation();">${suggestionBlock(p.id, true)}</div>
         </div>`;
       }).join("")}
@@ -4801,6 +4800,7 @@ function screenGallery() {
             </div>
             ${plant ? `<div style="font-size:12.5px;margin-top:2px;">${plantDisplayHtml(plant)}</div>` : ""}
             ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}${locs.length > 1 ? ` +${locs.length - 1}` : ""}</div>` : ""}
+            ${identificationBadges(p.id)}
             <div onclick="event.stopPropagation();">${suggestionBlock(p.id, true)}</div>
           </div>
         </div>`;
@@ -6749,6 +6749,31 @@ function suggestionLine(sg) {
       </div>
     </div>`;
 }
+// Pl@ntNet and Claude identifications live in `identifications`, NOT in
+// `suggestions` — different table, different renderer. suggestionBlock() below
+// shows Claude's filing suggestions; this shows a proposed NAME.
+//
+// v1.85.0 folded every photo surface into one action row and, in doing so, lost
+// the Gallery's identification badge: with a pending Pl@ntNet suggestion the row
+// shows no Identify button (correctly — it has already run) and offered its
+// "Dismiss" only in the lightbox, so on a card the suggestion vanished
+// entirely. "Needs a plant" is a Gallery view, which is exactly where it was
+// needed. Two near-identical local copies existed in photoRow and
+// screenLocationDetail; this is the single one.
+function identificationBadge(s, opts) {
+  if (!s) return "";
+  const o = opts || {};
+  return `
+    <div class="ident-badge" ${o.inert ? "" : `onclick="event.stopPropagation();openModal('identificationDetail',{identificationId:'${s.id}'})"`}
+         style="${o.inert ? "" : "cursor:pointer;"}">
+      <span class="mono ident-source">${escapeHtml(s.source)}</span>
+      <em>${escapeHtml(s.suggested_name)}</em>${s.confidence ? ` (${Math.round(s.confidence * 100)}%)` : ""}${o.inert ? "" : ` <span style="color:var(--blue);">&mdash; compare &rarr;</span>`}
+    </div>`;
+}
+function identificationBadges(photoId, opts) {
+  return pendingIdentifications(photoId).map((s) => identificationBadge(s, opts)).join("");
+}
+
 // onCream: the Inbox and Location photo cards are parchment; the edit-photo
 // modal and the lightbox are not.
 function suggestionBlock(photoId, onCream) {
@@ -8753,6 +8778,7 @@ function renderLightbox() {
         ${galleryLocs[0] ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openLocation('${galleryLocs[0].id}')">View location</button>` : ""}
         ${photoActionsHtml(p, { mode: "gallery", plantId: pl ? pl.id : null, variant: "full", fromLightbox: true, cls: "btn btn-secondary btn-sm icon-btn", style: "" })}
       </div>
+      ${identificationBadges(p.id)}
       ${suggestionBlock(p.id)}`;
   } else {
     // Plant mode was the poorest of the four: "Set as profile picture" and a

@@ -343,6 +343,33 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.90.2
+**Pl@ntNet suggestions were invisible in the Gallery — a v1.85.0 regression.**
+
+Two different things were being conflated. Claude's *filing* suggestions live in
+`suggestions` and render via `suggestionBlock()`. Pl@ntNet's proposed *names*
+live in `identifications` and render via a badge. v1.90.0 fixed the first in the
+Gallery; this fixes the second.
+
+The regression: v1.85.0 folded every photo surface into one shared action row
+and dropped the Gallery's old `identifyBtn`, which had rendered a "Pl@ntNet
+suggested X — compare" affordance. In the shared row a pending Pl@ntNet
+suggestion correctly suppresses the Identify button (it has already run) and
+offers Dismiss **only in the lightbox** — so on a card, the suggestion vanished
+completely. "Needs a plant" is a Gallery view of cards, which is exactly where it
+mattered.
+
+Also **deduplicated**: near-identical local `suggestionBadge` closures existed
+inside `photoRow` and `screenLocationDetail`, which is why the Gallery having
+none went unnoticed. One `identificationBadge()` now, used by the Inbox card, the
+Location feed, both Gallery layouts and the lightbox. It takes `inert` for select
+mode, where a tap is choosing the photo rather than opening a comparison.
+
+**Rule this reinforces:** when consolidating surfaces into one component, the
+audit has to cover what each surface rendered, not just which buttons it had.
+The buttons were all accounted for in v1.85.0; a *badge* was not.
+
+
 ### v1.90.1
 **The two AI buttons swapped icons, per Amanda.** The photo-with-a-question-mark
 now belongs to **Identify with Pl@ntNet**, which is literally "what is this a

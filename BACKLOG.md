@@ -295,6 +295,23 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.3.1
+**The Pl@ntNet suggestion was invisible in the lightbox.** The badge rendered
+"PLANTNET" and "— compare →" with a **gap where the species name should be** —
+the one part that matters.
+
+`.ident-badge` sets `color:var(--ink)`, correct on the cream cards it was
+written for and invisible against the lightbox's near-black surround. The source
+label and the compare link survived only because they set their own colours.
+An `.on-dark` variant now carries cream text and a stronger border.
+
+**Third time this exact trap has bitten today** — the Plants filter banner used
+`.on-cream-ground` on the dark page, and now this. A class named for the surface
+it was designed against will be reused on a surface it was not. Swept the
+stylesheet for other classes named after a dark context that paint `--ink`;
+there are none.
+
+
 ### v2.3.0
 **HOVER-1 — see the plant before you trust the suggestion.** Amanda's point
 about the filing screen: it says "the only plant here is *Curio peregrinus*" and

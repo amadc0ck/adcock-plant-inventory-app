@@ -293,6 +293,15 @@
      it returns to rather than always a tab name, so it can be long — "Names to
      split", a bucket name, a quoted search — and it must never wrap beside its
      chevron. Truncates instead. */
+  /* FILE-1 */
+  .file-group{padding:12px 14px;}
+  .file-strip{display:flex;gap:6px;margin:10px 0;overflow-x:auto;padding-bottom:2px;}
+  .file-thumb{width:56px;height:56px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--parchment-dim);cursor:pointer;}
+  .file-thumb img{width:100%;height:100%;object-fit:cover;}
+  .file-more{width:56px;height:56px;border-radius:6px;flex-shrink:0;background:var(--parchment-dim);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--moss-dim);}
+  .file-suggest{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(112,134,107,0.16);border:1px solid rgba(112,134,107,0.45);border-radius:8px;padding:10px 12px;}
+  .file-suggest.is-choice{background:var(--parchment-dim);border-color:rgba(37,41,37,0.12);}
+  .file-choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
   .screen-head{margin-bottom:16px;}
   .screen-title{font-size:22px;font-weight:500;margin:0;}
   .screen-context{margin:4px 0 0;line-height:1.45;}
@@ -617,7 +626,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "2.2.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2390,6 +2399,64 @@ function bloomsToClose() {
     .filter(Boolean)
     .filter((x) => x.pl)
     .sort((a, b2) => b2.days - a.days);
+}
+
+/* FILE-1. "Needs a plant" was 95 photographs in a grid — the same question 95
+   times, answered one photo at a time. But the answer is usually already in the
+   data: a photo filed to Bucket 17 showing an unnamed plant, where Bucket 17
+   holds exactly one specimen, is almost certainly that specimen. Grouping by
+   location turns 95 decisions into a handful.
+
+   Deterministic, not a guess. Where a location holds one specimen the app says
+   so and offers one tap for the whole group; where it holds several it lists
+   them; where it holds none, that is a different job and it says which. */
+function photosNeedingPlantByLocation() {
+  const groups = new Map();
+  state.photos.filter(photoAwaitsPlant).forEach((p) => {
+    const key = p.location_id;
+    if (!groups.has(key)) groups.set(key, { location: locationById(key), photos: [] });
+    groups.get(key).photos.push(p);
+  });
+  return [...groups.values()]
+    .map((g) => {
+      const here = g.location ? plantsAtLocation(g.location.id) : [];
+      return { ...g, candidates: here, only: here.length === 1 ? here[0] : null };
+    })
+    // The confident ones first — those are the quick wins.
+    .sort((a, b) => (b.only ? 1 : 0) - (a.only ? 1 : 0) || b.photos.length - a.photos.length);
+}
+
+// The mirror image: the photo has a plant, and the plant knows where it lives.
+function photosNeedingLocationByPlant() {
+  const groups = new Map();
+  state.photos.filter((p) => p.plant_id && !p.location_id).forEach((p) => {
+    if (!groups.has(p.plant_id)) {
+      const pl = state.plants.find((x) => x.id === p.plant_id);
+      groups.set(p.plant_id, { plant: pl, location: pl && pl.location_id ? locationById(pl.location_id) : null, photos: [] });
+    }
+    groups.get(p.plant_id).photos.push(p);
+  });
+  return [...groups.values()].filter((g) => g.plant)
+    .sort((a, b) => (b.location ? 1 : 0) - (a.location ? 1 : 0) || b.photos.length - a.photos.length);
+}
+
+// Applies one answer to a whole group. Sequential rather than parallel: these
+// are writes, and a partial failure should say how far it got.
+async function assignPhotosToPlant(photoIds, plantId) {
+  let done = 0;
+  try {
+    for (const id of photoIds) { await restPatch("photos", `id=eq.${id}`, { plant_id: plantId }); done++; }
+    toast(`${countLabel(done, "photo", "photos")} filed`);
+    await loadAll();
+  } catch (e) { toast(`Stopped after ${done} — ${e.message}`, true); if (done) await loadAll(); }
+}
+async function assignPhotosToLocation(photoIds, locationId) {
+  let done = 0;
+  try {
+    for (const id of photoIds) { await restPatch("photos", `id=eq.${id}`, { location_id: locationId }); done++; }
+    toast(`${countLabel(done, "photo", "photos")} filed`);
+    await loadAll();
+  } catch (e) { toast(`Stopped after ${done} — ${e.message}`, true); if (done) await loadAll(); }
 }
 
 function bloomPhotosFor(plantId) {
@@ -4822,7 +4889,12 @@ function workQueue() {
     ])}
 
     ${group("Photos to file", photoTotal, photoBuckets.map((b) =>
-      tile(b.count, b.title, b.sub, `showGalleryNeeds('${b.needs}')`)))}
+      tile(b.count, b.title, b.sub,
+        // The two with a knowable answer get the grouped filing screen; the
+        // rest still go to the Gallery, where browsing is the point.
+        b.needs === "no_plant" ? "state.reportView='fileByLocation';render()"
+        : b.needs === "no_location" ? "state.reportView='fileByPlant';render()"
+        : `showGalleryNeeds('${b.needs}')`)))}
 
     ${group("Records to finish", null, [
       tile(missingParts, "Names not split up", "Free text only — cannot group with relatives", "showTaxaMissingParts()"),
@@ -4880,6 +4952,99 @@ function workQueueDetail() {
           ${list.length === 0
             ? `<div class="empty"><div class="display">Nothing here</div><div>${f === "done" ? "No tasks completed yet." : "No open tasks."}</div></div>`
             : `<div class="stack">${list.map((t) => taskRow(t, false)).join("")}</div>`}
+        </div>
+      </div>`;
+  }
+
+  /* FILE-1. Two filing screens that group by the thing that answers the
+     question, rather than listing photographs and asking it repeatedly. */
+  if (state.reportView === "fileByLocation" || state.reportView === "fileByPlant") {
+    const byLoc = state.reportView === "fileByLocation";
+    const groups = byLoc ? photosNeedingPlantByLocation() : photosNeedingLocationByPlant();
+    const total = groups.reduce((n, g) => n + g.photos.length, 0);
+    const confident = groups.filter((g) => byLoc ? g.only : g.location).reduce((n, g) => n + g.photos.length, 0);
+    const strip = (photos) => `<div class="file-strip">${photos.slice(0, 8).map((p) =>
+      `<div class="file-thumb" onclick="openGalleryLightbox('${p.id}')">${photoImg(p)}</div>`).join("")}${
+      photos.length > 8 ? `<div class="file-more">+${photos.length - 8}</div>` : ""}</div>`;
+
+    return `
+      <div class="screen">
+        <div class="container">
+          <button class="back-link" onclick="state.reportView=null;render()">${icon("back")}<span class="back-label">To Do</span></button>
+          ${screenHeader(byLoc ? "Photos needing a plant" : "Photos needing a location",
+            `${countLabel(total, "photo", "photos")} across ${countLabel(groups.length, byLoc ? "location" : "plant", byLoc ? "locations" : "plants")}${confident ? ` · <strong>${confident}</strong> can be filed in one tap` : ""}`)}
+          ${groups.length === 0 ? `<div class="empty"><div class="display">Nothing to file</div><div>Every photo has one.</div></div>` : `
+          <div class="stack">
+            ${groups.map((g) => {
+              const ids = g.photos.map((p) => p.id);
+              const idList = JSON.stringify(ids).replace(/"/g, "&quot;");
+              if (byLoc) {
+                return `
+                <div class="tag-card file-group">
+                  <div class="row">
+                    <div style="min-width:0;">
+                      <div class="tag-id">${g.location ? escapeHtml(locationPath(g.location)) : "No location"}</div>
+                      <div style="font-size:13px;color:var(--ink-soft);margin-top:2px;">${countLabel(g.photos.length, "photo needs", "photos need")} a plant</div>
+                    </div>
+                    <button class="btn-ghost" style="font-size:12px;flex-shrink:0;" onclick="openLocation('${g.location ? g.location.id : ""}')">Open</button>
+                  </div>
+                  ${strip(g.photos)}
+                  ${g.only ? `
+                    <div class="file-suggest">
+                      <div style="flex:1;min-width:0;">
+                        <div class="filter-note-head">The only plant here</div>
+                        <div style="font-size:13.5px;margin-top:2px;">${plantDisplayHtml(g.only)} <span class="mono subtle">${g.only.accession_number}</span></div>
+                      </div>
+                      <button class="btn btn-accent btn-sm" onclick="assignPhotosToPlant(${idList}, '${g.only.id}')">File all ${g.photos.length}</button>
+                    </div>`
+                  : g.candidates.length ? `
+                    <div class="file-suggest is-choice">
+                      <div style="flex:1;min-width:0;">
+                        <div class="filter-note-head">${countLabel(g.candidates.length, "plant is", "plants are")} here — pick one</div>
+                        <div class="file-choices">${g.candidates.map((c) => `
+                          <button class="row-act" onclick="assignPhotosToPlant(${idList}, '${c.id}')">${escapeHtml(plantPickerName(c).primary)} · ${c.accession_number}</button>`).join("")}</div>
+                      </div>
+                    </div>`
+                  : `
+                    <div class="file-suggest is-choice">
+                      <div style="flex:1;min-width:0;">
+                        <div class="filter-note-head">No plants recorded here</div>
+                        <div class="subtle" style="font-size:12.5px;margin-top:2px;">Add the specimen that lives here and these photos have somewhere to go.</div>
+                      </div>
+                      <button class="btn btn-secondary btn-sm" onclick="openModal('newSpecimenHere',{locationId:'${g.location ? g.location.id : ""}'})">Add a specimen</button>
+                    </div>`}
+                </div>`;
+              }
+              return `
+              <div class="tag-card file-group">
+                <div class="row">
+                  <div style="min-width:0;">
+                    <div class="tag-id">${g.plant.accession_number}</div>
+                    <div style="font-size:14px;margin-top:2px;">${plantDisplayHtml(g.plant)}</div>
+                    <div style="font-size:12.5px;color:var(--ink-soft);">${countLabel(g.photos.length, "photo needs", "photos need")} a location</div>
+                  </div>
+                  <button class="btn-ghost" style="font-size:12px;flex-shrink:0;" onclick="openPlant('${g.plant.id}')">Open</button>
+                </div>
+                ${strip(g.photos)}
+                ${g.location ? `
+                  <div class="file-suggest">
+                    <div style="flex:1;min-width:0;">
+                      <div class="filter-note-head">Where this plant lives</div>
+                      <div style="font-size:13.5px;margin-top:2px;">${escapeHtml(locationPath(g.location))}</div>
+                    </div>
+                    <button class="btn btn-accent btn-sm" onclick="assignPhotosToLocation(${idList}, '${g.location.id}')">File all ${g.photos.length}</button>
+                  </div>`
+                : `
+                  <div class="file-suggest is-choice">
+                    <div style="flex:1;min-width:0;">
+                      <div class="filter-note-head">This plant has no location either</div>
+                      <div class="subtle" style="font-size:12.5px;margin-top:2px;">Give the specimen a home and its photos follow.</div>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="openModal('movePlant',{plantId:'${g.plant.id}'})">Set a location</button>
+                  </div>`}
+              </div>`;
+            }).join("")}
+          </div>`}
         </div>
       </div>`;
   }

@@ -295,6 +295,35 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.2.0
+**FILE-1 — the filing queues answer their own question.** Amanda: "Needs a
+plant" was 95 photographs in a grid, which is the same question asked 95 times.
+Her insight is that the answer is usually already in the data — a photo filed to
+Bucket 17 showing an unnamed plant, where **Bucket 17 holds exactly one
+specimen**, is almost certainly that specimen.
+
+**Deterministic, not a guess.** No AI, no cost, no accuracy question. The two
+queues that have a knowable answer now group by the thing that answers them:
+
+- **Needs a plant** groups by **location**. One specimen there → it says so and
+  files the whole group in one tap. Several → it lists them, each one tap.
+  None → that is a different job, and it offers *Add a specimen* instead of
+  leaving you stuck.
+- **Needs a location** groups by **plant**, because the specimen already knows
+  where it lives. One tap per plant, however many photos.
+
+Groups with a confident answer sort first, and the header counts how many
+photos can be filed in a single tap — so the size of the quick win is visible
+before you start.
+
+"Could show a specimen" still routes to the Gallery: those are archive and area
+shots where browsing genuinely is the point, and there is no location to infer
+from.
+
+13 assertions covering one candidate, several, none, an already-filed photo, and
+a plant with no location of its own.
+
+
 ### v2.1.0
 **HEAD-1 — one header on every screen.** Five list screens had five shapes:
 To Do's title lived in the **global top bar**, Plants had no context line and

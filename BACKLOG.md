@@ -180,23 +180,10 @@ Layer 1 (name match) shipped in v1.83.0. **Ungated 2026-08-28** — the gate was
 `suggest-photo` accuracy and Amanda's first real use of it was positive. Worth
 getting an accept-versus-dismiss count before a large batch.
 
-**"In bloom now" is in the wrong group.** It sits under *Records to finish*,
-which is not what it is — a current bloom is a status, not a record gap.
-Options: move it to *Needs you now* beside the other bloom prompts, or drop it
-from To Do entirely since the Gallery has an In Bloom row. Raised 2026-08-28,
-not answered.
+### SQL — NOTHING OUTSTANDING
 
-### Waiting on Amanda at the SQL editor
-
-**SPECIES-1 phase 3 column drop — PROVEN LOSSLESS, ready to run.** All 16
-columns compared across all 167 specimens: every column returned zero specimens
-holding a value the species lacks, except one `family`, which she promoted. The
-comparison then returned zeros throughout — **the first time v1.65.0's claim
-that nothing writes species data onto specimens has been measured rather than
-asserted.** Statement is in the v1.65.0 entry. Take a JSON backup first anyway:
-`drop column` is irreversible, and a restore adds and updates by id — it cannot
-bring a dropped column back.
-
+Both jobs done 2026-08-28. The **SPECIES-1 column drop** ran (see v2.6.0) and
+**NAME-1** is closed, with the two pedigrees restored into `taxa.parentage`.
 
 ### Garden questions — ALL CLOSED 2026-08-28
 

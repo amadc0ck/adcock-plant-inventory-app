@@ -276,6 +276,35 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.6.0
+**"In bloom now" left To Do.** It sat under *Records to finish*, and it is not a
+record to finish — nor work of any kind. **It is a status**, and To Do is for
+things that need doing, which was the whole principle of the rebuild. The
+Gallery's In Bloom row is where you look at what is flowering, and **"Blooms
+still open"** already carries the actionable half. Its drill-in view and the
+now-dead branch in `reportRowActions` went with it.
+
+### SPECIES-1 — CLOSED 2026-08-28
+**The column drop ran.** `plants` is now 21 columns and every one is
+specimen-level: accession, taxon link, location, status, health, next check,
+acquisition, provenance, notes, timestamps. The 16 species fields are gone.
+
+The epic opened 25 August is finished — taxa split from specimens in v1.41.0,
+the code pass in v1.65.0, and the drop today. **SPECIES-2 closes with it**, the
+column drop being its only outstanding step.
+
+**The drop statement had a bug worth recording.** It listed
+`drop column if exists light_conditions` — the **taxa** column name. On `plants`
+the column is `light_requirements`, so `if exists` matched nothing and skipped
+it silently. Written in v1.65.0 by reading the taxa field list rather than the
+plants one. Cleaned up with a follow-up statement; the column was dead either
+way, referenced only as a CSV **header string** whose value comes from
+`taxa.light_conditions`.
+
+**`if exists` makes a mistyped column name silent.** Worth naming: it protects
+against a rerun, and it also hides a typo.
+
+
 ### v2.5.1
 **SCROLL-1 — the scrollbars looked like a UI element, not a hint.** The browser
 default is a heavy white slab against this palette, and on the Gallery's

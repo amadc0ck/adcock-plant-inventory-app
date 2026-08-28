@@ -693,7 +693,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.5.1";
+const APP_VERSION = "2.6.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5025,7 +5025,6 @@ function workQueue() {
     return x ? tile(x.items.length, x.title, x.sub, `state.reportView='${x.key}';render()`, urgent) : "";
   };
 
-  const blooming = bloomingSpecimens();
   const due = expectedToBloom();
   const toClose = bloomsToClose();
   const photoTotal = photoBuckets.filter((b) => !b.muted).reduce((n, b) => n + b.count, 0);
@@ -5066,7 +5065,11 @@ function workQueue() {
       sect("emptyLocations"),
       tile(dupPhotos.length, "Duplicate photos", `Same capture time — ${countLabel(dupExtras, "extra copy", "extra copies")}`, "openModal('duplicatePhotos')"),
       tile(duplicateGroups.length, "Duplicate plants", "Same species, same location", "openModal('duplicatePlants')"),
-      tile(blooming.length, "In bloom now", "Recorded as flowering", "state.reportView='blooming';render()"),
+      // "In bloom now" used to sit here. It is not a record to finish — nor work
+      // of any kind. It is a status, and To Do is for things that need doing,
+      // which was the principle of the whole rebuild. The Gallery's In Bloom row
+      // is where you look at what is flowering, and "Blooms still open" above
+      // already carries the actionable half.
     ])}`;
 
   const nothing = !queue.trim();
@@ -5089,7 +5092,6 @@ function workQueue() {
 function workQueueDetail() {
   const sections = reportSections();
   const bloomViews = {
-    blooming: { title: "In bloom now", sub: "Recorded as flowering", items: bloomingSpecimens(), kind: "plant" },
     dueToBloom: { title: "Should be blooming", sub: "In season with nothing recorded — go and look", items: expectedToBloom(), kind: "plant" },
     closeBlooms: { title: "Blooms still open", sub: "Recorded a while ago — still flowering?", items: bloomsToClose().map((x) => x.pl), kind: "plant" },
   };
@@ -5320,7 +5322,7 @@ function reportRowActions(pl) {
     out.push(btn("Remind me in 14d", `snoozeCheckIn('${pl.id}', 14)`));
   }
   if (v === "dueToBloom") out.push(btn("Record a bloom", `startBloom('${pl.id}')`));
-  if ((v === "closeBlooms" || v === "blooming") && open) out.push(btn("It has finished", `endBloom('${open.id}')`));
+  if (v === "closeBlooms" && open) out.push(btn("It has finished", `endBloom('${open.id}')`));
   if (v === "plantsNoLocation" || v === "frostTender") out.push(btn(v === "frostTender" ? "Move it in" : "Set a location", `openModal('movePlant',{plantId:'${pl.id}'})`));
 
   out.push(btn("Make a task", `openModal('newTask',{subject:{kind:'plant',id:'${pl.id}'}})`));

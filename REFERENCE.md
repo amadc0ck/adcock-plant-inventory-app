@@ -63,6 +63,8 @@ Physical containers and spaces. Self-referencing hierarchy (Front Yard → Wall 
 The **kind** of plant — whatever the most specific level is known: a species, a cultivar, or a bare genus. Introduced v1.41.0 (SPECIES-1 phase 1). Species-level facts live here once instead of on every specimen.
 
 - `id` uuid PK · `taxa_id` on `plants` links a specimen to it, **nullable** so unidentified plants stay first-class
+- **Name parts are optional and mostly unfilled.** Measured 2026-08-28: of 105 taxa, **61 have no genus, no epithet and no cultivar** — only free-text `botanical_name`, which all 105 have. NAME-1 filled the parts for the 33 taxa that existed then; every species created since by typing a name into a form gets free text only, because `ensureTaxonForName()` writes parts only when a caller passes them and the forms leave them blank. Composed display names, per-part italics, `infraspecific` and `parentage` therefore do not engage for most of the collection.
+- **Cultivars are separate rows, never children.** *Aeonium arboreum*, *A. arboreum* 'Atropurpureum' and *A. arboreum* 'Zwartkop' are three taxa sharing `genus` and `species_epithet`. There is no parent/child link; "all Aeoniums" is a query on `genus`. Grouping only works when the parts are filled — see above.
 - `botanical_name` / `common_name` / `cultivar` / `family` / `genus` / `species_epithet` / `is_hybrid`
 - `infraspecific` text (wired up v1.83.0) — variety, subspecies or form, stored **with** the rank abbreviation as written on the tag: `var. erinacea`, `subsp. horrida`, `f. monstruosa`. A bare word with no recognised rank is read as `var.`, which is overwhelmingly the common case; rendering it rankless would read as a second species epithet. `infraspecificParts()` splits rank from epithet so markup can set the rank upright and the epithet italic, per convention.
 - `parentage` text (wired up v1.83.0) — the cross a cultivar came from, e.g. *E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina'. Vendors put the pedigree in the name field; this is where it goes so that recording the real name does not discard it.
@@ -87,6 +89,29 @@ Two shapes the composition must handle, both present in the real data:
 **Name matching is normalised, not string equality** (v1.83.0, AI-3). `nameKey()` lowercases and strips quoting, folds `×` to `x`, drops rank words, and collapses punctuation and whitespace; `taxonNameKeys()` returns every name a taxon answers to — composed display name, `botanical_name`, `common_name`, `working_label`. `findTaxonByName()` is the single lookup used when a new specimen needs a taxon.
 
 This replaced a comparison against `botanical_name` alone, which had become **actively wrong** once composition landed: a taxon built from parts often has no `botanical_name` at all, so typing an existing species name matched nothing and created a duplicate species record. Any future "does this already exist" check must go through `findTaxonByName()` rather than comparing a column.
+
+### Constraints — the actual list, read from `pg_constraint` 2026-08-28
+
+Stop inferring these. Verified:
+
+| Table | Constraint |
+| --- | --- |
+| `plants` | `health_status` in healthy / watch / **urgent** / recovery / unknown |
+| `plants` | `identification_status` in confirmed / tentative / unidentified |
+| `plants` | `status` in active / dormant / given_away / dead / deaccessioned |
+| `plants` | `collection_category` in current / historical |
+| `plants` | `acquisition_source_type` nullable, else one of seven |
+| `plants` | `water_needs` nullable, else low / moderate / high · `light_requirements` nullable, else full_sun / partial_shade / shade |
+| `plants` | UNIQUE `accession_number` |
+| `photos` | `photo_type` in general / bloom / detail / condition / **overview** / **progress** |
+| `photos` | `focal_x` / `focal_y` 0–100, NOT VALID |
+| `photo_plants`, `photo_locations`, `plant_locations` | UNIQUE on their two ids |
+| `list_options` | UNIQUE (list_name, value) |
+| `task_subjects` | exactly one of plant_id / location_id / taxa_id |
+
+**`taxa` has NO constraints of any kind.** No CHECK, no UNIQUE. Two consequences:
+- A failed write to `taxa` is never a constraint violation — look at RLS or the token instead.
+- **This file used to claim taxa are identified by "the composed name as a unique natural key". That is not enforced.** Nothing prevents two identically-named species, which is how three spellings of *Echeveria agavoides* came to coexist.
 
 **Vocabulary columns are CHECK-constrained in the database, whatever this file used to say.** PD-4 recorded `health_status` as "free text standardized by the dropdown, so no migration" — that is **wrong**, and it shipped a broken tier: `plants_health_status_check` rejected `urgent`, so Move to Plant Hospital, the edit dropdown and Claude's health suggestion all failed with `23514` until the constraint was widened.
 

@@ -23,10 +23,52 @@ says nothing about accepted values, because an anonymous read cannot see
 `pg_constraint`. Before adding any value to a vocabulary, ask Amanda for the
 constraint list (the query is in REFERENCE under `taxa`).
 
-Pending: `photo_type` gained `overview` and `progress` in v1.88.0 and **may hit
-the same wall**. Needs `select photo_type, count(*) from photos group by 1;`
-first — an `identification` type existed once and was retired, so unknown values
-may still be present.
+**Both constraints were widened 2026-08-28 and verified from `pg_constraint`.**
+`health_status` accepts `urgent`; `photo_type` accepts `overview` and
+`progress`. The full constraint list is now recorded in REFERENCE — read it
+there rather than inferring, and note that **`taxa` has no constraints at all**,
+so a failed taxa write is never a constraint violation.
+
+**The CLI has no `functions logs` subcommand** (v2.115.0) — an older note in this
+file claimed it does. Use the Supabase dashboard for Edge Function logs.
+
+### Species data — measured 2026-08-28
+
+- **105 taxa. Only 13 are complete**; 86–91 of 105 are blank in every profile
+  field. `suggest-species` has effectively never run at scale.
+- **61 of 105 have no structured name parts** — genus, epithet and cultivar all
+  empty, only free-text `botanical_name` (which all 105 have).
+- **Known bad names** (character diffs given to Amanda 2026-08-28):
+  `Echerveria Agavoides 'Lipstick'` (4 specimens) · `Euphorbia enolpa` →
+  *enopla* (5 specimens) · `Echeveria Agavoides 'Ebony'` ·
+  `Echeveria Runyonii 'Pink Edge'` · `Pacheyveria 'Haagei'` ·
+  `Pilosocereus leucocephalus f. Palmeri` · `Curio repens 'Mini Blue'.`
+  Unverified: `Echeveria deranosa`, `Pachyphytum exotica`.
+- Three separate *agavoides* records exist. That is **correct** under SPECIES-1
+  (cultivars are sibling rows, not children) — they just need their parts filled
+  so they group.
+
+### NAME-2 — let Claude propose name corrections and parse the parts
+**Status:** designed, not built · **Blocked on:** species saves failing
+
+Amanda asked whether Claude can suggest these edits in-app. **Most of the
+plumbing already exists**: `suggestions.kind = "species_field"` and the accept
+handler at `index.html:7143` does `restPatch("taxa", {[sg.field]: v})` — it
+writes any taxa column generically. So a suggestion for `genus`,
+`species_epithet` or `cultivar` would already accept correctly.
+
+Missing: `suggest-species` only asks about **blank** fields (a correction is
+what it is designed never to propose), and `FIELDS` omits `cultivar`,
+`infraspecific`, `is_hybrid` and `botanical_name`.
+
+Build a `focus: "name"` mode mirroring `suggest-photo`'s focus: validate and
+parse the existing name, return suggestions for the parts plus a corrected free
+text. Fixes the 7 bad names and the 61 unstructured records with one feature.
+Also extend the accept handler's boolean special-case from `frost_tender` to
+`is_hybrid`, or it writes the string "true".
+
+**Do not build until species edits save** — accepting a suggestion uses the same
+`restPatch("taxa", ...)` that is currently failing.
 
 ### Schema state — VERIFIED against the live database 2026-08-27
 

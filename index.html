@@ -583,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.95.0";
+const APP_VERSION = "1.95.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5309,7 +5309,11 @@ function modalContent() {
               ${icon("leaf")}<span style="flex:1;text-align:left;">${escapeHtml(taxonDisplayName(t))}</span>
             </button>`).join("")}
           ${!exact ? `
-            <button class="task-pick" onclick="addBatchRow(null, ${JSON.stringify(state.batchSearch)})">
+            ${/* JSON.stringify emits DOUBLE quotes, which close the onclick
+                 attribute — the handler became `addBatchRow(null, ` and the
+                 button silently did nothing. escapeAttr() exists for exactly
+                 this: single-quoted, with quotes and backslashes escaped. */""}
+            <button class="task-pick" onclick="addBatchRow(null,'${escapeAttr(state.batchSearch)}')">
               ${icon("plus")}<span style="flex:1;text-align:left;">Add &ldquo;${escapeHtml(state.batchSearch)}&rdquo; as a new species</span>
             </button>` : ""}
         </div>` : ""}

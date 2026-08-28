@@ -282,6 +282,23 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.95.1
+**"Add X as a new species" in batch entry did nothing.** A quoting bug in
+v1.89.0: the handler was built with `JSON.stringify(state.batchSearch)`, which
+emits **double** quotes — and the attribute is double-quoted, so the name closed
+it. The rendered handler was `addBatchRow(null, ` followed by loose text: a
+syntax error, so the click did nothing at all. Silent, because a broken inline
+handler throws in the browser console rather than in the app.
+
+Now `escapeAttr()`, which exists for exactly this and was already used for the
+Pl@ntNet reference images. Swept the file for the same pattern elsewhere — this
+was the only one. 8 assertions covering apostrophes, double quotes,
+backslashes, curly quotes and a pasted newline.
+
+**Worth remembering: never `JSON.stringify` into an HTML attribute.** Single
+quotes plus `escapeAttr()`.
+
+
 ### v1.95.0
 **NAME-2 — Claude checks the name and splits it into parts.** Amanda asked
 whether the app could suggest the name corrections rather than her typing seven

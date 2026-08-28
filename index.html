@@ -63,7 +63,6 @@
   .status-light-btn{background:none;border:none;padding:6px;cursor:default;display:flex;}
   .status-light-btn svg{width:18px;height:18px;}
   .status-light{width:10px;height:10px;border-radius:50%;display:inline-block;}
-  .inbox-subbar{padding:12px 0;border-bottom:1px solid var(--line);}
 
   .nav-row{display:flex;align-items:flex-end;justify-content:space-around;position:relative;}
   .nav-camera-btn{width:52px;height:52px;border-radius:50%;background:var(--orange);color:#3A2408;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;transform:translateY(-16px);box-shadow:0 6px 16px -4px rgba(0,0,0,0.5);flex-shrink:0;}
@@ -294,6 +293,10 @@
      it returns to rather than always a tab name, so it can be long — "Names to
      split", a bucket name, a quoted search — and it must never wrap beside its
      chevron. Truncates instead. */
+  .screen-head{margin-bottom:16px;}
+  .screen-title{font-size:22px;font-weight:500;margin:0;}
+  .screen-context{margin:4px 0 0;line-height:1.45;}
+  .head-actions{display:flex;flex-wrap:wrap;gap:8px;flex-shrink:0;}
   .back-link{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:2px 0 14px;
     background:none;border:none;cursor:pointer;color:var(--cream);font-family:inherit;font-size:13.5px;opacity:0.8;}
   .back-link:hover{opacity:1;}
@@ -614,7 +617,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.0.2";
+const APP_VERSION = "2.1.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -631,9 +634,7 @@ const state = {
   driveToken: null,
   loading: false,
   modal: null,
-  plantSearch: "",
   attachSearch: "",
-  plantFilters: { category: "", status: "", idStatus: "", original: "", location: "" },
   tasks: [],
   taskSubjects: [],
   plantLocationHistory: [],
@@ -2825,8 +2826,6 @@ function viewSnapshot() {
     taxaSearch: state.taxaSearch,
     taxaOnlySuggestions: state.taxaOnlySuggestions,
     taxaOnlyMissingParts: state.taxaOnlyMissingParts,
-    plantSearch: state.plantSearch,
-    plantFilters: { ...state.plantFilters },
     galleryFilters: { ...state.galleryFilters },
     inboxSearch: state.inboxSearch,
     scrollY: window.scrollY || 0,
@@ -2884,8 +2883,6 @@ function navBack() {
     taxaSearch: snap.taxaSearch,
     taxaOnlySuggestions: snap.taxaOnlySuggestions,
     taxaOnlyMissingParts: snap.taxaOnlyMissingParts,
-    plantSearch: snap.plantSearch,
-    plantFilters: { ...snap.plantFilters },
     galleryFilters: { ...snap.galleryFilters },
     inboxSearch: snap.inboxSearch,
     modal: null,
@@ -3440,7 +3437,10 @@ function screenInbox() {
   return `
   <div class="screen">
     <div class="container">
-      <p class="subtle" style="margin-bottom:12px;">${selectMode ? "Tap photos to select them, then choose an action below." : "Everything waiting on you — records to finish, then photos to file."}</p>
+      ${screenHeader(
+        `To Do${unassigned.length ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassigned.length} photos</span>` : ""}`,
+        selectMode ? "Tap photos to select them, then choose an action below." : "Everything waiting on you — records to finish, then photos to file.",
+        unassigned.length ? `<button class="btn btn-secondary btn-sm" onclick="toggleInboxSelectMode()">${selectMode ? "Cancel" : "Select"}</button>` : "")}
 
       ${/* The queue sits above the grid rather than behind a toggle: the counts
            are the first thing worth seeing when the app opens, and hiding them
@@ -3623,7 +3623,10 @@ function screenTaxa() {
   return `
   <div class="screen">
     <div class="container">
-      <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
+      ${screenHeader("Plants",
+        `${countLabel(state.taxa.length, "kind", "kinds")} · ${countLabel(state.plants.length, "specimen", "specimens")}`,
+        `<button class="btn btn-secondary btn-sm" onclick="openModal('batchAdd')">+ Batch</button>
+         <button class="btn btn-accent btn-sm" onclick="openModal('newPlant')">+ New Plant</button>`)}
       ${state.taxaOnlyMissingParts ? `
         ${/* Was `on-cream-ground`, which sets dark ink and supplies NO
              background — it exists for use inside a cream card. On the dark
@@ -3861,48 +3864,6 @@ function screenTaxonDetail() {
         </div>
         ${shots.length > limit ? `<button class="btn btn-secondary btn-block" style="margin-top:12px;" onclick="state.taxonPhotoLimit=${limit + 24};render()">Show more — ${limit} of ${shots.length}</button>` : ""}`;
       })()}
-    </div>
-  </div>`;
-}
-
-function screenPlants() {
-  const q = (state.plantSearch || "").toLowerCase();
-  const f = state.plantFilters;
-  const list = state.plants.filter((pl) => {
-    if (q) {
-      if (!plantSearchText(pl).includes(q)) return false;
-    }
-    if (f.category && pl.collection_category !== f.category) return false;
-    if (f.status && pl.status !== f.status) return false;
-    if (f.idStatus && pl.identification_status !== f.idStatus) return false;
-    if (f.original === "yes" && !pl.original_collection) return false;
-    if (f.original === "no" && pl.original_collection) return false;
-    if (f.location) {
-      const plantLocIds = allLocationsForPlant(pl).map((l) => l.id);
-      if (!plantLocIds.includes(f.location)) return false;
-    }
-    return true;
-  });
-
-  const activeFilterCount = [f.category, f.status, f.idStatus, f.original, f.location].filter(Boolean).length;
-
-  return `
-  <div class="screen">
-    <div class="container">
-      <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 16px;">Plants</h2>
-      <input class="search-input" placeholder="Search name, accession #, cultivar…" value="${escapeHtml(state.plantSearch || "")}" id="search-plants" oninput="state.plantSearch=this.value;scheduleRender()" />
-      <div class="row" style="margin-bottom:16px;">
-        <button class="btn btn-secondary btn-sm" onclick="openModal('plantFilters')">
-          Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
-        </button>
-        <button class="btn btn-accent btn-sm" onclick="openModal('newPlant')">+ New Plant</button>
-      </div>
-      ${activeFilterCount ? `<button class="btn-ghost" style="font-size:12.5px;margin-top:-10px;" onclick="state.plantFilters={category:'',status:'',idStatus:'',original:'',location:''};render()">Clear filters</button>` : ""}
-      ${(q || activeFilterCount) ? `<div class="subtle" style="margin:-8px 0 16px;">${list.length} of ${state.plants.length} plants</div>` : ""}
-      ${list.length === 0 ? `
-        <div class="empty"><div class="display">${state.plants.length === 0 ? "No plants yet" : "No matches"}</div>
-        <div>${state.plants.length === 0 ? "Add your first plant from a photo." : "Try different search or filters."}</div></div>` : `
-        <div class="card-grid">${list.map(plantRow).join("")}</div>`}
     </div>
   </div>`;
 }
@@ -4304,10 +4265,9 @@ function screenLocations() {
   return `
   <div class="screen">
     <div class="container">
-      <div class="row" style="margin-bottom:16px;">
-        <h2 class="display" style="font-size:22px;font-weight:500;margin:0;">Locations</h2>
-        <button class="btn btn-secondary btn-sm" onclick="openModal('newLocation')">+ Add</button>
-      </div>
+      ${screenHeader("Locations",
+        `${countLabel(state.locations.length, "place", "places")} · ${countLabel(topLevel.length, "area", "areas")} at the top level`,
+        `<button class="btn btn-secondary btn-sm" onclick="openModal('newLocation')">+ Add</button>`)}
       ${(() => {
         if (state.locations.length === 0) return `
           <div class="empty"><div class="display">No locations yet</div><div>Add areas, rows, or containers to organize your plants.</div></div>`;
@@ -5292,8 +5252,7 @@ function screenGallery() {
   return `
   <div class="screen">
     <div class="container">
-      <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 4px;">Gallery</h2>
-      <p class="subtle" style="margin-bottom:16px;">${countLabel(state.photos.length, "photograph", "photographs")} documenting the collection.</p>
+      ${screenHeader("Gallery", `${countLabel(state.photos.length, "photograph", "photographs")} documenting the collection.`)}
       ${searching ? "" : collectionStats()}
 
       <div class="sticky-controls">
@@ -5416,6 +5375,26 @@ function screenGallery() {
   ${bulkBar}`;
 }
 
+/* HEAD-1. Five list screens, five header shapes: To Do's title lived in the
+   global top bar, Plants had no context line and put its counts BELOW the
+   controls, Locations had a title and an action but no context, Settings had a
+   bare title, and only the Gallery had the full set.
+
+   One order everywhere: title and its actions, then one line of context, then
+   the controls. `actions` sits beside the title because those are things you do
+   TO the list; filters and search sit under the context because they change
+   what the list shows. */
+function screenHeader(title, context, actions) {
+  return `
+    <div class="screen-head">
+      <div class="row">
+        <h2 class="display screen-title">${title}</h2>
+        ${actions ? `<div class="head-actions">${actions}</div>` : ""}
+      </div>
+      ${context ? `<p class="subtle screen-context">${context}</p>` : ""}
+    </div>`;
+}
+
 function settingsSection(key, title, sub, body) {
   const open = !!state.settingsOpen[key];
   return `
@@ -5440,7 +5419,7 @@ function screenSettings() {
   return `
   <div class="screen">
     <div class="container">
-      <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 20px;">Settings</h2>
+      ${screenHeader("Settings", `v${APP_VERSION} · ${APP_UPDATED}`)}
 
       ${/* Drive stays open and first: its access expires about weekly, so it is
            the one thing here she has to come back and act on. */""}
@@ -6159,42 +6138,6 @@ function modalContent() {
       </select>
       <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="closeModal()">Done</button>
       <button class="btn-ghost btn-block" style="margin-top:8px;text-align:center;justify-content:center;" onclick="state.galleryFilters={locationId:'',photoType:'',search:state.galleryFilters.search};render()">Clear filters</button>`;
-  }
-
-  if (type === "plantFilters") {
-    const f = state.plantFilters;
-    return `
-      <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Filters</h3>
-      <label>Collection</label>
-      <select onchange="state.plantFilters.category=this.value;render()">
-        <option value="">All collection</option>
-        <option value="current" ${f.category === "current" ? "selected" : ""}>Current</option>
-        <option value="historical" ${f.category === "historical" ? "selected" : ""}>Historical</option>
-      </select>
-      <label>Status</label>
-      <select onchange="state.plantFilters.status=this.value;render()">
-        <option value="">All status</option>
-        ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${f.status === k ? "selected" : ""}>${v}</option>`).join("")}
-      </select>
-      <label>Identification status</label>
-      <select onchange="state.plantFilters.idStatus=this.value;render()">
-        <option value="">All ID status</option>
-        ${Object.entries(ID_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${f.idStatus === k ? "selected" : ""}>${v}</option>`).join("")}
-      </select>
-      <label>Original collection</label>
-      <select onchange="state.plantFilters.original=this.value;render()">
-        <option value="">Any</option>
-        <option value="yes" ${f.original === "yes" ? "selected" : ""}>Original only</option>
-        <option value="no" ${f.original === "no" ? "selected" : ""}>Non-original</option>
-      </select>
-      <label>Location</label>
-      <select onchange="state.plantFilters.location=this.value;render()">
-        <option value="">All locations</option>
-        ${locationOptionList().map((o) => `<option value="${o.id}" ${f.location === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
-      </select>
-      <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="closeModal()">Done</button>
-      <button class="btn-ghost btn-block" style="margin-top:8px;text-align:center;justify-content:center;" onclick="state.plantFilters={category:'',status:'',idStatus:'',original:'',location:''};render()">Clear all filters</button>`;
   }
 
   if (type === "linkPlantToLocation") {
@@ -9090,13 +9033,11 @@ function navBar() {
 }
 
 function topBar() {
-  const unassignedCount = state.photos.filter((p) => !p.plant_id && !p.location_id).length;
   const driveOk = !!state.driveToken;
-  const inboxSubBar = state.tab === "inbox" ? `
-    <div class="inbox-subbar"><div class="container" style="display:flex;align-items:center;justify-content:space-between;">
-      <h2 class="display" style="font-size:18px;font-weight:500;margin:0;">To Do${unassignedCount ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassignedCount} photos</span>` : ""}</h2>
-      ${unassignedCount ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="toggleInboxSelectMode()">${state.inboxSelectMode ? "Cancel" : "Select"}</button>` : ""}
-    </div></div>` : "";
+  // HEAD-1. To Do's title used to live here in the global top bar, which is why
+  // it was the one screen whose header did not match its siblings. It now uses
+  // screenHeader() like everything else, so the top bar carries only the brand
+  // and the three global controls on every screen.
   return `
   <div class="sticky-header-group">
     <div class="topbar"><div class="container topbar-row">
@@ -9111,7 +9052,6 @@ function topBar() {
         <button class="icon-only-btn" onclick="goTab('settings')" aria-label="Settings">${icon("settings")}</button>
       </div>
     </div></div>
-    ${inboxSubBar}
   </div>`;
 }
 

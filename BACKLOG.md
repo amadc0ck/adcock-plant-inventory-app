@@ -295,6 +295,32 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.1.0
+**HEAD-1 — one header on every screen.** Five list screens had five shapes:
+To Do's title lived in the **global top bar**, Plants had no context line and
+put its counts *below* the controls, Locations had a title and an action but no
+context, Settings had a bare title, and only the Gallery carried the full set.
+
+`screenHeader(title, context, actions)` fixes the order everywhere: **title and
+its actions, then one line of context, then the controls.** Actions sit beside
+the title because they are things you do *to* the list; search and filters sit
+below the context because they change what the list *shows*.
+
+Each screen gained a context line it did not have: Plants now says "105 kinds ·
+167 specimens" at the top rather than buried under the search, Locations says
+how many places and how many top-level areas, Settings carries the version.
+
+**To Do's title came out of the top bar.** That was the whole reason it was the
+odd one out — the global bar is now brand and controls on every screen, and To
+Do renders its own header like everything else, Select button included.
+
+**Two orphans found while doing it.** `screenPlants()` — the old flat specimen
+list — has been **unreachable since the taxa split** made the Plants tab browse
+species; nothing routed to it. Its `plantFilters` modal was orphaned with it,
+along with `state.plantSearch` and `state.plantFilters`. 78 lines of code that
+could not be reached, plus the now-unused `.inbox-subbar` style.
+
+
 ### v2.0.2
 **The back link wrapped onto two lines.** v1.99.0 made the label the *place* it
 returns to rather than always a tab name — which is the point, but it means the

@@ -343,6 +343,32 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.92.0
+**You could not pick an existing species when creating a plant from a photo.**
+
+"New specimen here" (from a Location) has offered a species list since it was
+built. "New plant" — the form the Gallery and Inbox open — never did. It had two
+free-text name fields and relied on the AI-3 fuzzy match to notice you meant a
+species you already had.
+
+That is fragile in one specific way Amanda hit: **the match fails when the
+stored name has a typo.** Her existing record is `Echerveria Agavoides
+'Lipstick'` (an r too many). Typing the correct `Echeveria Agavoides 'Lipstick'`
+matched nothing, and the near-miss list could not offer it either, because
+`similarTaxaByName()` compares the genus token and `Echerveria` ≠ `Echeveria`.
+So the app proposed creating a **second** species record for a species she
+already had.
+
+The form now leads with **search and pick an existing species**, showing each
+candidate's specimen count, and falls back to naming a new one underneath.
+Picking is exact — no name matching involved — so a typo in stored data cannot
+hide a species from you.
+
+**Data note for Amanda:** `Echerveria Agavoides 'Lipstick'` is misspelled and
+carries at least two specimens (ABG-2026-0098, ABG-2026-0102). Worth fixing on
+the taxon record; the specimens follow automatically since they link by id.
+
+
 ### v1.91.0
 **LOCFIELD-1 — one location field, and the second half of a v1.85.0 regression.**
 

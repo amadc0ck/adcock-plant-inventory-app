@@ -583,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.91.0";
+const APP_VERSION = "1.92.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -616,6 +616,8 @@ const state = {
   // flat <select> that eight forms each rolled their own copy of.
   locField: {},           // prefix -> chosen location id
   locFieldOpen: "",       // which prefix has its picker expanded
+  newPlantTaxon: "",      // an EXISTING species chosen in the New plant form
+  newPlantTaxonSearch: "",
   appSettings: {},
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
   taskSubjectSearch: "",
@@ -2718,7 +2720,11 @@ async function bulkAttachToLocation(locationId) {
 function openModal(type, data = {}) {
   // Paging resets per open, so the picker never starts mid-list.
   if (type === "attachInboxPhoto") state.attachPhotoLimit = 24;
-  if (type === "newPlant" || type === "newPlantFromPhoto") state.newPlantExpanded = false;
+  if (type === "newPlant" || type === "newPlantFromPhoto") {
+    state.newPlantExpanded = false;
+    state.newPlantTaxon = "";
+    state.newPlantTaxonSearch = "";
+  }
   // TASK-1. The subject draft lives in state so the picker survives the
   // re-render on every search keystroke. Seed it on open: from the task being
   // edited, or from the record she opened the modal from ("new task about this
@@ -5488,10 +5494,51 @@ function modalContent() {
       <p class="subtle" style="margin:0 0 14px;">Accession number is generated automatically. The botanical name creates or finds the <strong>species</strong>; this plant becomes a specimen of it. Everything here can be set later.</p>
       ${suggestion ? `<p style="font-size:12.5px;color:var(--blue);margin:0 0 14px;">Pre-filled from AI suggestion — double check before saving.</p>` : ""}
       <form id="new-plant-form">
-        <label>Botanical name</label>
-        <input id="np-botanical" placeholder="e.g. Cephalocereus senilis" value="${suggestion ? escapeHtml(suggestion.suggested_name) : ""}" />
-        <label>Common name</label>
-        <input id="np-common" placeholder="e.g. Old Man Cactus" />
+        ${/* "New specimen here" has offered a species list since it was built;
+             this form never did, so from the Gallery the only way to reach an
+             existing species was to type its name and hope the fuzzy match
+             caught it. It does not catch a typo in the stored name — Amanda's
+             "Echerveria Agavoides 'Lipstick'" never matched "Echeveria …"
+             because the genus token differs. Picking is exact and needs no
+             matching at all. */""}
+        ${(() => {
+          const chosen = state.newPlantTaxon ? taxonById(state.newPlantTaxon) : null;
+          if (chosen) {
+            return `
+              <label>Species</label>
+              <div class="tag-card plant-list-card" style="padding:8px 10px;margin-bottom:8px;">
+                <span class="suggestion-icon" style="color:var(--moss-dim);">${icon("leaf")}</span>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:13.5px;font-weight:500;">${taxonDisplayHtml(chosen)}</div>
+                  <div style="font-size:11.5px;color:var(--ink-soft);">${countLabel(specimensOfTaxon(chosen.id).length, "specimen", "specimens")} already${chosen.common_name ? " · " + escapeHtml(chosen.common_name) : ""}</div>
+                </div>
+                <button type="button" class="btn-ghost" style="padding:0;font-size:12px;" onclick="state.newPlantTaxon='';render()">Change</button>
+              </div>
+              <div class="field-help">This plant becomes another specimen of that species. No new species record is created.</div>`;
+          }
+          const q = (state.newPlantTaxonSearch || "").trim().toLowerCase();
+          const matches = q ? state.taxa.filter((t) =>
+            [taxonDisplayName(t), t.common_name, t.genus, t.family, t.working_label]
+              .filter(Boolean).join(" ").toLowerCase().includes(q)).slice(0, 6) : [];
+          return `
+            <label>Species &mdash; pick one you already have</label>
+            <input id="np-taxonsearch" placeholder="Search your species…" value="${escapeHtml(state.newPlantTaxonSearch || "")}"
+              oninput="state.newPlantTaxonSearch=this.value;render()" />
+            ${q ? `<div class="stack" style="margin-top:8px;max-height:26vh;overflow-y:auto;">
+              ${matches.length === 0 ? `<p class="subtle" style="font-size:12.5px;margin:0;">Nothing matches &mdash; name it below to create a new species.</p>`
+                : matches.map((t) => `
+                <button type="button" class="task-pick" onclick="state.newPlantTaxon='${t.id}';state.newPlantTaxonSearch='';render()">
+                  ${icon("leaf")}<span style="flex:1;text-align:left;">${escapeHtml(taxonDisplayName(t))}${t.common_name ? ` · ${escapeHtml(t.common_name)}` : ""}</span>
+                  <span class="mono" style="font-size:10.5px;opacity:0.7;">${specimensOfTaxon(t.id).length}</span>
+                </button>`).join("")}
+            </div>` : ""}
+            <div class="divider" style="margin:14px 0 10px;"></div>
+            <div class="section-label">Or name a new species</div>
+            <label>Botanical name</label>
+            <input id="np-botanical" placeholder="e.g. Cephalocereus senilis" value="${suggestion ? escapeHtml(suggestion.suggested_name) : ""}" />
+            <label>Common name</label>
+            <input id="np-common" placeholder="e.g. Old Man Cactus" />`;
+        })()}
         ${/* AI-3 layer 1. Filled live by checkDuplicateName() as she types. */""}
         <div id="np-dupe"></div>
         <label>Identification status</label>
@@ -9014,8 +9061,11 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
     newPlantForm.onsubmit = async (e) => {
       e.preventDefault();
       try {
-        const botanical = document.getElementById("np-botanical").value || null;
-        const common = document.getElementById("np-common").value || null;
+        // The name inputs are not rendered once an existing species is picked.
+        const nb = document.getElementById("np-botanical");
+        const nc = document.getElementById("np-common");
+        const botanical = nb ? (nb.value || null) : null;
+        const common = nc ? (nc.value || null) : null;
         const body = {
           identification_status: document.getElementById("np-idstatus").value,
           location_id: locFieldValue("np") || null,
@@ -9034,7 +9084,8 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
         });
         // The name and its parts describe the KIND of plant, so they create or
         // find the taxon rather than being copied onto this individual.
-        body.taxa_id = await ensureTaxonForName(botanical, common, {
+        // Picking an existing species is exact — no name matching involved.
+        body.taxa_id = state.newPlantTaxon || await ensureTaxonForName(botanical, common, {
           cultivar: opt("np-cultivar"),
           family: opt("np-family"),
           genus: opt("np-genus"),

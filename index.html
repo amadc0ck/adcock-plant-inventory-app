@@ -583,7 +583,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.95.1";
+const APP_VERSION = "1.95.2";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -9071,6 +9071,41 @@ function renderLightbox() {
   </div>`;
 }
 
+// Lifted out of wireModalForms() in v1.95.2. It was defined INSIDE that
+// function, so it existed only while wireModalForms was running — every form
+// handler closed over it and worked, but createBatch() called it from outside
+// and got "ensureTaxonForName is not defined". Batch entry could not create a
+// new species at all.
+// with the same botanical name, otherwise make a new one. A specimen with no
+// name at all keeps taxa_id null on purpose and surfaces in the Unidentified
+// group on the taxa list instead.
+// SPECIES-1 phase 3. Every species fact entered anywhere in the app lands here
+// and goes onto the taxon. `parts` carries cultivar/family/genus/epithet from
+// the New Plant form, which used to write them onto the specimen instead.
+//
+// A common name with no botanical name still deserves a taxon — three plants
+// can obviously be the same kind before anyone knows what that kind is, which
+// is what working_label is for. Returning null there would strand the specimen.
+async function ensureTaxonForName(botanicalName, commonName, parts) {
+  const name = (botanicalName || "").trim();
+  const common = (commonName || "").trim();
+  if (!name && !common) return null;
+  const existing = findTaxonByName(name, common);
+  if (existing) return existing.id;
+  const body = {
+    botanical_name: name || null,
+    common_name: common || null,
+    working_label: name ? null : common,
+  };
+  if (parts) {
+    ["cultivar", "family", "genus", "species_epithet"].forEach((k) => {
+      if (parts[k]) body[k] = parts[k];
+    });
+  }
+  const [created] = await restPost("taxa", body);
+  return created ? created.id : null;
+}
+
 function wireModalForms() {
   const profilePhotoForm = document.getElementById("profile-photo-upload-form");
   if (profilePhotoForm) {
@@ -9127,35 +9162,7 @@ function wireModalForms() {
 
 // SPECIES-1. The Plants tab lists taxa, so a specimen with no taxon is
 // invisible there. Every create path must resolve one: reuse an existing taxon
-// with the same botanical name, otherwise make a new one. A specimen with no
-// name at all keeps taxa_id null on purpose and surfaces in the Unidentified
-// group on the taxa list instead.
-// SPECIES-1 phase 3. Every species fact entered anywhere in the app lands here
-// and goes onto the taxon. `parts` carries cultivar/family/genus/epithet from
-// the New Plant form, which used to write them onto the specimen instead.
-//
-// A common name with no botanical name still deserves a taxon — three plants
-// can obviously be the same kind before anyone knows what that kind is, which
-// is what working_label is for. Returning null there would strand the specimen.
-async function ensureTaxonForName(botanicalName, commonName, parts) {
-  const name = (botanicalName || "").trim();
-  const common = (commonName || "").trim();
-  if (!name && !common) return null;
-  const existing = findTaxonByName(name, common);
-  if (existing) return existing.id;
-  const body = {
-    botanical_name: name || null,
-    common_name: common || null,
-    working_label: name ? null : common,
-  };
-  if (parts) {
-    ["cultivar", "family", "genus", "species_epithet"].forEach((k) => {
-      if (parts[k]) body[k] = parts[k];
-    });
-  }
-  const [created] = await restPost("taxa", body);
-  return created ? created.id : null;
-}
+
 
   const newPlantForm = document.getElementById("new-plant-form");
   if (newPlantForm) {

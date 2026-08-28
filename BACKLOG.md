@@ -282,6 +282,21 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.95.2
+**Batch entry could not create a new species** — `ensureTaxonForName is not
+defined`. It was defined **inside** `wireModalForms()`, so it existed only while
+that function was running. Every form handler closed over it and worked, which
+is why this went unnoticed since v1.65.0; `createBatch()` calls it from outside
+and got nothing.
+
+Hoisted to module scope. Checked for siblings — no other function nested in
+`wireModalForms` is called from outside it.
+
+**Pattern worth noting:** a helper defined inside a wiring function works for
+everything wired there and fails for everything else, and the failure is a bare
+ReferenceError at click time rather than anything visible at load.
+
+
 ### v1.95.1
 **"Add X as a new species" in batch entry did nothing.** A quoting bug in
 v1.89.0: the handler was built with `JSON.stringify(state.batchSearch)`, which

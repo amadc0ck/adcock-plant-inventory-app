@@ -581,7 +581,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "1.89.2";
+const APP_VERSION = "1.90.0";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4748,18 +4748,24 @@ function screenGallery() {
         const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
         const locs = allLocationsForPhoto(p);
         return `
-        <div class="tag-card plant-list-card" style="padding:8px 12px;position:relative;${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}"
+        <div class="tag-card" style="padding:8px 12px;position:relative;${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}"
              onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : `openGalleryLightbox('${p.id}')`}">
           ${state.gallerySelectMode ? `<div class="select-check ${state.gallerySelected.has(p.id) ? "checked" : ""}" style="top:6px;left:6px;z-index:2;">${state.gallerySelected.has(p.id) ? icon("check") : ""}</div>` : ""}
-          <div class="plant-list-thumb" style="width:52px;height:52px;">${photoImg(p)}</div>
-          <div style="flex:1;min-width:0;">
-            <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type && p.photo_type !== "general" ? " · " + escapeHtml(PHOTO_TYPE_LABELS[p.photo_type] || p.photo_type) : ""}</div>
-            ${plant ? `<div style="font-size:13px;margin-top:1px;">${plantDisplayHtml(plant)}</div>` : ""}
-            ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}</div>` : `<div class="value-blank" style="font-size:11px;margin-top:1px;">No location</div>`}
+          <div style="display:flex;gap:14px;align-items:flex-start;">
+            <div class="plant-list-thumb" style="width:52px;height:52px;">${photoImg(p)}</div>
+            <div style="flex:1;min-width:0;">
+              <div class="tag-id">${fmtDate(photoDate(p))}${p.photo_type && p.photo_type !== "general" ? " · " + escapeHtml(PHOTO_TYPE_LABELS[p.photo_type] || p.photo_type) : ""}</div>
+              ${plant ? `<div style="font-size:13px;margin-top:1px;">${plantDisplayHtml(plant)}</div>` : ""}
+              ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}</div>` : `<div class="value-blank" style="font-size:11px;margin-top:1px;">No location</div>`}
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;flex-shrink:0;">
+              ${photoActionsHtml(p, { mode: "gallery", plantId: plant ? plant.id : null, variant: "card", iconOnly: true })}
+            </div>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:10px;flex-shrink:0;">
-            ${photoActionsHtml(p, { mode: "gallery", plantId: plant ? plant.id : null, variant: "card", iconOnly: true })}
-          </div>
+          ${/* The Gallery rendered suggestions NOWHERE — and "Needs a plant"
+               and "Photos with suggestions" both route here, so Ask Claude
+               answered onto a screen that could not show the answer. */""}
+          <div onclick="event.stopPropagation();">${suggestionBlock(p.id, true)}</div>
         </div>`;
       }).join("")}
     </div>`;
@@ -4794,6 +4800,7 @@ function screenGallery() {
             </div>
             ${plant ? `<div style="font-size:12.5px;margin-top:2px;">${plantDisplayHtml(plant)}</div>` : ""}
             ${locs.length ? `<div style="font-size:11px;color:var(--moss-dim);margin-top:1px;">📍 ${escapeHtml(locs[0].name)}${locs.length > 1 ? ` +${locs.length - 1}` : ""}</div>` : ""}
+            <div onclick="event.stopPropagation();">${suggestionBlock(p.id, true)}</div>
           </div>
         </div>`;
       }).join("")}
@@ -8741,7 +8748,8 @@ function renderLightbox() {
         ${pl ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openPlant('${pl.id}')">View plant</button>` : ""}
         ${galleryLocs[0] ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox();openLocation('${galleryLocs[0].id}')">View location</button>` : ""}
         ${photoActionsHtml(p, { mode: "gallery", plantId: pl ? pl.id : null, variant: "full", fromLightbox: true, cls: "btn btn-secondary btn-sm icon-btn", style: "" })}
-      </div>`;
+      </div>
+      ${suggestionBlock(p.id)}`;
   } else {
     // Plant mode was the poorest of the four: "Set as profile picture" and a
     // button labelled "Edit location" that actually opened the whole Edit Plant

@@ -335,6 +335,28 @@ Resolved without a junction table. `taxa.plant_type` already **is** plant-level 
 
 ## Completed
 
+### v1.90.0
+**Claude's photo suggestions were invisible in the Gallery.** Amanda pressed Ask
+Claude from To Do → "Needs a plant" and could not find the answers.
+
+They were being saved correctly. `suggestionBlock()` was rendered in exactly
+three places — the Inbox card, the Location Detail feed, and the Edit photo
+modal — and **`screenGallery` called it nowhere**: not the compact rows, not the
+grid tiles, not the Gallery lightbox.
+
+**Both routes to reviewing suggestions land in the Gallery.** "Needs a plant" is
+`showGalleryNeeds('no_plant')`; the queue tile "Photos with suggestions" is
+`showGalleryHasSuggestions()`. So the one destination built for reviewing
+suggestions was the one screen that could not display them — and the filter
+worked, which made it worse: the right photos appeared, with the answers hidden.
+
+Now rendered on the list row, the grid tile and the Gallery lightbox. The list
+row needed restructuring — it was a flex `[thumb][text][actions]` row, so the
+block had nowhere to sit; the card is now a column with that row on top.
+`event.stopPropagation()` on the wrapper so accepting a suggestion does not also
+open the lightbox.
+
+
 ### v1.89.2
 **Opening a Gallery album was a dead end.** Every other drill-in in the app
 carries a back button at top left — "← Plants", "← Locations", "← To Do". The

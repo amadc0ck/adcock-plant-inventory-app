@@ -109,6 +109,25 @@ Stop inferring these. Verified:
 | `list_options` | UNIQUE (list_name, value) |
 | `task_subjects` | exactly one of plant_id / location_id / taxa_id |
 
+**Vocabularies that are NOT constrained: everything on `taxa`.** `plant_type`,
+`growth_habit`, `bloom_season`, `origin`, `water_needs` and `light_conditions`
+all live on `taxa`, which has no CHECK constraints — so adding a value there is
+a code change only, no SQL. This is the opposite of the `plants` columns above,
+and the distinction is worth keeping straight before writing a migration nobody
+needs. v2.8.0 added five `plant_type` values (`curio`, `dracaena`, `hoya`,
+`haworthiopsis`, `lithops`) with no schema change at all.
+
+**`plant_type` is stored in three places and all three must agree:**
+`PLANT_TYPE_LABELS` in `index.html`, the hardcoded list inside `suggest-species`'s
+prompt, and any `list_options` rows. Note that `listOptionsFor()` **ignores the
+built-in map entirely** if `list_options` has any row for that list — so a value
+added only in code is invisible once the list has been edited in Settings.
+
+**`taxa.light_conditions` is `text[]`, not text.** `suggestions.value_text` is
+text, so Claude returns light values semicolon-separated and `acceptSuggestion`
+splits them back into an array (`ARRAY_FIELDS`). The CSV export uses the same
+`"; "` convention. Writing a bare string into this column fails.
+
 **`taxa` has NO constraints of any kind.** No CHECK, no UNIQUE. Two consequences:
 - A failed write to `taxa` is never a constraint violation — look at RLS or the token instead.
 - **This file used to claim taxa are identified by "the composed name as a unique natural key". That is not enforced.** Nothing prevents two identically-named species, which is how three spellings of *Echeveria agavoides* came to coexist.

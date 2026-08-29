@@ -120,7 +120,21 @@
   .icon-btn svg{width:15px;height:15px;flex-shrink:0;}
   .btn-danger.icon-btn{padding:9px 10px;}
 
+  .ref-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .ref-link{display:inline-flex;align-items:center;font-size:11.5px;font-weight:600;padding:5px 9px;border-radius:6px;
+            background:var(--bg);color:var(--cream);border:1px solid var(--line);text-decoration:none;}
+  .ref-link:hover{background:var(--moss-dim);}
+  .ref-fold{margin-top:10px;}
+  .ref-fold summary{cursor:pointer;list-style:none;}
+  .ref-fold summary::-webkit-details-marker{display:none;}
+  .ref-fold summary::before{content:"\25B8 ";}
+  .ref-fold[open] summary::before{content:"\25BE ";}
   input,select,textarea{background:var(--bg);border:1px solid var(--line);color:var(--cream);border-radius:8px;padding:11px 12px;font-size:15px;font-family:inherit;width:100%;}
+  /* iOS Safari force-zooms into any field whose font-size is under 16px and
+     never zooms back out, which is why the page had to be pinched back to fit
+     after every tap into a search box. The viewport tag was never the problem.
+     16px only where there is no hover — desktop keeps the tighter 15px. */
+  @media (pointer:coarse){ input,select,textarea{font-size:16px;} }
   input:focus,select:focus,textarea:focus{outline:2px solid var(--moss);outline-offset:1px;}
   label{font-size:12px;color:#9FB0A3;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;margin-top:14px;}
   label:first-child{margin-top:0;}
@@ -701,8 +715,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.7.2";
-const APP_UPDATED = "2026-08-28";
+const APP_VERSION = "2.8.0";
+const APP_UPDATED = "2026-08-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -2411,6 +2425,8 @@ function expectedToBloom() {
   const blooming = new Set(state.bloomEvents.filter((b) => !b.ended_on).map((b) => b.plant_id));
   return state.plants.filter((p) => {
     if (blooming.has(p.id) || p.status !== "active") return false;
+    // Already scheduled — the task holds it until its due date.
+    if (hasScheduledTask("plant", p.id)) return false;
     const t = p.taxa_id ? taxonById(p.taxa_id) : null;
     // `monocarpic` is excluded: it blooms once and dies, so nudging every year
     // would be noise. `not_observed` means nobody knows yet.
@@ -2707,7 +2723,16 @@ const ACQ_SOURCE_LABELS = { nursery: "Nursery", gift: "Gift", propagation: "Prop
 // Austrocylindropuntia). Every other value maps 1:1 to a genus. Cotyledon,
 // Haworthia, Kalanchoe, Portulacaria and Senecio added v1.41.0 — five real
 // plants in the collection had no valid value before.
-const PLANT_TYPE_LABELS = { cactus: "Cactus", aeonium: "Aeonium", agave: "Agave", aloe: "Aloe", cotyledon: "Cotyledon", crassula: "Crassula", echeveria: "Echeveria", euphorbia: "Euphorbia", haworthia: "Haworthia", kalanchoe: "Kalanchoe", portulacaria: "Portulacaria", sedum: "Sedum", sempervivum: "Sempervivum", senecio: "Senecio" };
+// v2.8.0 added five, measured against the collection rather than guessed —
+// every one had taxa stranded with no valid value: Curio 5, Dracaena 3, Hoya 2,
+// Haworthiopsis 2, and Lithops for the living stones. Curio and Haworthiopsis
+// are kept SEPARATE from Senecio and Haworthia rather than folded in: both are
+// accepted genera in their own right now, and the 1:1 convention above is what
+// makes the Gallery's highlight groupings mean anything.
+//
+// NOTE: `suggest-species` repeats this list inside its prompt. Adding a value
+// here without adding it there means Claude can never suggest it.
+const PLANT_TYPE_LABELS = { cactus: "Cactus", aeonium: "Aeonium", agave: "Agave", aloe: "Aloe", cotyledon: "Cotyledon", crassula: "Crassula", curio: "Curio", dracaena: "Dracaena / snake plant", echeveria: "Echeveria", euphorbia: "Euphorbia", haworthia: "Haworthia", haworthiopsis: "Haworthiopsis", hoya: "Hoya", kalanchoe: "Kalanchoe", lithops: "Lithops / living stones", portulacaria: "Portulacaria", sedum: "Sedum", sempervivum: "Sempervivum", senecio: "Senecio" };
 const GROWTH_HABIT_LABELS = { columnar: "Columnar", globular: "Globular / barrel", rosette: "Rosette", clumping: "Clumping / offsetting", caudiciform: "Caudiciform", trailing: "Trailing / sprawling", mounding: "Mounding", upright: "Upright", climbing: "Climbing", groundcover: "Groundcover", solitary: "Solitary" };
 // `bloom_season` is the plant's expected trait. Observed blooming is BLOOM-1's
 // bloom_events table — RPT-4 reads that, not this.
@@ -2910,6 +2935,57 @@ function openTasksForSubject(kind, id) {
 }
 function openTasks() {
   return state.tasks.filter((t) => t.status !== "done");
+}
+
+/* TODO-2. A plant with an open task dated in the FUTURE has been dealt with —
+   the answer was "not now", and the task carries the date it comes back. That
+   is enough to drop it off a nudge list, and it needs no new column: due_date
+   already says exactly this.
+
+   Deliberately narrow. An open task with NO due date does not suppress
+   anything, because "I'll get to it" is not a schedule; nor does an overdue
+   one, because the date it promised has passed. Known edge: any future-dated
+   task silences the nudge, so a repotting task dated next month also quiets a
+   bloom prompt for that plant. Accepted — if the plant is in hand for repotting
+   it is not being neglected. Narrowing it further would mean a task kind. */
+/* When a bloom nudge should come back. Keyed to the month the species' season
+   OPENS, so "not this year" on a spring bloomer resurfaces the following March
+   rather than an arbitrary twelve months from whenever it was dismissed.
+   `intermittent` has no season to wait for, so it simply gets a year. */
+const BLOOM_SEASON_START_MONTH = {
+  spring: 3, early_summer: 6, summer: 6, late_summer: 8, fall: 9, winter: 12,
+};
+/* How many plants WOULD be on the bloom nudge list but for a scheduled task.
+   Mirrors expectedToBloom() exactly, minus the suppression, so the two cannot
+   drift into disagreeing about what counts as due. */
+function bloomsDeferredCount() {
+  const seasons = seasonsNow();
+  const blooming = new Set(state.bloomEvents.filter((b) => !b.ended_on).map((b) => b.plant_id));
+  return state.plants.filter((p) => {
+    if (blooming.has(p.id) || p.status !== "active") return false;
+    if (!hasScheduledTask("plant", p.id)) return false;
+    const t = p.taxa_id ? taxonById(p.taxa_id) : null;
+    if (!t || !t.bloom_season || t.bloom_season === "monocarpic" || t.bloom_season === "not_observed") return false;
+    return seasons.includes(t.bloom_season);
+  }).length;
+}
+
+function nextBloomSeasonStart(season) {
+  const today = new Date();
+  const m = BLOOM_SEASON_START_MONTH[season];
+  if (!m) {
+    const d = new Date(today); d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+  let year = today.getFullYear();
+  // Strictly future: dismissing in March must not resurface the same March.
+  if (today.getMonth() + 1 >= m) year += 1;
+  return `${year}-${String(m).padStart(2, "0")}-01`;
+}
+
+function hasScheduledTask(kind, id) {
+  const today = todayISO();
+  return openTasksForSubject(kind, id).some((t) => t.due_date && t.due_date > today);
 }
 // Overdue sorts first, then soonest due, then oldest created. A task with no
 // due date is not overdue — it is just not scheduled.
@@ -3995,6 +4071,15 @@ function screenTaxonDetail() {
 
       <div class="section-grid">
         <div class="section-card">
+          <h4>Taxonomy</h4>
+          ${fieldRow("clipboard", "Family", t.family)}
+          ${fieldRow("clipboard", "Genus", t.genus)}
+          ${fieldRow("clipboard", "Species", t.species_epithet)}
+          ${fieldRow("clipboard", "Infraspecific", infraspecificLabel(t.infraspecific))}
+          ${fieldRow("tag", "Cultivar", cultivarLabel(t.cultivar))}
+          ${fieldRow("seedling", "Parentage", t.parentage)}
+        </div>
+        <div class="section-card">
           <h4>Details</h4>
           ${fieldRow("leaf", "Type", listOptionsFor("plant_type")[t.plant_type] || t.plant_type)}
           ${fieldRow("seedling", "Growth habit", listOptionsFor("growth_habit")[t.growth_habit] || t.growth_habit)}
@@ -4011,15 +4096,6 @@ function screenTaxonDetail() {
             (t.light_conditions && t.light_conditions.length)
               ? `<span class="wrap-gap" style="justify-content:flex-end;">${t.light_conditions.map((c) => `<span class="pill">${escapeHtml(c.replace(/_/g, " "))}</span>`).join("")}</span>`
               : null)}
-        </div>
-        <div class="section-card">
-          <h4>Taxonomy</h4>
-          ${fieldRow("clipboard", "Family", t.family)}
-          ${fieldRow("clipboard", "Genus", t.genus)}
-          ${fieldRow("clipboard", "Species", t.species_epithet)}
-          ${fieldRow("clipboard", "Infraspecific", infraspecificLabel(t.infraspecific))}
-          ${fieldRow("tag", "Cultivar", cultivarLabel(t.cultivar))}
-          ${fieldRow("seedling", "Parentage", t.parentage)}
         </div>
         ${taskSectionFor("taxa", t.id)}
       </div>
@@ -4987,8 +5063,12 @@ function workQueue() {
     // Not a gap — an opportunity. These are the archive and whole-area shots
     // that CAN be tagged to a specimen to extend its history, but are not
     // wrong for lacking one.
-    { title: "Could show a specimen", sub: "Archive and area photos not yet tagged to a plant", needs: "area_no_plant",
-      count: state.photos.filter(photoIsUntaggedArchiveOrArea).length, muted: true },
+    /* "Could show a specimen" was a tile here until v2.8.0. At ~2,100 photos it
+       was never a job anyone could finish, and an uncompletable count on a To Do
+       page is the same failure TODO-1 set out to fix: a number you can look at
+       and not act on stops being read. The Gallery filter it pointed at still
+       works — showGalleryNeeds('area_no_plant') — it is just not presented as
+       outstanding work. */
   ];
 
   const dupPhotos = findDuplicatePhotoGroups();
@@ -5218,6 +5298,14 @@ function workQueueDetail() {
         <button class="back-link" onclick="state.reportView=null;render()">${icon("back")}<span class="back-label">To Do</span></button>
         <h2 class="display" style="font-size:22px;font-weight:500;margin:0 0 2px;">${open.title}</h2>
         <p class="subtle" style="margin-bottom:16px;">${open.sub} · ${countLabel(open.items.length, "record", "records")}</p>
+        ${/* TODO-2. Twenty-four plants that are not going to flower is not a list
+             worth walking one row at a time. One button turns the whole view
+             into dated tasks and empties it. */""}
+        ${state.reportView === "dueToBloom" && open.items.length ? `
+          <button class="btn btn-secondary btn-sm" style="margin-bottom:16px;"
+            onclick="deferBloomNudge(${escapeAttr(JSON.stringify(open.items.map((x) => x.id)))})">
+            Not this year &mdash; make ${countLabel(open.items.length, "task", "tasks")}
+          </button>` : ""}
         ${/* A record with an open task drops out of the count above. Say so, or
              it looks like the app lost track of it. */""}
         ${(() => {
@@ -5225,7 +5313,11 @@ function workQueueDetail() {
           const handled = state.plants.filter((pl) => openTasksForSubject("plant", pl.id).length
             && !open.items.some((x) => x.id === pl.id)
             && (open.key === "plantsAttention" ? HEALTH_ATTENTION.includes(pl.health_status)
-              : open.key === "checkIns" ? !!(checkInStatus(pl) || {}).due : false)).length;
+              : open.key === "checkIns" ? !!(checkInStatus(pl) || {}).due
+              : false)).length
+            // dueToBloom suppresses on the narrower rule — a FUTURE-dated task
+            // only — so it counts separately rather than sharing the branch above.
+            + (state.reportView === "dueToBloom" ? bloomsDeferredCount() : 0);
           return handled ? `
             <div class="filter-note" style="margin-bottom:14px;">
               <span class="filter-note-head">${countLabel(handled, "more has a task", "more have tasks")}</span>
@@ -5317,7 +5409,10 @@ function reportRowActions(pl) {
     out.push(btn("Checked it", `clearCheckIn('${pl.id}')`));
     out.push(btn("Remind me in 14d", `snoozeCheckIn('${pl.id}', 14)`));
   }
-  if (v === "dueToBloom") out.push(btn("Record a bloom", `startBloom('${pl.id}')`));
+  if (v === "dueToBloom") {
+    out.push(btn("Record a bloom", `startBloom('${pl.id}')`));
+    out.push(btn("Not this year", `deferBloomNudge('${pl.id}')`));
+  }
   if (v === "closeBlooms" && open) out.push(btn("It has finished", `endBloom('${open.id}')`));
   if (v === "plantsNoLocation" || v === "frostTender") out.push(btn(v === "frostTender" ? "Move it in" : "Set a location", `openModal('movePlant',{plantId:'${pl.id}'})`));
 
@@ -6083,7 +6178,7 @@ function modalContent() {
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Compare candidates</h3>
-      <p class="subtle" style="margin:0 0 14px;">Your photo on top, Pl@ntNet's reference photos below for each possible match.</p>
+      <p class="subtle" style="margin:0 0 14px;">Your photo on top, then each candidate name. Tap a search link to see better reference images than Pl@ntNet carries.</p>
 
       ${photoBlock}
 
@@ -6097,30 +6192,47 @@ function modalContent() {
             return `
             <div class="surface" style="padding:12px;">
               <div class="row">
-                <div>
-                  <div style="font-size:14.5px;font-style:italic;">${escapeHtml(name)}</div>
+                <div style="min-width:0;">
+                  <div style="font-size:15.5px;font-style:italic;font-weight:500;">${escapeHtml(name)}</div>
                   ${r.species?.family?.scientificNameWithoutAuthor ? `<div class="mono" style="font-size:10.5px;color:#8AA090;margin-top:2px;">${escapeHtml(r.species.family.scientificNameWithoutAuthor)}</div>` : ""}
                 </div>
                 ${score !== null ? `<span class="pill ${isCurrent ? "pill-orange" : "pill-blue"}">${score}%</span>` : ""}
               </div>
+
+              ${/* AI-4. Amanda's read, 2026-08-29: Pl@ntNet's reference photos are
+                   the weak half of this screen — unhealthy specimens, and
+                   sometimes several different species illustrating one name. The
+                   NAME is what she actually uses, by taking it to Google.
+
+                   So the name now leads and the search happens in one tap
+                   instead of retyping a botanical name into another app. The
+                   reference photos are folded away rather than deleted: when
+                   they are good they are still the fastest comparison, and
+                   collapsing costs nothing.
+
+                   Plain links, no API. Google Lens has no public API at all, so
+                   there is nothing to integrate even if we wanted to. */""}
+              <div class="ref-links">
+                ${refLink("Google Images", `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(name)}`)}
+                ${refLink("iNaturalist", `https://www.inaturalist.org/search?q=${encodeURIComponent(name)}`)}
+                ${refLink("Wikipedia", `https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(name)}`)}
+              </div>
+
               ${refImages.length ? `
-                ${/* The thumbnails were 64px and inert, which is too small to
-                     actually compare a spine pattern or a leaf margin against
-                     your own photo — the whole point of this screen. They open
-                     at the largest size Pl@ntNet returns. These are external
-                     URLs, not Drive files, so they cannot use the app's
-                     lightbox: that resolves through photoUrlCache by
-                     drive_file_id. Hence a separate, simpler overlay. */""}
-                <div style="display:flex;gap:6px;margin-top:8px;">
-                  ${refImages.map((img) => {
-                    const small = img.url?.s || img.url?.m || img.url?.o;
-                    const large = img.url?.o || img.url?.m || img.url?.s;
-                    const cap = [name, img.author ? `© ${img.author}` : ""].filter(Boolean).join(" · ");
-                    return `<img src="${small}" title="Tap to enlarge" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:zoom-in;"
-                      onclick="event.stopPropagation();openRefImage('${escapeAttr(large)}','${escapeAttr(cap)}')" />`;
-                  }).join("")}
-                </div>
-                <div class="subtle" style="font-size:10.5px;margin-top:5px;">Tap a reference photo to enlarge</div>` : `<p class="subtle" style="margin:8px 0 0;font-size:11.5px;">No reference photos available for this match.</p>`}
+                <details class="ref-fold">
+                  <summary class="subtle" style="font-size:11.5px;">Pl@ntNet reference photos (${refImages.length})</summary>
+                  <div style="display:flex;gap:6px;margin-top:8px;">
+                    ${refImages.map((img) => {
+                      const small = img.url?.s || img.url?.m || img.url?.o;
+                      const large = img.url?.o || img.url?.m || img.url?.s;
+                      const cap = [name, img.author ? `© ${img.author}` : ""].filter(Boolean).join(" · ");
+                      return `<img src="${small}" title="Tap to enlarge" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:zoom-in;"
+                        onclick="event.stopPropagation();openRefImage('${escapeAttr(large)}','${escapeAttr(cap)}')" />`;
+                    }).join("")}
+                  </div>
+                  <div class="subtle" style="font-size:10.5px;margin-top:5px;">Tap to enlarge. Pl@ntNet's own photos &mdash; quality varies.</div>
+                </details>` : ""}
+
               ${!isCurrent ? `<button class="btn btn-secondary btn-sm btn-on-cream" style="margin-top:10px;" onclick="useIdentificationCandidate('${suggestion.id}','${name.replace(/'/g, "\\'")}',${r.score || "null"})">Use this instead</button>` : `<div class="mono" style="font-size:11px;color:var(--orange);margin-top:10px;">Currently selected</div>`}
             </div>`;
           }).join("")}
@@ -6410,12 +6522,29 @@ function modalContent() {
              record from the specimen's Species card instead. */""}
         <div class="section-label">Species</div>
         <label>This specimen is a</label>
-        <select id="ep-taxon">
+        <select id="ep-taxon" onchange="document.getElementById('ep-newtaxon-wrap').style.display = this.value === '__new__' ? 'block' : 'none';">
           <option value="">— Not linked —</option>
+          ${/* SPEC-1. Moving ONE specimen off a shared holding record — seven
+               plants on "unidentified cactus", one of them now identified — had
+               no path. The picker offered existing taxa only, and its help text
+               sent you to the Plants tab, which creates a SPECIMEN: you ended up
+               with the new species and a duplicate plant on it, and the original
+               still sitting under "unidentified".
+
+               This reassigns the specimen you are editing. No plant row is
+               created, the accession number and every photo stay put. */""}
+          <option value="__new__">＋ New species…</option>
           ${[...state.taxa].sort((a, b) => taxonDisplayName(a).localeCompare(taxonDisplayName(b)))
             .map((t) => `<option value="${t.id}" ${pl.taxa_id === t.id ? "selected" : ""}>${escapeHtml(taxonDisplayName(t))}</option>`).join("")}
         </select>
-        <div class="field-help">Name, description, type, growth habit, bloom season, origin and care all live on the species and apply to every specimen of it. Create a new species from the Plants tab.</div>
+        <div id="ep-newtaxon-wrap" style="display:none;margin-top:10px;">
+          <label>Botanical name</label>
+          <input id="ep-newtaxon-name" placeholder="e.g. Mammillaria elongata 'Copper King'" />
+          <label style="margin-top:8px;">Common name (optional)</label>
+          <input id="ep-newtaxon-common" placeholder="e.g. Lady Finger Cactus" />
+          <div class="field-help">Split into genus, species and cultivar automatically. This specimen moves to the new species — it keeps ${escapeHtml(pl.accession_number)}, its photos and its notes, and no second plant is created.</div>
+        </div>
+        <div class="field-help">Name, description, type, growth habit, bloom season, origin and care all live on the species and apply to every specimen of it.</div>
         ${pl.taxa_id ? `<button type="button" class="btn btn-secondary btn-block" style="margin-top:10px;" onclick="closeModal();openModal('editTaxon',{taxonId:'${pl.taxa_id}'})">Edit species record</button>` : ""}
 
         <div class="section-label">Collection</div>
@@ -7816,7 +7945,16 @@ async function acceptSuggestion(id) {
       // adds is_hybrid, which would otherwise be written as the string "true"
       // and read as truthy forever after.
       const BOOL_FIELDS = ["frost_tender", "is_hybrid"];
-      const v = BOOL_FIELDS.includes(sg.field) ? String(sg.value_text) === "true" : sg.value_text;
+      // v2.8.0. `light_conditions` is text[], and suggestions.value_text is
+      // text, so an accepted light suggestion would have written the STRING
+      // "direct; morning" into an array column and failed outright. Claude is
+      // told to return them semicolon-separated; this is where they become an
+      // array again.
+      const ARRAY_FIELDS = ["light_conditions"];
+      const v = BOOL_FIELDS.includes(sg.field) ? String(sg.value_text) === "true"
+        : ARRAY_FIELDS.includes(sg.field)
+          ? String(sg.value_text).split(";").map((x) => x.trim().toLowerCase().replace(/\s+/g, "_")).filter(Boolean)
+          : sg.value_text;
       await restPatch("taxa", `id=eq.${sg.taxa_id}`, { [sg.field]: v, updated_at: new Date().toISOString() });
     }
     await restPatch("suggestions", `id=eq.${id}`, { status: "accepted" });
@@ -8119,6 +8257,36 @@ async function snoozeCheckIn(plantId, days) {
   try {
     await restPatch("plants", `id=eq.${plantId}`, { next_check_date: d.toISOString().slice(0, 10), updated_at: new Date().toISOString() });
     toast(`Next check ${fmtDate(d.toISOString())}`);
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* TODO-2. "Not this year" for a bloom that is not going to happen. It does not
+   hide anything — it writes a real task carrying the date the question should
+   be asked again, and hasScheduledTask() then keeps the plant off the nudge
+   list until that date arrives. The note stays with the task, so next season
+   the reason is still there.
+
+   deferBloomNudge takes a LIST so the same code serves one row and all 24. */
+async function deferBloomNudge(plantIds) {
+  const ids = (Array.isArray(plantIds) ? plantIds : [plantIds]).filter(Boolean);
+  const plants = ids.map((id) => state.plants.find((p) => p.id === id)).filter(Boolean);
+  if (!plants.length) { toast("Nothing to defer", true); return; }
+  try {
+    for (const pl of plants) {
+      const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+      const due = nextBloomSeasonStart(t && t.bloom_season);
+      const [created] = await restPost("tasks", {
+        title: `Check for bloom — ${taxonDisplayName(t) || pl.accession_number}`,
+        detail: `Expected to bloom but nothing recorded ${fmtDate(new Date().toISOString())}. Resurfacing for the next ${t && t.bloom_season ? (BLOOM_SEASON_LABELS[t.bloom_season] || t.bloom_season).toLowerCase() : "season"}.`,
+        due_date: due,
+        status: "open",
+      });
+      if (created) await restPost("task_subjects", [{ task_id: created.id, plant_id: pl.id }]);
+    }
+    toast(plants.length > 1
+      ? `${plants.length} bloom tasks made`
+      : `Back on the list ${fmtDate(nextBloomSeasonStart((plants[0].taxa_id ? taxonById(plants[0].taxa_id) : null)?.bloom_season))}`);
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
@@ -9329,6 +9497,13 @@ function logout() {
 // For values going into a single-quoted inline handler, where escapeHtml's
 // entity encoding is not enough — a quote or backslash would break out of the
 // attribute.
+/* An external search link. target=_blank so the app is not navigated away
+   from mid-identification, and rel=noopener because these are third-party
+   pages. */
+function refLink(label, url) {
+  return `<a class="ref-link" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">${escapeHtml(label)}</a>`;
+}
+
 function escapeAttr(str) {
   return String(str == null ? "" : str).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;").replace(/[\r\n]+/g, " ");
 }
@@ -10092,7 +10267,19 @@ function wireModalForms() {
         // Linking an existing specimen to a species. Without this an orphaned
         // specimen could never be linked at all — create and propagate resolved
         // a taxon but edit did not.
-        body.taxa_id = document.getElementById("ep-taxon").value || null;
+        const taxonPick = document.getElementById("ep-taxon").value;
+        if (taxonPick === "__new__") {
+          const newName = document.getElementById("ep-newtaxon-name").value.trim();
+          const newCommon = document.getElementById("ep-newtaxon-common").value.trim();
+          if (!newName && !newCommon) { toast("Give the new species a name", true); return; }
+          // Through ensureTaxonForName, not a direct insert: it is the one choke
+          // point that parses the name into parts and returns an EXISTING taxon
+          // if the name already matches, so this cannot quietly make a duplicate.
+          body.taxa_id = await ensureTaxonForName(newName, newCommon, {});
+          if (!body.taxa_id) { toast("Could not create that species", true); return; }
+        } else {
+          body.taxa_id = taxonPick || null;
+        }
         await restPatch("plants", `id=eq.${state.modal.data.plantId}`, body);
         toast(body.taxa_id ? "Saved" : "Saved — not linked to a species");
         closeModal();

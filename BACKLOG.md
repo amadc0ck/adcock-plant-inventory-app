@@ -7,9 +7,32 @@ Item IDs are permanent. Never renumber.
 
 ---
 
-## Picking this up cold — state as of 2026-08-28
+## Picking this up cold — state as of 2026-08-29
 
 Written so a session with no memory of the conversation can continue without asking. Everything below is either **waiting on Amanda** or **decided but unbuilt**. Delete an entry when it is resolved.
+
+### Open — where does the `plant_type` list live?
+
+**v2.8.0 added `curio`, `dracaena`, `hoya`, `haworthiopsis`, `lithops` to
+`PLANT_TYPE_LABELS` in code.** That is the right place **only if `list_options`
+has no rows for `plant_type`** — `listOptionsFor()` discards the built-in map
+the moment that table has one. Amanda was asked to check Settings → Plant type
+and had not answered when this shipped. If the list is editable there, the five
+values need adding there too or they will not appear in the dropdown.
+
+### Species data — remeasured 2026-08-29 (133 taxa)
+
+- **`origin`: zero nulls.** Every taxon has a value, which is why `suggest-species`
+  never proposed one — the fill-the-blanks pass only asks about blanks. v2.8.0
+  treats the sentinel `unknown` as blank so it can be asked.
+- **`parentage`: 132 of 133 null, and that is mostly correct.** Only hybrids and
+  cultivars have a cross to record. v2.8.0 gates the question behind
+  `looksHybrid()` rather than generating ~100 dismissals.
+- **`light_conditions`: 132 of 133 empty.** Genuinely unfilled; now asked for.
+- **`plant_type`: two different problems.** 11 of 23 Echeveria are blank despite
+  `echeveria` existing — those just need the Claude pass run. Curio (5),
+  Dracaena (3), Hoya (2) and Haworthiopsis (2) had no valid value at all until
+  v2.8.0 added them.
 
 ### Vocabulary columns are CHECK-constrained — adding a value is a schema change
 

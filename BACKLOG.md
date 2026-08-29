@@ -88,8 +88,12 @@ misspellings. Each is one Ask and a few taps, not a retype.
 ## Observed 2026-08-25 — triaged from Amanda's session notes
 
 ### SPECIES-1 — Split taxa from specimens (epic)
-**Phase 3 code pass shipped v1.65.0. The column drop is the only step left — see the block in the v1.65.0 entry below.**
-**Status:** phases 1–2 **done** (v1.41.0–v1.41.3) · phase 3 pending · **Effort:** high · **Schema:** yes, new table + FK · **Touches:** nearly every screen
+**Status:** ✅ **COMPLETE.** Phases 1–2 shipped v1.41.0–v1.41.3, the phase 3 code
+pass v1.65.0, and Amanda ran the column drop 2026-08-28 — proven lossless first
+by comparing all 16 duplicated columns across 167 specimens (one stray `family`
+value existed on a specimen but not its taxon and was promoted). SPECIES-2
+closed the next day with the `plant_locations` drop and v2.7.2's code cleanup.
+**Effort:** high · **Schema:** yes, new table + FK · **Touches:** nearly every screen
 
 `plants` is one row per accessioned specimen, so **every species-level fact is copied onto every specimen of that species** and nothing keeps the copies in sync. Four offsets of one plant store the same mature size four times.
 

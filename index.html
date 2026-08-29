@@ -701,7 +701,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.7.1";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -795,7 +795,6 @@ const state = {
   inboxView: "grid",
   inboxYear: "",
   inboxSearch: "",
-  tagLocationSearch: "",
   galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false, favorites: false },
   inboxSelectMode: false,
   inboxSelected: new Set(),
@@ -932,6 +931,21 @@ const PAGE_SIZE = 1000;
 // and has no `id` at all, so the full JSON backup — the one thing standing
 // between an irreversible column drop and losing data — failed outright with
 // `column accession_counters.id does not exist`. The key is a parameter now.
+// A missing table is expected before its migration runs; a malformed query is
+// not. `.catch(() => null)` could not tell them apart, and hid a real bug in
+// app_settings for twelve versions. Optional loads go through this instead:
+// still resilient, but anything that is NOT "relation does not exist" reaches
+// the console with the table named.
+function optional(table, promise) {
+  return promise.catch((e) => {
+    const msg = String(e && e.message || e);
+    if (!/does not exist|schema cache|PGRST205|PGRST20[0-9]/i.test(msg)) {
+      console.warn(`[ABG] ${table} failed to load — this is a bug, not a missing table:`, msg);
+    }
+    return null;
+  });
+}
+
 async function restGetAll(table, query = "", key = "id") {
   const out = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
@@ -1475,26 +1489,26 @@ async function loadAll() {
       restGetAll("taxa", "?select=*&order=botanical_name.asc"),
       // Resilient on purpose: if list_options does not exist yet the app falls
       // back to the built-in vocabularies rather than failing to load at all.
-      restGet("list_options", "?select=*&order=list_name.asc,sort_order.asc").catch(() => null),
+      optional("list_options", restGet("list_options", "?select=*&order=list_name.asc,sort_order.asc")),
       // Resilient like list_options: the app works before the migration runs,
       // it just has no bloom history to show.
-      restGetAll("bloom_events", "?select=*&order=started_on.desc").catch(() => null),
+      optional("bloom_events", restGetAll("bloom_events", "?select=*&order=started_on.desc")),
       // Same again: AI-1 ships ahead of its table.
-      restGetAll("suggestions", "?status=eq.pending&select=*&order=created_at.desc").catch(() => null),
+      optional("suggestions", restGetAll("suggestions", "?status=eq.pending&select=*&order=created_at.desc")),
       // TASK-1 / RPT-3. Resilient in the same way — the app runs before the
       // migration and simply has no tasks to show.
-      restGetAll("tasks", "?select=*&order=created_at.desc").catch(() => null),
-      restGetAll("task_subjects", "?select=*").catch(() => null),
+      optional("tasks", restGetAll("tasks", "?select=*&order=created_at.desc")),
+      optional("task_subjects", restGetAll("task_subjects", "?select=*")),
       // Keyed on `key`, not `id`. This was failing on every load since v1.84.0
       // and the .catch() swallowed it, so state.appSettings was always {} —
       // the check-in interval silently fell back to 14 no matter what Settings
       // said, and Settings showed 14 back because it reads the same empty map.
-      restGetAll("app_settings", "?select=*", "key").catch(() => null),
+      optional("app_settings", restGetAll("app_settings", "?select=*", "key")),
       // MOVE-1. The trigger has been writing this since the schema was built and
       // NOTHING has ever read it — it was fetched in exactly one place, the JSON
       // backup, so "where did this plant used to live?" was answerable only by
       // exporting a backup and reading the JSON by hand.
-      restGetAll("plant_location_history", "?select=*&order=started_at.desc").catch(() => null),
+      optional("plant_location_history", restGetAll("plant_location_history", "?select=*&order=started_at.desc")),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -1733,17 +1747,6 @@ function allLocationsForPhoto(photo) {
 // Locations that already appear in this plant's photo timeline but aren't
 // yet in plant_locations — surfaced as one-tap suggestions so locations
 // don't have to be found and re-added manually from the full picker.
-function suggestedLocationsForPlant(pl) {
-  const existingIds = allLocationsForPlant(pl).map((l) => l.id);
-  const photos = state.photos.filter((p) => p.plant_id === pl.id);
-  const seen = new Map();
-  photos.forEach((p) => {
-    allLocationsForPhoto(p).forEach((l) => {
-      if (!existingIds.includes(l.id)) seen.set(l.id, l);
-    });
-  });
-  return Array.from(seen.values());
-}
 // Groups a list of photos by the location(s) they're tagged to, for
 // rendering separate per-location sub-timelines on the plant detail view.
 // A specimen's photos in date order, split wherever the location changes.
@@ -1772,23 +1775,6 @@ function photoRunsByLocation(photosList, oldestFirst) {
   return runs;
 }
 
-function groupPhotosByLocation(photosList) {
-  const groups = new Map();
-  photosList.forEach((p) => {
-    const locs = allLocationsForPhoto(p);
-    const keys = locs.length ? locs : [null];
-    keys.forEach((l) => {
-      const key = l ? l.id : "none";
-      if (!groups.has(key)) groups.set(key, { location: l, photos: [] });
-      groups.get(key).photos.push(p);
-    });
-  });
-  return Array.from(groups.values()).sort((a, b) => {
-    if (!a.location) return 1;
-    if (!b.location) return -1;
-    return a.location.name.localeCompare(b.location.name);
-  });
-}
 // Every plant present at a location, whether as primary or additional
 function plantsAtLocation(locationId) {
   const primaryIds = state.plants.filter((p) => p.location_id === locationId).map((p) => p.id);
@@ -2677,11 +2663,6 @@ function todayLocalISO() {
 // Provenance sections below still hide when empty; that convention was left
 // alone deliberately, so Plant Detail follows two rules on purpose.
 // Returns HTML, not text — do not escape at the call site.
-function detailRow(label, value) {
-  const has = value !== null && value !== undefined && value !== "";
-  return `<div class="detail-row"><span class="detail-row-label">${label}</span><span class="detail-row-value${has ? "" : " value-blank"}">${has ? escapeHtml(value) : "—"}</span></div>`;
-}
-
 // PD-7 field row: optional leading icon, label, right-aligned value. Renders
 // whether or not there is a value, so Plant Detail holds the same shape on
 // every plant. `html` passes pre-built markup through unescaped (light chips).
@@ -3300,7 +3281,7 @@ function openModal(type, data = {}) {
   // in Bucket 80" — but the reset three lines up cleared the filter every time,
   // so it listed all 58. The copy was right about the intent and wrong about
   // the behaviour.
-  if (type === "attach" && data.locationId && locationHoldsPlants(locationById(data.locationId))) {
+  if (type === "assignPlants" && data.locationId && locationHoldsPlants(locationById(data.locationId))) {
     state.pickerLocation = data.locationId;
   }
   if (type === "editPhoto") {
@@ -6047,7 +6028,7 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
-  if (type === "attach" || type === "assignPlants") {
+  if (type === "assignPlants") {
     // v1.85.0. Was two modals for one question. "Attach to a plant" set
     // photos.plant_id; "Tag plants in this photo" managed photo_plants; "Move"
     // was attach to a different one. Amanda's vocabulary is Assign / Unassign,
@@ -6588,30 +6569,6 @@ function modalContent() {
           </button>`).join("")}
       </div>
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
-  }
-
-  if (type === "addPlantLocation") {
-    const pl = state.plants.find((p) => p.id === data.plantId);
-    const existingIds = allLocationsForPlant(pl).map((l) => l.id);
-    const options = locationOptionList().filter((o) => !existingIds.includes(o.id));
-    const suggested = suggestedLocationsForPlant(pl);
-    return `
-      <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Add another location</h3>
-      <p class="subtle" style="margin:0 0 14px;">For plants that occupy more than one spot — a groundcover or vine spanning several containers, for example.</p>
-      ${suggested.length > 0 ? `
-        <div class="section-label">Already seen in this plant's photo timeline</div>
-        <div class="stack" style="margin-bottom:16px;">
-          ${suggested.map((l) => `
-            <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="addPlantLocation('${data.plantId}','${l.id}')">
-              📍 ${escapeHtml(locationPath(l))}
-            </button>`).join("")}
-        </div>
-        <div class="section-label">Or choose manually</div>` : ""}
-      ${options.length === 0 ? `<p class="subtle">No other locations available to add.</p>` : `
-        <select id="add-loc-select">${options.map((o) => `<option value="${o.id}">${escapeHtml(o.label)}</option>`).join("")}</select>
-        <button class="btn btn-primary btn-block" style="margin-top:16px;" onclick="addPlantLocation('${data.plantId}', document.getElementById('add-loc-select').value)">Add location</button>`}
-      <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "chooseTaxonPhoto") {
@@ -7924,26 +7881,21 @@ async function useIdentificationCandidate(identificationId, name, score) {
 async function linkPlantToLocation(plantId, locationId) {
   const pl = state.plants.find((p) => p.id === plantId);
   try {
-    if (!pl.location_id) {
-      await restPatch("plants", `id=eq.${plantId}`, { location_id: locationId, updated_at: new Date().toISOString() });
-    } else {
-      await restPost("plant_locations", { plant_id: plantId, location_id: locationId });
-    }
-    toast("Plant linked");
+    // SPECIES-2 retired `plant_locations` for specimens: a physical individual
+    // is in exactly one place. This still wrote a second row when the plant
+    // already had a location, quietly recreating the many-to-many the split
+    // removed — and a plant would then show in two places at once.
+    //
+    // Linking a plant that lives elsewhere IS a move. Set the location; the
+    // trigger records the move, so it shows in "Where it has lived".
+    const from = pl.location_id ? locationById(pl.location_id) : null;
+    await restPatch("plants", `id=eq.${plantId}`, { location_id: locationId, updated_at: new Date().toISOString() });
+    toast(from ? `Moved from ${locationPath(from)}` : "Plant linked");
     closeModal();
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
 
-async function addPlantLocation(plantId, locationId) {
-  if (!locationId) return;
-  try {
-    await restPost("plant_locations", { plant_id: plantId, location_id: locationId });
-    toast("Location added");
-    closeModal();
-    await loadAll();
-  } catch (e) { toast(e.message, true); }
-}
 async function removePlantLocation(rowId) {
   if (!confirm("Remove this location from the plant?")) return;
   try {
@@ -8536,25 +8488,6 @@ async function removePhotoFromLocation(photoId, locationId) {
       if (row) await restDelete("photo_locations", `id=eq.${row.id}`);
     }
     toast("Removed from this location");
-    await loadAll();
-  } catch (e) { toast(e.message, true); }
-}
-async function attachPhotoToExistingPlant(photoId, plantId) {
-  try {
-    const photo = state.photos.find((p) => p.id === photoId);
-    if (photo && !photo.plant_id) {
-      await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
-    } else if (photo && photo.plant_id === plantId) {
-      toast("Already attached to this plant");
-      return;
-    } else if (state.photoPlants.some((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
-      toast("Already tagged to this plant");
-      return;
-    } else {
-      await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
-    }
-    toast("Photo added to plant");
-    closeModal();
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

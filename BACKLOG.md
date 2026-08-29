@@ -261,6 +261,38 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.7.1
+**Full code audit — 374 functions, 9,593 lines.** Fourteen checks, drawn from the
+failure shapes this session actually produced.
+
+**One real bug.** `linkPlantToLocation()` — "Link existing plant" on a location
+page — wrote a **`plant_locations` row** when the plant already had a location,
+quietly recreating the many-to-many **SPECIES-2 retired**, so a specimen could
+appear in two places at once. Linking a plant that lives elsewhere *is a move*:
+it now sets `location_id`, the trigger records it, and it appears in "Where it
+has lived". No `plant_locations` insert remains anywhere.
+
+**Dead code removed — 86 lines.** `attachPhotoToExistingPlant`, `detailRow`,
+`groupPhotosByLocation`, `state.tagLocationSearch`, the `attach` alias left by
+the v1.85.0 merge, and the **`addPlantLocation` modal** — the multi-location
+workflow SPECIES-2 retired — which orphaned `suggestedLocationsForPlant` with it.
+
+**Silent failures made audible.** `.catch(() => null)` on optional loads cannot
+tell "table not created yet" from "this query is malformed", which is exactly how
+the `app_settings` paging bug hid for twelve versions. A new `optional()` wrapper
+keeps the resilience and logs anything that is **not** a missing-relation error,
+naming the table.
+
+**Clean:** no duplicate function names, no orphans, balanced markup, every modal
+opened has a branch and every branch is reachable, no code reads a dropped
+column, the z-index ladder is ordered, no unsized icons, no raw `JSON.stringify`
+in an attribute, and every `restGetAll` pages on a key its table actually has.
+
+Two checks flagged false positives worth recording so they are not re-chased:
+`walk` and `importOne` are local recursive helpers correctly scoped inside their
+parents, and `.hover-card` paints `--ink` on a **cream** background.
+
+
 ### v2.7.0
 **AI-3 layer 2 — catch a duplicate by photo, in the form that would create it.**
 Layer 1 (v1.83.0) catches a duplicate by NAME as she types. This catches one by

@@ -715,7 +715,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.8.3";
+const APP_VERSION = "2.8.4";
 const APP_UPDATED = "2026-08-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -6821,6 +6821,7 @@ function modalContent() {
         <option value="">— Leave unchanged —</option>
         ${Object.entries(PHOTO_TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
       </select>
+      <div class="field-help"><strong>Overview</strong> and <strong>Progress</strong> mean these show the place rather than a specimen &mdash; the fastest way to clear photos of a container whose plants you are not cataloguing out of &ldquo;File to a plant&rdquo;.</div>
 
       <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="applyGalleryBatch()">Apply to ${n}</button>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
@@ -7478,7 +7479,13 @@ function modalContent() {
         ${/* The `historical` type was removed in v1.56.0 — archive-ness comes
              from the photo's location being an archive, not from a type. This
              help text described the removed option for four versions. */""}
-        <div class="field-help">What the photo shows, never how it is filed. Archive photos are archive photos because of where they are filed, not their type.</div>
+        <div class="field-help">What the photo shows, never how it is filed. Archive photos are archive photos because of where they are filed, not their type.
+          ${/* The queue consequence was invisible. Amanda had photos of an
+               ACTIVE container showing plants she will not catalogue, and no
+               way to know that Overview already says exactly that — so they sat
+               in "File to a plant" as permanent, unfinishable work. The
+               behaviour was right; nothing surfaced it. */""}
+          <br /><strong>Overview</strong> and <strong>Progress</strong> mean the photo shows the place rather than a specimen, so it stops being counted under &ldquo;File to a plant&rdquo;.</div>
 
         <label>Location</label>
         ${(() => {

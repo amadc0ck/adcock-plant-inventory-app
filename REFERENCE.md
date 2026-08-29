@@ -109,6 +109,21 @@ Stop inferring these. Verified:
 | `list_options` | UNIQUE (list_name, value) |
 | `task_subjects` | exactly one of plant_id / location_id / taxa_id |
 
+**"Historical" photos of an ACTIVE location: use photo_type `overview`.**
+`PLACE_PHOTO_TYPES = ["overview", "progress"]`, and `photoAwaitsPlant()` excludes
+them — so a photo typed either way keeps its location, stays in that location's
+timeline, and never appears under "File to a plant". This is the answer for a
+container whose former occupants will not be catalogued.
+
+Do **not** reach for an archive location or re-add the `historical` type
+(removed v1.56.0). Archive-ness comes from the photo's location having
+`gallery_row = "archives"`, which cannot express "this ACTIVE container's past" —
+the case that arose 2026-08-29 with Bucket 36. `overview` already says "shows a
+place, not a specimen", which is exactly the claim being made.
+
+Settable one at a time in the edit-photo modal, or in bulk via Gallery → Select
+→ Edit → Type.
+
 **Tasks have a visibility horizon (v2.8.1).** `openTasks()` is every unfinished
 task; the UI almost never shows that set. `actionableTasks()` — overdue, due
 within `TASK_HORIZON_DAYS` (7), or **undated** — is what the To Do panel and the

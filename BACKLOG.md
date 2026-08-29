@@ -7,7 +7,7 @@ Item IDs are permanent. Never renumber.
 
 ---
 
-## Picking this up cold — state as of 2026-08-27
+## Picking this up cold — state as of 2026-08-28
 
 Written so a session with no memory of the conversation can continue without asking. Everything below is either **waiting on Amanda** or **decided but unbuilt**. Delete an entry when it is resolved.
 
@@ -133,9 +133,11 @@ Supersedes the plant-level half of GAL-2. AI-1 and AI-2 should be designed again
 
 
 ### SPECIES-2 — Split multi-location plants into one specimen per location
-**Status:** splitting **done by hand** 2026-08-25 · cleanup pending · **Effort:** medium–high · **Schema:** yes, retires `plant_locations` for specimens · **Depends on:** SPECIES-1 · **Touches:** `plants`, `plant_locations`, `photos`, `care_notes`, `screenPlantDetail`, `allLocationsForPlant`, `mergePlants`
+**Status:** ✅ **COMPLETE 2026-08-28** — table dropped, code cleaned in v2.7.2 · **Effort:** medium–high · **Schema:** yes, dropped `plant_locations` · **Depends on:** SPECIES-1 · **Touches:** `plants`, `plant_locations`, `photos`, `care_notes`, `screenPlantDetail`, `allLocationsForPlant`, `mergePlants`
 
-**Done manually rather than by migration.** Amanda created every missing specimen through the UI, which avoided the automated-split judgement calls entirely. 0014's redundant `plant_locations` row was deleted by hand 2026-08-26. **All that remains is the phase-3 column drop**, which is now tracked under SPECIES-1 phase 3 rather than here.
+**Done manually rather than by migration.** Amanda created every missing specimen through the UI, which avoided the automated-split judgement calls entirely. 0014's redundant `plant_locations` row was deleted by hand 2026-08-26.
+
+**Closed 2026-08-28.** Amanda dropped the table after the 6 surviving rows were shown to carry nothing (4 exact duplicates of the plant's own `location_id`, 2 Car Port ancestor rows). v2.7.2 then removed every read and write: `allLocationsForPlant` reads `location_id` alone, `plantsAtLocation` and the descendant-count helper no longer merge junction ids, `removePlantLocation` is gone, and the merge/delete/location-delete cleanup paths lost their junction steps. The restore path keeps a deliberate guard that warns and skips if an **old backup** still contains `plant_locations` rows.
 
 **"Every plant + location combo is a specimen"** (Amanda, 2026-08-25). A specimen is one physical individual and a physical individual is in exactly one place, so a plant row listing three locations is really up to three plants.
 

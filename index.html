@@ -701,7 +701,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.7.1";
+const APP_VERSION = "2.7.2";
 const APP_UPDATED = "2026-08-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -747,7 +747,6 @@ const state = {
   identifications: [],
   identifyingPhotoId: null,
   lightbox: null,
-  plantLocations: [],
   photoLocations: [],
   careNotes: [],
   taxa: [],
@@ -1024,13 +1023,12 @@ function csvEscape(val) {
 async function exportFullBackup() {
   try {
     toast("Preparing backup…");
-    const [locations, plants, photos, identifications, photoPlants, plantLocations, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions, suggestionsAll] = await Promise.all([
+    const [locations, plants, photos, identifications, photoPlants, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions, suggestionsAll] = await Promise.all([
       restGetAll("locations", "?select=*"),
       restGetAll("plants", "?select=*"),
       restGetAll("photos", "?select=*"),
       restGetAll("identifications", "?select=*"),
       restGetAll("photo_plants", "?select=*"),
-      restGetAll("plant_locations", "?select=*"),
       restGetAll("photo_locations", "?select=*"),
       // Keyed on `year`, not `id`.
       restGetAll("accession_counters", "?select=*", "year"),
@@ -1048,7 +1046,6 @@ async function exportFullBackup() {
       app_version: APP_VERSION,
       locations, plants, photos, identifications,
       photo_plants: photoPlants,
-      plant_locations: plantLocations,
       photo_locations: photoLocations,
       accession_counters: counters,
       care_notes: careNotes,
@@ -1138,7 +1135,10 @@ async function handleImportBackup() {
     }
     if (data.identifications?.length) await restUpsert("identifications", data.identifications);
     if (data.photo_plants?.length) await restUpsert("photo_plants", data.photo_plants);
-    if (data.plant_locations?.length) await restUpsert("plant_locations", data.plant_locations);
+    // plant_locations was dropped once SPECIES-2 was complete. A backup taken
+    // before that still contains it, and restoring those rows would recreate a
+    // table the app no longer has. Skipped, deliberately and loudly.
+    if (data.plant_locations?.length) console.warn(`[ABG] backup contains ${data.plant_locations.length} plant_locations rows — skipped, that table was retired with SPECIES-2`);
     if (data.photo_locations?.length) await restUpsert("photo_locations", data.photo_locations);
     if (data.accession_counters?.length) await restUpsert("accession_counters", data.accession_counters, "year");
     // After plants — care_notes.plant_id is a hard FK.
@@ -1476,14 +1476,13 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, plantLocations, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
       restGet("google_auth_tokens", "?select=expires_at&limit=1"),
       restGetAll("photo_plants", "?select=*"),
       restGetAll("identifications", "?select=*&order=created_at.desc"),
-      restGetAll("plant_locations", "?select=*"),
       restGetAll("photo_locations", "?select=*"),
       restGetAll("care_notes", "?select=*&order=noted_on.desc,created_at.desc"),
       restGetAll("taxa", "?select=*&order=botanical_name.asc"),
@@ -1516,7 +1515,6 @@ async function loadAll() {
     state.driveToken = tokens[0] || null;
     state.photoPlants = photoPlants;
     state.identifications = identifications;
-    state.plantLocations = plantLocations;
     state.photoLocations = photoLocations;
     state.careNotes = careNotes;
     state.taxa = taxa;
@@ -1720,19 +1718,15 @@ function pendingIdentification(photoId) {
 function pendingIdentifications(photoId) {
   return state.identifications.filter((i) => i.photo_id === photoId && i.status === "pending");
 }
-// Every location a plant occupies: its primary location_id, plus any
-// additional ones from plant_locations. Primary is always first.
+// Where a plant is. SPECIES-2 finished 2026-08-28: a specimen is one physical
+// individual and is in exactly one place, so `plant_locations` was dropped and
+// this reads `location_id` alone. Kept as a function rather than inlined
+// because ~20 call sites ask "where is this plant", and that question still
+// has an answer — now always one location, or none.
 function allLocationsForPlant(pl) {
-  const ids = [];
-  if (pl.location_id) ids.push(pl.location_id);
-  state.plantLocations.filter((pll) => pll.plant_id === pl.id).forEach((pll) => {
-    if (!ids.includes(pll.location_id)) ids.push(pll.location_id);
-  });
-  return ids.map((id) => locationById(id)).filter(Boolean);
+  return pl && pl.location_id ? [locationById(pl.location_id)].filter(Boolean) : [];
 }
-function additionalLocationRows(plantId) {
-  return state.plantLocations.filter((pll) => pll.plant_id === plantId);
-}
+
 function additionalLocationRowsForPhoto(photoId) {
   return state.photoLocations.filter((pl) => pl.photo_id === photoId);
 }
@@ -1745,8 +1739,8 @@ function allLocationsForPhoto(photo) {
   return ids.map((id) => locationById(id)).filter(Boolean);
 }
 // Locations that already appear in this plant's photo timeline but aren't
-// yet in plant_locations — surfaced as one-tap suggestions so locations
-// don't have to be found and re-added manually from the full picker.
+// where the plant is currently recorded — surfaced as one-tap suggestions so a
+// location doesn't have to be found again in the full picker.
 // Groups a list of photos by the location(s) they're tagged to, for
 // rendering separate per-location sub-timelines on the plant detail view.
 // A specimen's photos in date order, split wherever the location changes.
@@ -1777,10 +1771,7 @@ function photoRunsByLocation(photosList, oldestFirst) {
 
 // Every plant present at a location, whether as primary or additional
 function plantsAtLocation(locationId) {
-  const primaryIds = state.plants.filter((p) => p.location_id === locationId).map((p) => p.id);
-  const additionalIds = state.plantLocations.filter((pll) => pll.location_id === locationId).map((pll) => pll.plant_id);
-  const allIds = new Set([...primaryIds, ...additionalIds]);
-  return state.plants.filter((p) => allIds.has(p.id));
+  return state.plants.filter((p) => p.location_id === locationId);
 }
 function directChildLocations(locationId) {
   return state.locations.filter((l) => l.parent_location_id === locationId).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
@@ -1799,9 +1790,7 @@ function descendantLocationIds(locationId) {
 // Plant count including everything nested underneath this location
 function aggregatePlantCount(locationId) {
   const idSet = new Set([locationId, ...descendantLocationIds(locationId)]);
-  const primaryIds = state.plants.filter((p) => idSet.has(p.location_id)).map((p) => p.id);
-  const additionalIds = state.plantLocations.filter((pll) => idSet.has(pll.location_id)).map((pll) => pll.plant_id);
-  return new Set([...primaryIds, ...additionalIds]).size;
+  return state.plants.filter((p) => idSet.has(p.location_id)).length;
 }
 // Deduped by photo id: one photo tagged onto both a parent and a child, or
 // onto two sibling containers, is still one photo in the rolled-up count.
@@ -4204,25 +4193,12 @@ function screenPlantDetail() {
 
           <div style="margin-top:14px;">
             ${(() => {
-              const allLocs = allLocationsForPlant(pl);
-              const extraRows = additionalLocationRows(pl.id);
-              if (allLocs.length === 0) {
+              const loc = allLocationsForPlant(pl)[0];
+              if (!loc) {
                 return `<div style="font-size:13px;color:var(--ink);font-weight:500;">📍 No location set</div>`;
               }
-              return allLocs.map((l, i) => {
-                const isPrimary = i === 0 && l.id === pl.location_id;
-                const row = extraRows.find((r) => r.location_id === l.id);
-                return `
-                <div class="row" style="margin-top:${i > 0 ? "3" : "0"}px;">
-                  <div style="font-size:13px;color:var(--ink);font-weight:500;cursor:pointer;" onclick="event.stopPropagation();openLocation('${l.id}')">📍 ${escapeHtml(locationPath(l))}${isPrimary ? ` <span style="font-size:11px;color:var(--ink-soft);font-weight:400;">(main)</span>` : ""}</div>
-                  ${!isPrimary && row ? `<button class="btn-ghost" style="padding:0;font-size:11.5px;color:var(--terracotta);" onclick="removePlantLocation('${row.id}')">Remove</button>` : ""}
-                </div>`;
-              }).join("");
+              return `<div style="font-size:13px;color:var(--ink);font-weight:500;cursor:pointer;" onclick="event.stopPropagation();openLocation('${loc.id}')">📍 ${escapeHtml(locationPath(loc))}</div>`;
             })()}
-            ${/* A specimen is one physical plant and lives in exactly one place
-                 (SPECIES-2). Extra locations mean extra specimens, added from
-                 the species record. */""}
-            ${allLocationsForPlant(pl).length > 1 ? `<div class="subtle" style="margin-top:6px;font-size:11.5px;">More than one location — each should be its own specimen. Add them from the species record.</div>` : ""}
           </div>
           ${taxon && taxon.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(taxon.description)}</div>` : ""}
         </div>
@@ -7896,15 +7872,6 @@ async function linkPlantToLocation(plantId, locationId) {
   } catch (e) { toast(e.message, true); }
 }
 
-async function removePlantLocation(rowId) {
-  if (!confirm("Remove this location from the plant?")) return;
-  try {
-    await restDelete("plant_locations", `id=eq.${rowId}`);
-    toast("Location removed");
-    await loadAll();
-  } catch (e) { toast(e.message, true); }
-}
-
 async function startBloom(plantId) {
   const pl = state.plants.find((p) => p.id === plantId);
   if (!pl) return;
@@ -7995,14 +7962,6 @@ async function mergePlants(keepId, removeId) {
       else await restPatch("photo_plants", `id=eq.${t.id}`, { plant_id: keepId });
     }
 
-    // Move additional locations, skipping duplicates
-    const locsToMove = state.plantLocations.filter((pl2) => pl2.plant_id === removeId);
-    for (const l of locsToMove) {
-      const exists = state.plantLocations.some((pl2) => pl2.plant_id === keepId && pl2.location_id === l.location_id);
-      if (exists) await restDelete("plant_locations", `id=eq.${l.id}`);
-      else await restPatch("plant_locations", `id=eq.${l.id}`, { plant_id: keepId });
-    }
-
     // Reparent anything propagated from the plant being removed
     await restPatch("plants", `parent_plant_id=eq.${removeId}`, { parent_plant_id: keepId });
 
@@ -8025,7 +7984,6 @@ async function deletePlant(plantId) {
   try {
     await restPatch("photos", `plant_id=eq.${plantId}`, { plant_id: null });
     await restDelete("photo_plants", `plant_id=eq.${plantId}`);
-    await restDelete("plant_locations", `plant_id=eq.${plantId}`);
     await restPatch("plants", `parent_plant_id=eq.${plantId}`, { parent_plant_id: null });
     await restDelete("plant_location_history", `plant_id=eq.${plantId}`);
     // ON DELETE CASCADE would also handle this; done explicitly so the
@@ -8357,7 +8315,6 @@ async function deleteLocation(locationId) {
     await restPatch("plants", `location_id=eq.${locationId}`, { location_id: null });
     await restPatch("photos", `location_id=eq.${locationId}`, { location_id: null });
     await restPatch("locations", `primary_photo_id=is.null&id=eq.${locationId}`, {});
-    await restDelete("plant_locations", `location_id=eq.${locationId}`);
     await restDelete("photo_locations", `location_id=eq.${locationId}`);
     await restDelete("plant_location_history", `location_id=eq.${locationId}`);
     await restDelete("locations", `id=eq.${locationId}`);

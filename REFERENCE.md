@@ -105,7 +105,7 @@ Stop inferring these. Verified:
 | `plants` | UNIQUE `accession_number` |
 | `photos` | `photo_type` in general / bloom / detail / condition / **overview** / **progress** |
 | `photos` | `focal_x` / `focal_y` 0–100, NOT VALID |
-| `photo_plants`, `photo_locations`, `plant_locations` | UNIQUE on their two ids |
+| `photo_plants`, `photo_locations` | UNIQUE on their two ids |
 | `list_options` | UNIQUE (list_name, value) |
 | `task_subjects` | exactly one of plant_id / location_id / taxa_id |
 
@@ -267,7 +267,7 @@ Single-row table, one Google account ever. `access_token` (~1hr, auto-refreshed 
 
 ### Junction tables (§6)
 - **`photo_plants`** — multiple plants tagged on one photo. `id, photo_id, plant_id, created_at`, unique on `(photo_id, plant_id)`.
-- **`plant_locations`** — a plant occupying more than one location (groundcover, vine spanning containers). `id, plant_id, location_id, notes, created_at`, unique on `(plant_id, location_id)`.
+- **`plant_locations`** — **DROPPED 2026-08-28**, closing SPECIES-2. It let one plant be in several places at once, which was a workaround for having no taxon/specimen distinction. With specimens real, a specimen is one physical individual in exactly one place, and `plants.location_id` is the whole answer. The 6 rows that remained at drop time were 4 exact duplicates of a `location_id` and 2 ancestor rows (Car Port, the parent of the two Black Pedestal Pots) — no information was lost.
 - **`photo_locations`** — a photo tagged across multiple containers. `id, photo_id, location_id, created_at`, unique on `(photo_id, location_id)`.
 
 ### `plant_location_history`
@@ -326,8 +326,10 @@ Format `ABG-YYYY-NNNN`, generated server-side, immutable once set.
 
 Plants, locations, and photos all support many-to-many **on top of** a fast-path "primary" column.
 
-- A plant has one `location_id` plus optional `plant_locations` rows.
+- A plant has **exactly one** `location_id`. There is no junction — see SPECIES-2 above.
 - A photo has one `plant_id` + one `location_id` plus optional `photo_plants` / `photo_locations` rows.
+
+**Photo many-to-many stays; plant many-to-many does not.** One photograph genuinely can show three plants across two containers, so `photo_plants` and `photo_locations` describe reality. One specimen in three places never did — it was three specimens.
 
 **Why keep a primary column:** the overwhelming majority have exactly one attachment. A direct FK keeps common-case queries (list cards, filters) join-free. Junction tables are consulted only for secondary "also in / also shows" relationships.
 
@@ -336,12 +338,11 @@ Plants, locations, and photos all support many-to-many **on top of** a fast-path
 **Deletion / merge cleanup order** — any function deleting or merging a plant must handle, in order:
 1. `photos.plant_id` — unassign, do not delete the photo
 2. `photo_plants`
-3. `plant_locations`
-4. `plants.parent_plant_id` — reparent children
-5. **`plant_location_history`** — reassign history rows to the surviving plant
-6. **`care_notes`** — on merge, **reassign** to the surviving plant; the observations happened and the merged record inherits them. On delete, remove. The FK is `on delete cascade`, but both functions handle it explicitly so this list stays readable from the code.
+3. `plants.parent_plant_id` — reparent children
+4. **`plant_location_history`** — reassign history rows to the surviving plant
+5. **`care_notes`** — on merge, **reassign** to the surviving plant; the observations happened and the merged record inherits them. On delete, remove. The FK is `on delete cascade`, but both functions handle it explicitly so this list stays readable from the code.
 
-Step 5 was missed on first implementation and caused an FK violation (`plant_location_history_plant_id_fkey`) during a merge.
+Step 4 was missed on first implementation and caused an FK violation (`plant_location_history_plant_id_fkey`) during a merge. (It was step 5 until `plant_locations` was dropped.)
 
 **Direct-only vs. rolled-up reads (v1.34.5).** The many-to-many design means a location has two legitimate readings, and picking the wrong one is a recurring bug class:
 

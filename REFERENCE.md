@@ -109,6 +109,23 @@ Stop inferring these. Verified:
 | `list_options` | UNIQUE (list_name, value) |
 | `task_subjects` | exactly one of plant_id / location_id / taxa_id |
 
+**Placeholder taxa: use the GENUS, not a family or a common name (v2.10.1).**
+`Opuntia` and `Haworthiopsis` are real identifications at genus rank. They parse
+into `genus`, so they group with relatives, style correctly, and leave the
+"names not split up" queue. `Cactus` is not a family (Cactaceae is) and a
+family-level placeholder splits into nothing.
+
+For a plant that genuinely cannot be placed to genus, use a **working label**
+and set `family` — the label carries the honest state, the family still carries
+real information, and `taxonMissingNameParts()` no longer nags about it.
+
+`taxonMissingNameParts()` asks whether a genus can be READ from the name, via
+`parseBotanicalName()`. Before v2.10.1 it only checked whether the parts columns
+were empty, so "unidentified cactus" was queued as a split that had been skipped
+— an item nobody could ever complete, sitting in the same count as
+"Haworthiopsis", which is one tap from done. Identification gaps belong to
+"Plants missing identification"; this queue is only for names that CAN be split.
+
 **Staging areas (STAGE-1, v2.10.0).** `locations.type = 'staging'` marks a
 holding area for specimens that have arrived but are not planted yet. `type` is
 **not** CHECK-constrained (verified from `pg_constraint` 2026-08-28), so adding

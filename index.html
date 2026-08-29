@@ -715,7 +715,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.10.0";
+const APP_VERSION = "2.10.1";
 const APP_UPDATED = "2026-08-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2337,7 +2337,21 @@ function taxonSecondaryName(t) {
 // records are invisible to half the app's features.
 function taxonMissingNameParts(t) {
   const has = (v) => !!(v && String(v).trim());
-  return !has(t.genus) && !has(t.species_epithet) && !has(t.cultivar);
+  if (has(t.genus) || has(t.species_epithet) || has(t.cultivar)) return false;
+  /* NAME-4. The test used to end there, which made the list uncompletable.
+     "unidentified cactus" has no genus to find — splitting it is not a task
+     anyone can finish, and it sat in the queue permanently alongside
+     "Haworthiopsis", which is one tap from done. Two different problems wearing
+     one count.
+
+     A name is only a SPLIT that was skipped if a genus can actually be read out
+     of it. Anything else is a plant that has not been IDENTIFIED, which is what
+     "Plants missing identification" already tracks — and what a working label
+     is for. Reuses parseBotanicalName so this cannot drift from what the split
+     would actually produce. */
+  const name = (t.botanical_name || t.working_label || "").trim();
+  if (!name) return false;
+  return !!parseBotanicalName(name).genus;
 }
 function taxaMissingNameParts() {
   return state.taxa.filter(taxonMissingNameParts)

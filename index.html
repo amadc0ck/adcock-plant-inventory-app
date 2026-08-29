@@ -715,7 +715,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.8.1";
+const APP_VERSION = "2.8.2";
 const APP_UPDATED = "2026-08-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3775,7 +3775,11 @@ function screenInbox() {
   <div class="screen">
     <div class="container">
       ${screenHeader(
-        `To Do${unassigned.length ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassigned.length} photos</span>` : ""}`,
+        /* This is inboxPhotos() — the grid BELOW the queue, which is exactly the
+           same set as the "File to both" tile. Labelled "in the inbox" so it
+           reads as a pointer to that grid rather than as a fourth photo count
+           competing with the group total. */
+        `To Do${unassigned.length ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassigned.length} in the inbox</span>` : ""}`,
         selectMode ? "Tap photos to select them, then choose an action below." : "Everything waiting on you — records to finish, then photos to file.",
         unassigned.length ? `<button class="btn btn-secondary btn-sm" onclick="toggleInboxSelectMode()">${selectMode ? "Cancel" : "Select"}</button>` : "")}
 
@@ -4936,7 +4940,7 @@ function reportSections() {
   // only photos were tags showed a picture and was reported as having none.
   // A tagged photo does show the plant; that is the whole point of tagging.
   return [
-    { key: "emptyLocations", title: "Empty locations", sub: "No plants or photos",
+    { key: "emptyLocations", title: "Empty locations", sub: "No plants, no photos, nothing below",
       items: state.locations.filter((l) => directChildLocations(l.id).length === 0 && photosAtLocation(l.id).length === 0 && plantsAtLocation(l.id).length === 0),
       kind: "location" },
     { key: "plantsNoPhotos", title: "Plants missing photos", sub: "At least one photo needed",
@@ -4987,7 +4991,7 @@ function reportSections() {
     { key: "checkIns", title: "Due for a check-in", sub: `Scheduled, or nothing photographed in ${checkInIntervalDays()} days`,
       items: plantsNeedingCheckIn().map((x) => x.pl)
         .filter((pl) => !openTasksForSubject("plant", pl.id).length), kind: "plant" },
-    { key: "locationsNoPlants", title: "Locations with photos but no plants", sub: "Photographed, never catalogued",
+    { key: "locationsNoPlants", title: "Locations not catalogued", sub: "Photographed, but no specimens recorded",
       // Areas and archives are excluded: they are not expected to hold
       // specimens, so listing them here is not a finding.
       items: state.locations.filter((l) => locationHoldsPlants(l) && photosAtLocation(l.id).length > 0 && plantsAtLocation(l.id).length === 0), kind: "location" },
@@ -5067,9 +5071,19 @@ function taskGroup() {
             ? `Nothing due this week. ${countLabel(later, "task is", "tasks are")} scheduled for later.`
             : "Nothing on the list. A task can hang off any number of buckets, plants or species &mdash; useful for &ldquo;pull these eleven and re-evaluate&rdquo;."}</p>`
         : `<div class="stack">${shown.map((t) => taskRow(t, true)).join("")}</div>`}
-      ${open.length > shown.length || later || state.tasks.length > openTasks().length
-        ? `<button class="btn-ghost" style="padding:8px 0 0;font-size:12.5px;" onclick="state.reportView='tasks';render()">See all tasks (${open.length} due${later ? `, ${later} later` : ""}) &rarr;</button>`
-        : ""}
+      ${/* TODO-3. ALWAYS rendered. This is the only route into the task screen in
+           the whole app, and it used to hide itself whenever there were four or
+           fewer open tasks with nothing later and nothing done — which left task
+           management with no entry point at all. The horizon added in v2.8.1
+           made that state much easier to reach, since the actionable count is
+           now the small one.
+
+           Opens on "All" deliberately: the button says all tasks, so it should
+           not land on a filtered view. The tabs are there to narrow from. */""}
+      <button class="btn-ghost" style="padding:8px 0 0;font-size:12.5px;"
+        onclick="state.taskFilter='all';state.reportView='tasks';render()">
+        All tasks${openTasks().length ? ` (${openTasks().length} open${later ? `, ${later} later` : ""})` : ""} &rarr;
+      </button>
     </div>`;
 }
 
@@ -5087,11 +5101,16 @@ function workQueue() {
   // not fully filed and each can be worked through without re-covering the
   // others. They previously overlapped, counting the same photos three times.
   const photoBuckets = [
-    { title: "Needs a plant", sub: "At a container or bed, not filed to a specimen", needs: "no_plant",
+    /* TODO-4. Named for the ACTION, not the gap. "Needs a location" (photos)
+       sat two rows above "Plants with no location" (plants) and read as the
+       same job at a glance — this group describes photographs and the group
+       below describes records, but nothing in a tile said which. The three are
+       still mutually exclusive and still sum to the group total. */
+    { title: "File to a plant", sub: "Photo at a container or bed, not filed to a specimen", needs: "no_plant",
       count: state.photos.filter(photoAwaitsPlant).length },
-    { title: "Needs a location", sub: "Attached to a plant, nowhere on the map", needs: "no_location",
+    { title: "File to a location", sub: "Photo attached to a plant, nowhere on the map", needs: "no_location",
       count: state.photos.filter((p) => p.plant_id && !p.location_id).length },
-    { title: "Needs both", sub: "No plant and no location", needs: "neither",
+    { title: "File to both", sub: "Photo with no plant and no location", needs: "neither",
       count: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
     // Not a gap — an opportunity. These are the archive and whole-area shots
     // that CAN be tagged to a specimen to extend its history, but are not

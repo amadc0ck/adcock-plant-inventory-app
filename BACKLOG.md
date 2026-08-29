@@ -207,9 +207,27 @@ order by location_count desc;
 Everything below is either **waiting on Amanda** or **decided but unbuilt**.
 Nothing here is blocked on code that has not shipped.
 
-### Code, ready to build
+### Code, ready to build — reopened 2026-08-29
 
-**Nothing.** AI-3 layer 2 shipped in v2.7.0 — the last code item on the list.
+Three tools the taxa cleanup proved are missing. None urgent; all three will be
+wanted again.
+
+1. **Delete a species.** There is no `deleteTaxon` in the app at all. Must refuse
+   while specimens exist, and clear `suggestions` and `task_subjects` first
+   (both carry a `taxa_id` FK). Model it on `deleteLocation`.
+2. **"Species with no specimens" tile.** Empty taxa are invisible, so they
+   accumulate silently — `ensureTaxonForName` creates the taxon BEFORE linking
+   the specimen, so a failed link orphans one.
+3. **Duplicate-species detection.** Same shape as the Duplicate plants check.
+   Two *Sedum adolphii* rows were found 2026-08-29, created **five seconds
+   apart**, and merged by hand.
+
+**The cause behind #3 is a check-then-act race.** `ensureTaxonForName()` calls
+`findTaxonByName()` and then inserts; two rapid creates both miss the existing
+row, and `taxa` has **no unique constraint** to catch it. Detection is a
+workaround — the fix is a unique index on the composed name. Not designed yet:
+the composed name is computed in JS, not stored, so it needs a generated column
+or an expression index. **Schema change — ask first.**
 
 ### SQL — NOTHING OUTSTANDING
 
@@ -243,6 +261,27 @@ name now arrives with its parts parsed. It does not shrink it; the existing
 records still need the Claude pass.
 
 Seven names are known-wrong and listed in the species-data section above.
+
+### Shipped 2026-08-29, NOT verified against real data
+
+- **AI-4 — `parentage`, `light_conditions`, `is_hybrid`, `origin`.** Deployed
+  (`suggest-species`), and the array branch in `acceptSuggestion` is code-tested,
+  but nobody has run Ask Claude on a species with blank light, or on a
+  nothogenus, and confirmed a suggestion appears and accepts cleanly. **The most
+  likely remaining gap** — the only change crossing into an Edge Function.
+- **iOS focus-zoom.** `@media (pointer:coarse)` 16px shipped v2.8.0. Never
+  confirmed on the iPad.
+- **PHOTO-4 round trip.** The helper preserves `photo_type` alongside
+  `historical` in test, but the bulk editor was never run on a photo typed
+  anything other than General.
+
+### Gemini — effectively closed, not built
+
+Deep links (Google Images / iNaturalist / Wikipedia) shipped v2.8.0; Amanda's
+verdict was "clutch". **Google Lens has no public API**, so there is nothing to
+integrate there regardless. A Gemini identification call stays possible — new
+Edge Function, Google AI Studio key, per-call cost — but the links solved the
+actual problem. **Do not build without asking.**
 
 ### Deferred / known gaps
 

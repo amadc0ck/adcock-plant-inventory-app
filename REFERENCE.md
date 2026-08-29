@@ -109,20 +109,33 @@ Stop inferring these. Verified:
 | `list_options` | UNIQUE (list_name, value) |
 | `task_subjects` | exactly one of plant_id / location_id / taxa_id |
 
-**"Historical" photos of an ACTIVE location: use photo_type `overview`.**
-`PLACE_PHOTO_TYPES = ["overview", "progress"]`, and `photoAwaitsPlant()` excludes
-them — so a photo typed either way keeps its location, stays in that location's
-timeline, and never appears under "File to a plant". This is the answer for a
-container whose former occupants will not be catalogued.
+**"Historical" photos of an ACTIVE location: `photos.historical` (PHOTO-4, v2.9.0).**
+A boolean column, NOT a `photo_type` value. It means *no specimen will ever be
+created for this* — a photo of a container recording what it used to hold.
 
-Do **not** reach for an archive location or re-add the `historical` type
-(removed v1.56.0). Archive-ness comes from the photo's location having
-`gallery_row = "archives"`, which cannot express "this ACTIVE container's past" —
-the case that arose 2026-08-29 with Bucket 36. `overview` already says "shows a
-place, not a specimen", which is exactly the claim being made.
+**Why a column and not a type.** The `historical` TYPE removed in v1.56.0 was
+harmful because a photo has exactly one type, so "archival" and "shows a bloom"
+became mutually exclusive and a plant's history across former homes could not be
+recorded. As a separate flag both are true at once. The same objection applies to
+using `overview` for this — it works, but it overwrites what the photo shows.
 
-Settable one at a time in the edit-photo modal, or in bulk via Gallery → Select
-→ Edit → Type.
+**Scope is deliberately narrow.** It suppresses `photoAwaitsPlant()` only. The
+claim is about specimens, not about where the photo was taken, so a historical
+photo with no location is still asked for one.
+
+Distinct from `isArchivePhoto()`, which is location-derived (`gallery_row =
+'archives'`) and cannot express "this ACTIVE container's past" — the Bucket 36
+case that prompted it. Both badges can show on one photo.
+
+Set in the edit-photo modal or in bulk via Gallery → Select → Edit. Both controls
+are **feature-detected** through `photosHaveHistorical()`, which checks whether
+`select=*` returned the key, so the app behaves correctly before the migration is
+run rather than writing 42703 into a toast.
+
+```sql
+alter table photos add column historical boolean not null default false;
+notify pgrst, 'reload schema';
+```
 
 **Tasks have a visibility horizon (v2.8.1).** `openTasks()` is every unfinished
 task; the UI almost never shows that set. `actionableTasks()` — overdue, due

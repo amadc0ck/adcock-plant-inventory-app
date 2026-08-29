@@ -715,7 +715,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.8.4";
+const APP_VERSION = "2.9.0";
 const APP_UPDATED = "2026-08-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2071,6 +2071,27 @@ const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Speci
 // Neither will ever get a specimen attached, and nagging about it is noise.
 const PHOTO_TYPE_LABELS = { general: "General", bloom: "Bloom", detail: "Detail", condition: "Condition", overview: "Overview", progress: "Progress" };
 const PLACE_PHOTO_TYPES = ["overview", "progress"];
+
+/* PHOTO-4. `historical` says "no specimen will ever be created for this" — a
+   photo of a container recording what it USED to hold. It is deliberately a
+   flag and not a photo_type value: a photo has exactly one type, so the
+   `historical` TYPE removed in v1.56.0 made "archival" and "shows a bloom"
+   mutually exclusive and a plant's history across former homes unrecordable.
+   As a separate column both are true at once.
+
+   Scope is narrow on purpose. It suppresses the PLANT nag only — the claim
+   being made is about specimens, not about where the photo was taken, so a
+   historical photo with no location is still asked for one.
+
+   Feature-detected rather than assumed: the column arrives by hand-run SQL, and
+   `select=*` simply omits a key that does not exist yet. Until then the
+   controls stay hidden instead of writing 42703 into a toast. */
+function photosHaveHistorical() {
+  return state.photos.some((p) => Object.prototype.hasOwnProperty.call(p, "historical"));
+}
+function isHistoricalPhoto(p) {
+  return !!(p && p.historical);
+}
 function isPlacePhoto(p) {
   return !!p && PLACE_PHOTO_TYPES.includes(p.photo_type);
 }
@@ -2113,7 +2134,7 @@ function photoAwaitsPlant(p) {
   // while standing at one bucket gets filed to that bucket — a container, which
   // does expect plants — so it was flagged as a gap forever. The type says what
   // the photo IS, and travels with it wherever it is filed.
-  return !!(p.location_id && !p.plant_id && !isPlacePhoto(p) && photoLocationExpectsPlants(p));
+  return !!(p.location_id && !p.plant_id && !isPlacePhoto(p) && !isHistoricalPhoto(p) && photoLocationExpectsPlants(p));
 }
 function photoIsUntaggedArchiveOrArea(p) {
   return !!(p.location_id && !p.plant_id && !isPlacePhoto(p) && !photoLocationExpectsPlants(p));
@@ -3558,6 +3579,8 @@ async function applyGalleryBatch() {
   if (loc) body.location_id = loc === "__clear__" ? null : loc;
   if (plant) body.plant_id = plant === "__clear__" ? null : plant;
   if (type) body.photo_type = type;
+  const hist = document.getElementById("gb-historical")?.value;
+  if (hist) body.historical = hist === "yes";
   if (!Object.keys(body).length) { toast("Choose something to change first", true); return; }
   if (!confirm(`Apply to ${ids.length} photo${ids.length === 1 ? "" : "s"}?`)) return;
   try {
@@ -5701,7 +5724,7 @@ function screenGallery() {
           <div class="card-media ratio-1x1">${photoImg(p)}</div>
           <div style="padding:10px 12px;">
             <div class="row">
-              <div class="tag-id">${fmtDate(photoDate(p))}${isArchivePhoto(p) ? " · Archive" : ""}</div>
+              <div class="tag-id">${fmtDate(photoDate(p))}${isArchivePhoto(p) ? " · Archive" : ""}${isHistoricalPhoto(p) ? " · Historical" : ""}</div>
               <div style="display:flex;flex-wrap:wrap;gap:10px;flex-shrink:0;">
                 ${photoActionsHtml(p, { mode: "gallery", plantId: plant ? plant.id : null, variant: "card", iconOnly: true })}
               </div>
@@ -6821,7 +6844,16 @@ function modalContent() {
         <option value="">— Leave unchanged —</option>
         ${Object.entries(PHOTO_TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
       </select>
-      <div class="field-help"><strong>Overview</strong> and <strong>Progress</strong> mean these show the place rather than a specimen &mdash; the fastest way to clear photos of a container whose plants you are not cataloguing out of &ldquo;File to a plant&rdquo;.</div>
+      <div class="field-help"><strong>Overview</strong> and <strong>Progress</strong> mean these show the place rather than a specimen.</div>
+
+      ${photosHaveHistorical() ? `
+      <label>Historical</label>
+      <select id="gb-historical">
+        <option value="">— Leave unchanged —</option>
+        <option value="yes">Mark as historical</option>
+        <option value="no">Not historical</option>
+      </select>
+      <div class="field-help">Records how a place used to be. Keeps the type and location, leaves &ldquo;File to a plant&rdquo;.</div>` : ""}
 
       <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="applyGalleryBatch()">Apply to ${n}</button>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
@@ -7486,6 +7518,13 @@ function modalContent() {
                in "File to a plant" as permanent, unfinishable work. The
                behaviour was right; nothing surfaced it. */""}
           <br /><strong>Overview</strong> and <strong>Progress</strong> mean the photo shows the place rather than a specimen, so it stops being counted under &ldquo;File to a plant&rdquo;.</div>
+
+        ${photosHaveHistorical() ? `
+        <div class="checkbox-row">
+          <input type="checkbox" id="eph-historical" ${ph.historical ? "checked" : ""} />
+          <label for="eph-historical">Historical &mdash; records how this place used to be</label>
+        </div>
+        <div class="field-help">For a photo of a container showing plants that have since gone and will not be catalogued. It keeps its type and its location, stays in the timeline, and stops being counted under &ldquo;File to a plant&rdquo;. It is still asked for a location if it has none.</div>` : ""}
 
         <label>Location</label>
         ${(() => {
@@ -10194,6 +10233,9 @@ function wireModalForms() {
       try {
         await restPatch("photos", `id=eq.${state.modal.data.photoId}`, {
           photo_type: document.getElementById("eph-type").value || "general",
+          // Only sent when the column exists, so the form still saves on an
+          // app that has not had the PHOTO-4 migration run against it.
+          ...(photosHaveHistorical() ? { historical: !!document.getElementById("eph-historical")?.checked } : {}),
           location_id: state.editPhotoLocation || null,
           plant_id: state.editPhotoPlant || null,
           notes: document.getElementById("eph-notes").value || null,

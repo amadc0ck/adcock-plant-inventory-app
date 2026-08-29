@@ -119,9 +119,18 @@ needs. v2.8.0 added five `plant_type` values (`curio`, `dracaena`, `hoya`,
 
 **`plant_type` is stored in three places and all three must agree:**
 `PLANT_TYPE_LABELS` in `index.html`, the hardcoded list inside `suggest-species`'s
-prompt, and any `list_options` rows. Note that `listOptionsFor()` **ignores the
-built-in map entirely** if `list_options` has any row for that list — so a value
-added only in code is invisible once the list has been edited in Settings.
+prompt, and any `list_options` rows.
+
+**Which one wins flips the first time a list is edited in Settings.** While
+`list_options` has no row for a list, `listOptionsFor()` falls back to the
+built-in map and Settings renders from it. The first add/retire/rename calls
+`seedListIfNeeded()`, which copies the built-in list into the table **wholesale**
+(deliberately — editing one option must not discard the rest). After that
+`listOptionsFor()` reads only the table, and **a value added in code will never
+appear**. Verified 2026-08-29: `plant_type` is still on the built-in map.
+
+Either way `suggest-species` keeps its own copy in the prompt, so a value added
+in Settings is one Claude cannot suggest until the function is redeployed.
 
 **`taxa.light_conditions` is `text[]`, not text.** `suggestions.value_text` is
 text, so Claude returns light values semicolon-separated and `acceptSuggestion`

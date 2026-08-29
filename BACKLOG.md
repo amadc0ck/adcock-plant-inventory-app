@@ -11,14 +11,20 @@ Item IDs are permanent. Never renumber.
 
 Written so a session with no memory of the conversation can continue without asking. Everything below is either **waiting on Amanda** or **decided but unbuilt**. Delete an entry when it is resolved.
 
-### Open — where does the `plant_type` list live?
+### `plant_type` list — resolved 2026-08-29
 
-**v2.8.0 added `curio`, `dracaena`, `hoya`, `haworthiopsis`, `lithops` to
-`PLANT_TYPE_LABELS` in code.** That is the right place **only if `list_options`
-has no rows for `plant_type`** — `listOptionsFor()` discards the built-in map
-the moment that table has one. Amanda was asked to check Settings → Plant type
-and had not answered when this shipped. If the list is editable there, the five
-values need adding there too or they will not appear in the dropdown.
+**`list_options` is empty for `plant_type`**, so Settings renders the built-in
+map and v2.8.0's five new values show up there correctly. Confirmed by Amanda.
+
+**The consequence to remember:** the first add/retire/rename in Settings calls
+`seedListIfNeeded()`, which copies all 19 values into `list_options` wholesale.
+From that moment `listOptionsFor()` reads only the table and **the code map is
+dead for that list** — a new `plant_type` added in `index.html` will not appear.
+After her first edit, adding a plant type is a Settings job, not a code change.
+
+`suggest-species`'s prompt still hardcodes the vocabulary either way, so a value
+added in Settings is one Claude cannot propose until the Edge Function is
+updated too. Worth fixing properly if the lists start moving often.
 
 ### Species data — remeasured 2026-08-29 (133 taxa)
 

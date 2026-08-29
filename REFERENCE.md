@@ -109,6 +109,27 @@ Stop inferring these. Verified:
 | `list_options` | UNIQUE (list_name, value) |
 | `task_subjects` | exactly one of plant_id / location_id / taxa_id |
 
+**Staging areas (STAGE-1, v2.10.0).** `locations.type = 'staging'` marks a
+holding area for specimens that have arrived but are not planted yet. `type` is
+**not** CHECK-constrained (verified from `pg_constraint` 2026-08-28), so adding
+it needed no SQL.
+
+**The queue is DERIVED, not triggered.** `plantsAwaitingPlanting()` reads the
+plant's own `location_id` against `stagingLocationIds()`, which includes
+descendants — a tray inside a staging bench is still staging. Amanda asked for a
+task to be created on arrival; that was declined for two reasons, both recorded
+so it is not re-litigated:
+
+1. **Five code paths set `location_id`** — the new-plant form, Move, Edit, New
+   specimen here, and `moveToHospital`. A write hook has to be right in all five
+   and fails silently when it is not.
+2. **A task written on arrival outlives the move.** Plant the specimen, take it
+   out of staging, and the task is still open waiting to be closed by hand. A
+   derived row cannot go stale, because the plant's location IS the state.
+
+"Make a task" is still offered per row, and a future-dated task defers the row
+exactly as it does for blooms — see `hasScheduledTask()`.
+
 **"Historical" photos of an ACTIVE location: `photos.historical` (PHOTO-4, v2.9.0).**
 A boolean column, NOT a `photo_type` value. It means *no specimen will ever be
 created for this* — a photo of a container recording what it used to hold.

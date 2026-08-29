@@ -715,7 +715,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.9.1";
+const APP_VERSION = "2.10.0";
 const APP_UPDATED = "2026-08-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2119,7 +2119,7 @@ function isArchivePhoto(p) {
   return !!loc && loc.gallery_row === "archives";
 }
 
-const LOCATION_TYPE_LABELS = { area: "Area", row: "Row", container: "Container", hospital: "Hospital", work_area: "Work Area", other: "Other" };
+const LOCATION_TYPE_LABELS = { area: "Area", row: "Row", container: "Container", hospital: "Hospital", staging: "Staging", work_area: "Work Area", other: "Other" };
 const GALLERY_ROW_LABELS = { none: "Not shown in the Gallery", albums: "Garden Albums", archives: "From the Archives" };
 
 // Whether the Location page offers plant affordances. It deliberately never
@@ -2130,7 +2130,7 @@ function locationHoldsPlants(l) {
   if (!l) return false;
   if (l.holds_plants === true) return true;
   if (l.holds_plants === false) return false;
-  return ["container", "hospital", "work_area"].includes(l.type);
+  return ["container", "hospital", "staging", "work_area"].includes(l.type);
 }
 
 // LOC-7. A photo with no plant is a GAP only where plants are expected. At an
@@ -2164,7 +2164,7 @@ function locationTypeLabel(t) {
 // the parent's — "6 rows inside" under Wall Collection, never "6 areas inside".
 // Mixed child types, or types with no natural plural (Indoor, Hanging, Other),
 // fall back to the generic word.
-const CHILD_TYPE_PLURALS = { area: ["area", "areas"], row: ["row", "rows"], container: ["container", "containers"], hospital: ["hospital", "hospitals"], work_area: ["work area", "work areas"] };
+const CHILD_TYPE_PLURALS = { area: ["area", "areas"], row: ["row", "rows"], container: ["container", "containers"], hospital: ["hospital", "hospitals"], staging: ["staging area", "staging areas"], work_area: ["work area", "work areas"] };
 // ============================================================
 // TAXA (SPECIES-1). A taxon is the kind of plant — whatever the most specific
 // level known: a species, a cultivar, or a bare genus. Specimens are `plants`
@@ -3048,6 +3048,42 @@ function nextBloomSeasonStart(season) {
   // Strictly future: dismissing in March must not resurface the same March.
   if (today.getMonth() + 1 >= m) year += 1;
   return `${year}-${String(m).padStart(2, "0")}-01`;
+}
+
+/* STAGE-1. A staging area holds specimens that have arrived but are not planted
+   yet. Amanda asked for a location that creates a task when a plant is added to
+   it; this DERIVES the list instead of writing task rows.
+
+   Derived rather than triggered, deliberately. Five separate code paths set
+   `location_id` — the new-plant form, Move, Edit, New specimen here, and
+   moveToHospital — so a write hook would have to be right in all five, and
+   missing one fails silently. Worse, a task written on arrival outlives the
+   move: plant the specimen, take it out of staging, and the task is still open
+   waiting to be closed by hand. A derived row cannot go stale, because the
+   plant's own location IS the state.
+
+   "Make a task" is still offered per row for the ones that want a note or a
+   date, and a future-dated task defers the nudge exactly as it does for blooms
+   (TODO-2). Nesting counts: a tray inside a staging bench is still staging. */
+function stagingLocationIds() {
+  const ids = new Set();
+  state.locations.filter((l) => l.type === "staging").forEach((l) => {
+    ids.add(l.id);
+    descendantLocationIds(l.id).forEach((d) => ids.add(d));
+  });
+  return ids;
+}
+function plantsAwaitingPlanting() {
+  const ids = stagingLocationIds();
+  if (!ids.size) return [];
+  return state.plants.filter((p) => p.status === "active" && p.location_id && ids.has(p.location_id))
+    .filter((p) => !hasScheduledTask("plant", p.id));
+}
+function stagingDeferredCount() {
+  const ids = stagingLocationIds();
+  if (!ids.size) return 0;
+  return state.plants.filter((p) => p.status === "active" && p.location_id && ids.has(p.location_id)
+    && hasScheduledTask("plant", p.id)).length;
 }
 
 function hasScheduledTask(kind, id) {
@@ -4999,6 +5035,8 @@ function reportSections() {
       kind: "plant" },
     { key: "plantsNoTaxon", title: "Specimens with no species", sub: "Not linked to a species record",
       items: state.plants.filter((pl) => !pl.taxa_id), kind: "plant" },
+    { key: "plantsStaging", title: "Waiting to be planted", sub: "In a staging area, not yet in the ground",
+      items: plantsAwaitingPlanting(), kind: "plant" },
     { key: "plantsNoLocation", title: "Plants with no location", sub: "Nowhere to find them",
       items: state.plants.filter((pl) => allLocationsForPlant(pl).length === 0), kind: "plant" },
     // PD-4: this filter is the third site that branches on the exact health
@@ -5208,6 +5246,7 @@ function workQueue() {
       sect("frostTender", true),
       sect("plantsAttention", true),
       sect("checkIns", true),
+      sect("plantsStaging"),
       photoSugs.size ? tile(photoSugs.size, "Photos Claude answered", "Filing it proposed — accept or dismiss", "showGalleryHasSuggestions()") : "",
       taxaSugs.size ? tile(taxaSugs.size, "Species Claude answered", "Blank fields it filled in", "showTaxaWithSuggestions()") : "",
       tile(due.length, "Should be blooming", "In season, nothing recorded — go and look", "state.reportView='dueToBloom';render()"),
@@ -5414,7 +5453,8 @@ function workQueueDetail() {
               : false)).length
             // dueToBloom suppresses on the narrower rule — a FUTURE-dated task
             // only — so it counts separately rather than sharing the branch above.
-            + (state.reportView === "dueToBloom" ? bloomsDeferredCount() : 0);
+            + (state.reportView === "dueToBloom" ? bloomsDeferredCount() : 0)
+            + (state.reportView === "plantsStaging" ? stagingDeferredCount() : 0);
           return handled ? `
             <div class="filter-note" style="margin-bottom:14px;">
               <span class="filter-note-head">${countLabel(handled, "more has a task", "more have tasks")}</span>
@@ -5512,6 +5552,9 @@ function reportRowActions(pl) {
   }
   if (v === "closeBlooms" && open) out.push(btn("It has finished", `endBloom('${open.id}')`));
   if (v === "plantsNoLocation" || v === "frostTender") out.push(btn(v === "frostTender" ? "Move it in" : "Set a location", `openModal('movePlant',{plantId:'${pl.id}'})`));
+  // The one action that resolves a staging row: put it where it is going.
+  // Moving it out of staging is what clears it — there is no flag to unset.
+  if (v === "plantsStaging") out.push(btn("Plant it — move", `openModal('movePlant',{plantId:'${pl.id}'})`));
 
   out.push(btn("Make a task", `openModal('newTask',{subject:{kind:'plant',id:'${pl.id}'}})`));
   return out.join("");

@@ -283,6 +283,64 @@ integrate there regardless. A Gemini identification call stays possible — new
 Edge Function, Google AI Studio key, per-call cost — but the links solved the
 actual problem. **Do not build without asking.**
 
+### GRAVE-1 / WISH-1 — scoped 2026-08-29, approved shape, NOT built
+
+Amanda asked for a wish list and a Graveyard / In Memoriam, then chose to stop
+before building. **The design below was agreed; do not re-litigate it, build it.**
+
+**Three connected pieces, one migration.**
+
+1. **"No longer have this"** — an action on the plant record. Asks died / gave
+   away / deaccessioned, a date, and a note; sets `status`,
+   `collection_category = 'historical'`, stamps `date_removed`, writes a care
+   note, and offers "add this species to my wish list" in the same step.
+   Today status is only reachable through Edit full record's dropdown — there is
+   no action for it, unlike Move to Plant Hospital.
+
+2. **Graveyard / In Memoriam** — a view of every non-active plant, grouped by
+   year: photo, name, how long it was held (`date_acquired` → `date_removed`),
+   where it was, why it went. Nothing is deleted; photos and history stay.
+
+3. **Wish list** — a standalone table. **Amanda chose this over a `taxa.wanted`
+   flag** after being told the tradeoff: a second place plant names live, which
+   can drift from `taxa`. Mitigation agreed — an entry WITH a `taxa_id` renders
+   the taxon's name, so only genuinely unowned entries rely on free text.
+   Marking one acquired creates a real specimen and closes the entry.
+
+**Behaviour change this requires.** `plantsAtLocation()` ignores `status`, so a
+dead plant still occupies its bucket — Bucket 40 reports 1 plant after that
+plant dies. Filter those counts to active but **KEEP `location_id`**: the bucket
+then reads empty while the Graveyard can still say "died in Bucket 40". Clearing
+it would lose where the plant died.
+
+**Migration — not yet run.** Write the code with feature detection first, verify
+it behaves before AND after, then hand the SQL over (same discipline as
+`photos.historical`).
+
+```sql
+alter table plants add column date_removed date;
+
+create table wishlist (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  taxa_id uuid references taxa(id) on delete set null,
+  photo_id uuid references photos(id) on delete set null,
+  source text, notes text,
+  acquired boolean not null default false,
+  acquired_at date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz
+);
+alter table wishlist enable row level security;
+create policy wishlist_all on wishlist for all to authenticated using (true) with check (true);
+```
+
+The RLS policy matches every other table's. Without it the table reads back
+empty — it is not optional.
+
+**Placement:** two toggles on the Plants tab, not new nav tabs. Still the
+collection, in past and future tense.
+
 ### Deferred / known gaps
 
 - **CSV import.** Export exists (plants CSV, full JSON backup). Import is

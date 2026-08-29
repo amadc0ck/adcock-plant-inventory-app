@@ -109,6 +109,18 @@ Stop inferring these. Verified:
 | `list_options` | UNIQUE (list_name, value) |
 | `task_subjects` | exactly one of plant_id / location_id / taxa_id |
 
+**Tasks have a visibility horizon (v2.8.1).** `openTasks()` is every unfinished
+task; the UI almost never shows that set. `actionableTasks()` — overdue, due
+within `TASK_HORIZON_DAYS` (7), or **undated** — is what the To Do panel and the
+"Due now" filter render. `scheduledTasks()` is the remainder, reachable via the
+"Later" tab. The two partition `openTasks()` exactly, so a task cannot fall
+between them. An undated task is always actionable: "I'll get to it" is not a
+schedule, and hiding those would lose them.
+
+Note the deliberate asymmetry: `taskSectionFor()` on a plant, location or
+species page still shows **all** open tasks. On the record itself, "a bloom check
+is scheduled for June" is context worth having; on the To Do page it is noise.
+
 **Vocabularies that are NOT constrained: everything on `taxa`.** `plant_type`,
 `growth_habit`, `bloom_season`, `origin`, `water_needs` and `light_conditions`
 all live on `taxa`, which has no CHECK constraints — so adding a value there is

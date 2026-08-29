@@ -715,7 +715,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.8.1";
 const APP_UPDATED = "2026-08-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2937,6 +2937,36 @@ function openTasks() {
   return state.tasks.filter((t) => t.status !== "done");
 }
 
+/* TODO-3. Deferring 24 bloom nudges into tasks dated June 2027 moved the clutter
+   rather than clearing it — they left the tile and filled the task list instead.
+   A task dated eight months out is not work, it is a reminder that has not
+   arrived, and the same argument that took "Should be blooming" off the queue
+   applies to it.
+
+   So the open list is what is ACTIONABLE: overdue, due within the week, or
+   undated. An undated task always shows — "I'll get to it" is not a schedule,
+   and hiding those would lose them entirely.
+
+   Nothing is hidden without a count. The To Do panel and the task screen both
+   say how many are scheduled later and link straight to them, because the
+   recurring bug in this app has been capability that exists and cannot be
+   reached, not capability that is missing. */
+const TASK_HORIZON_DAYS = 7;
+function taskHorizonISO() {
+  const d = new Date();
+  d.setDate(d.getDate() + TASK_HORIZON_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+function taskIsScheduledLater(t) {
+  return t.status !== "done" && !!t.due_date && t.due_date > taskHorizonISO();
+}
+function actionableTasks() {
+  return openTasks().filter((t) => !taskIsScheduledLater(t));
+}
+function scheduledTasks() {
+  return openTasks().filter(taskIsScheduledLater);
+}
+
 /* TODO-2. A plant with an open task dated in the FUTURE has been dealt with —
    the answer was "not now", and the task carries the date it comes back. That
    is enough to drop it off a nudge list, and it needs no new column: due_date
@@ -5023,7 +5053,8 @@ function checkInSectionFor(pl) {
 }
 
 function taskGroup() {
-  const open = sortTasks(openTasks());
+  const open = sortTasks(actionableTasks());
+  const later = scheduledTasks().length;
   const shown = open.slice(0, 4);
   return `
     <div class="queue-group">
@@ -5032,11 +5063,13 @@ function taskGroup() {
         <button class="btn btn-secondary btn-sm" onclick="openModal('newTask')">+ New task</button>
       </div>
       ${open.length === 0
-        ? `<p class="subtle" style="margin:0;font-size:12.5px;">Nothing on the list. A task can hang off any number of buckets, plants or species &mdash; useful for &ldquo;pull these eleven and re-evaluate&rdquo;.</p>`
-        : `<div class="stack">${shown.map((t) => taskRow(t, true)).join("")}</div>
-           ${open.length > shown.length || state.tasks.length > open.length
-             ? `<button class="btn-ghost" style="padding:8px 0 0;font-size:12.5px;" onclick="state.reportView='tasks';render()">See all tasks (${open.length} open${state.tasks.length > open.length ? `, ${state.tasks.length - open.length} done` : ""}) &rarr;</button>`
-             : ""}`}
+        ? `<p class="subtle" style="margin:0;font-size:12.5px;">${later
+            ? `Nothing due this week. ${countLabel(later, "task is", "tasks are")} scheduled for later.`
+            : "Nothing on the list. A task can hang off any number of buckets, plants or species &mdash; useful for &ldquo;pull these eleven and re-evaluate&rdquo;."}</p>`
+        : `<div class="stack">${shown.map((t) => taskRow(t, true)).join("")}</div>`}
+      ${open.length > shown.length || later || state.tasks.length > openTasks().length
+        ? `<button class="btn-ghost" style="padding:8px 0 0;font-size:12.5px;" onclick="state.reportView='tasks';render()">See all tasks (${open.length} due${later ? `, ${later} later` : ""}) &rarr;</button>`
+        : ""}
     </div>`;
 }
 
@@ -5176,7 +5209,10 @@ function workQueueDetail() {
   if (state.reportView === "tasks") {
     const f = state.taskFilter || "open";
     const list = sortTasks(
-      f === "open" ? openTasks() : f === "done" ? state.tasks.filter((t) => t.status === "done") : state.tasks);
+      f === "open" ? actionableTasks()
+      : f === "later" ? scheduledTasks()
+      : f === "done" ? state.tasks.filter((t) => t.status === "done")
+      : state.tasks);
     const btn = (k, label) => `<button class="btn btn-sm ${f === k ? "btn-primary" : "btn-secondary"}" onclick="state.taskFilter='${k}';render()">${label}</button>`;
     return `
       <div class="screen">
@@ -5186,9 +5222,12 @@ function workQueueDetail() {
             <h2 class="display" style="font-size:22px;font-weight:500;margin:0;">Tasks</h2>
             <button class="btn btn-secondary btn-sm" onclick="openModal('newTask')">+ New task</button>
           </div>
-          <div style="display:flex;gap:8px;margin:12px 0 16px;">${btn("open", "Open")}${btn("done", "Done")}${btn("all", "All")}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px;">${btn("open", `Due now${actionableTasks().length ? ` (${actionableTasks().length})` : ""}`)}${btn("later", `Later${scheduledTasks().length ? ` (${scheduledTasks().length})` : ""}`)}${btn("done", "Done")}${btn("all", "All")}</div>
           ${list.length === 0
-            ? `<div class="empty"><div class="display">Nothing here</div><div>${f === "done" ? "No tasks completed yet." : "No open tasks."}</div></div>`
+            ? `<div class="empty"><div class="display">Nothing here</div><div>${
+                f === "done" ? "No tasks completed yet."
+                : f === "later" ? "Nothing scheduled beyond the next week."
+                : `No tasks due in the next ${TASK_HORIZON_DAYS} days.`}</div></div>`
             : `<div class="stack">${list.map((t) => taskRow(t, false)).join("")}</div>`}
         </div>
       </div>`;

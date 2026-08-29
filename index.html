@@ -715,7 +715,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.8.2";
+const APP_VERSION = "2.8.3";
 const APP_UPDATED = "2026-08-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4673,7 +4673,7 @@ function screenLocationDetail() {
 
           <div style="margin-top:14px;">
             <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
-            <button class="btn-ghost" style="padding:0 0 0 14px;font-size:12.5px;color:var(--terracotta);" onclick="openModal('removeLocation',{locationId:'${l.id}'})">Remove</button>
+            <button class="btn-ghost" style="padding:0 0 0 14px;font-size:12.5px;color:var(--ink);font-weight:600;" onclick="openModal('removeLocation',{locationId:'${l.id}'})">Archive or delete</button>
           </div>`;
         })()}
         </div>
@@ -7339,6 +7339,17 @@ function modalContent() {
         <textarea id="el-notes" rows="2">${escapeHtml(l.notes || "")}</textarea>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top:20px;">Save changes</button>
       </form>
+      ${/* Amanda went looking for delete HERE, from the Locations list's edit
+           pencil, and it only existed on the location's own detail page. Same
+           pattern as editTask's "Delete task" — the way out of a record belongs
+           on the form you opened to change it.
+
+           Routes to the removeLocation modal rather than deleting outright:
+           that screen explains archive versus delete, counts what is filed
+           here, and disables delete for a location with children. Duplicating
+           any of that would mean two places to keep honest. */""}
+      <button class="btn-ghost" style="margin-top:10px;font-weight:600;"
+        onclick="closeModal();openModal('removeLocation',{locationId:'${l.id}'})">Archive or delete this location</button>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
@@ -8540,6 +8551,10 @@ async function deleteLocation(locationId) {
   try {
     await restPatch("plants", `location_id=eq.${locationId}`, { location_id: null });
     await restPatch("photos", `location_id=eq.${locationId}`, { location_id: null });
+    // Provably a no-op — empty PATCH body, and the row is deleted three lines
+    // below anyway. Verified 2026-08-29 that PostgREST answers 200 [] rather
+    // than 400, so it cannot abort the delete. Left alone rather than removed:
+    // it has shipped since v1.62.0 and touching it buys nothing.
     await restPatch("locations", `primary_photo_id=is.null&id=eq.${locationId}`, {});
     await restDelete("photo_locations", `location_id=eq.${locationId}`);
     await restDelete("plant_location_history", `location_id=eq.${locationId}`);

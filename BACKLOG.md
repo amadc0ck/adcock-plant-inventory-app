@@ -370,11 +370,12 @@ Everything below is code-tested and syntax-clean; none of it has been exercised
 against the running app on the iPad. Listed so a later session does not assume
 it works.
 
-- **WATER-1 / WATER-2 — no row has ever been written to `watering_events`.**
-  Subtree resolution, due logic, the weather tie-in and the modal are all tested
-  against synthetic data in Node, but the actual insert path has never run. If
-  the RLS policy were somehow still wrong the error is special-cased to say so
-  rather than shrug. **First real watering is the test.**
+- **WATER-1 / WATER-2 — ✅ WRITES CONFIRMED 2026-08-31.** Amanda recorded
+  waterings for almost the whole Front Yard, so the insert path, the RLS policy
+  and the subtree resolution all work against the live table. **Still unchecked:
+  whether `watered_on` holds the intended date** — the modal defaults to the
+  local day (DATE-1) and she was back-dating to "yesterday", which is exactly
+  the case the UTC skew would have broken before v2.11.1.
 - **WEATHER-1 — no frost or heat event has occurred yet.** Concord's forecast
   has been mild all week, so only the quiet strip has ever rendered. The banner,
   the threshold logic and the link into the frostTender report are verified
@@ -386,12 +387,9 @@ it works.
   Claude since the deploy. The check is whether `origin` now comes back varied
   rather than `introduced` every time — ideally on something plausibly
   Californian.
-- **LOC-9's "Containers that hold no plants" tile.** The detection logic is
-  tested; the real count against her 167 locations is unknown. Expect more than
-  the one pot that surfaced it.
-- **PROF-1 / PROF-2 filters.** Verified against synthetic taxa. The real numbers
-  — how many of 143 species are incomplete, how many Claude has already been
-  asked about — have not been seen.
+- **LOC-9 and PROF-1 / PROF-2 tiles — ✅ render correctly, 2026-08-31.** Amanda
+  confirmed the To Do queue looks right with the new tiles in it. The counts
+  themselves are hers to work through, not a correctness question.
 
 ### Shipped 2026-08-29, NOT verified against real data
 
@@ -400,8 +398,8 @@ it works.
   but nobody has run Ask Claude on a species with blank light, or on a
   nothogenus, and confirmed a suggestion appears and accepts cleanly. **The most
   likely remaining gap** — the only change crossing into an Edge Function.
-- **iOS focus-zoom.** `@media (pointer:coarse)` 16px shipped v2.8.0. Never
-  confirmed on the iPad.
+- **iOS focus-zoom — ✅ confirmed working 2026-08-31.** `@media (pointer:coarse)`
+  16px, shipped v2.8.0. Amanda confirms fields no longer zoom on tap.
 - **PHOTO-4 round trip.** The helper preserves `photo_type` alongside
   `historical` in test, but the bulk editor was never run on a photo typed
   anything other than General.

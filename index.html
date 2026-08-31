@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.13.0";
+const APP_VERSION = "2.14.0";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2424,6 +2424,63 @@ function taxonSecondaryName(t) {
 // cultivar. 61 of 105 on 2026-08-28. Composed names, per-part italics,
 // infraspecific, parentage and species grouping all need the parts, so these
 // records are invisible to half the app's features.
+/* ============================================================
+   SPECIES PROFILE COMPLETENESS — PROF-1
+
+   Deliberately a PORT of the blank test in `suggest-species/index.ts`, not a
+   second opinion. The tile has to agree with what "Ask Claude" will actually
+   fill, or it can never reach zero — the uncompletable-count problem NAME-4
+   and TODO-2 both had to fix. If the Edge Function's FIELDS, SENTINELS or
+   HYBRID_ONLY change, change these too; they are two halves of one rule.
+
+   `common_name` and `cultivar` are NOT counted. Claude is not asked for them
+   (they are not in FIELDS), so counting them would put a permanent floor under
+   the number.
+   ============================================================ */
+const TAXON_PROFILE_FIELDS = [
+  "family", "genus", "species_epithet", "description", "plant_type",
+  "growth_habit", "mature_size", "bloom_season", "origin", "native_range",
+  "hardy_to", "water_needs", "frost_tender", "light_conditions",
+  "parentage", "is_hybrid",
+];
+// Present, but says nothing. `origin` defaults to "unknown" on every taxon.
+const TAXON_SENTINELS = { origin: ["unknown"], bloom_season: ["not_observed"] };
+// Only worth asking on a cross. 132 of 133 taxa have no parentage and for most
+// that is correct — a straight species has no cross to record.
+const TAXON_HYBRID_ONLY = ["parentage", "is_hybrid"];
+const TAXON_NOTHOGENERA = new Set([
+  "graptoveria", "graptosedum", "pachyveria", "sedeveria", "cremneria",
+  "mangave", "gasteraloe", "gastrolea", "alworthia",
+]);
+function taxonLooksHybrid(t) {
+  const g = String(t.genus || "").trim();
+  if (t.is_hybrid === true) return true;
+  if (t.cultivar && String(t.cultivar).trim()) return true;
+  if (/^[x\u00D7]/i.test(g) && g.length > 1) return true;
+  return TAXON_NOTHOGENERA.has(g.toLowerCase().replace(/^[x\u00D7]/i, ""));
+}
+// Returns the field keys that are still blank, so the list can say WHICH.
+function taxonProfileGaps(t) {
+  const hybridish = taxonLooksHybrid(t);
+  return TAXON_PROFILE_FIELDS.filter((f) => {
+    if (TAXON_HYBRID_ONLY.includes(f) && !hybridish) return false;
+    const v = t[f];
+    if (f === "frost_tender" || f === "is_hybrid") return v === null || v === undefined;
+    if (Array.isArray(v)) return v.length === 0;
+    if (v === null || v === undefined || String(v).trim() === "") return true;
+    return (TAXON_SENTINELS[f] || []).includes(String(v).trim().toLowerCase());
+  });
+}
+function taxonProfileFieldCount(t) {
+  return TAXON_PROFILE_FIELDS.filter((f) => !(TAXON_HYBRID_ONLY.includes(f) && !taxonLooksHybrid(t))).length;
+}
+function taxaIncompleteProfiles() {
+  // Most gaps first: the emptiest records are where one Ask buys the most.
+  return state.taxa.filter((t) => taxonProfileGaps(t).length)
+    .sort((a, b) => taxonProfileGaps(b).length - taxonProfileGaps(a).length
+      || taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
+}
+
 function taxonMissingNameParts(t) {
   const has = (v) => !!(v && String(v).trim());
   if (has(t.genus) || has(t.species_epithet) || has(t.cultivar)) return false;
@@ -3962,6 +4019,15 @@ function showTaxaMissingParts() {
   state.tab = "plants";
   state.taxaOnlyMissingParts = true;
   state.taxaOnlySuggestions = false;
+  state.taxaIncompleteOnly = false;
+  state.taxaSearch = "";
+  render();
+}
+function showTaxaIncomplete() {
+  state.tab = "plants";
+  state.taxaIncompleteOnly = true;
+  state.taxaOnlyMissingParts = false;
+  state.taxaOnlySuggestions = false;
   state.taxaSearch = "";
   render();
 }
@@ -4495,6 +4561,18 @@ function taxonCard(t) {
           const n = suggestionsForTaxon(t.id).length;
           return n ? `<div style="font-size:11px;color:var(--blue);margin-top:3px;">${countLabel(n, "suggestion", "suggestions")} waiting</div>` : "";
         })()}
+        ${(() => {
+          // PROF-1. Only while filtering, and it names the fields rather than
+          // showing a bare count — "6 blank" sends her to open the record to
+          // find out which, which is the trip the list exists to save.
+          if (!state.taxaIncompleteOnly) return "";
+          const gaps = taxonProfileGaps(t);
+          if (!gaps.length) return "";
+          const names = gaps.map((f) => FIELD_LABELS[f] || f);
+          const shown = names.slice(0, 4).join(", ");
+          return `<div style="font-size:11px;color:var(--orange);margin-top:3px;">
+            ${gaps.length} of ${taxonProfileFieldCount(t)} blank &middot; ${escapeHtml(shown)}${names.length > 4 ? ` +${names.length - 4} more` : ""}</div>`;
+        })()}
         ${secondary ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(secondary)}</div>` : ""}
         <div class="row" style="margin-top:8px;">
           <div class="mono" style="font-size:11px;color:var(--moss-dim);">${countLabel(specimens.length, "specimen", "specimens")}</div>
@@ -4509,6 +4587,7 @@ function screenTaxa() {
   const list = state.taxa.filter((t) => {
     if (state.taxaOnlySuggestions && !suggestionsForTaxon(t.id).length) return false;
     if (state.taxaOnlyMissingParts && !taxonMissingNameParts(t)) return false;
+    if (state.taxaIncompleteOnly && !taxonProfileGaps(t).length) return false;
     if (!q) return true;
     const hay = [taxonDisplayName(t), t.common_name, t.botanical_name, t.genus, t.family, t.working_label]
       .filter(Boolean).join(" ").toLowerCase();
@@ -4533,6 +4612,21 @@ function screenTaxa() {
           </div>
           <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">No genus, epithet or cultivar recorded, so these cannot group with their relatives and the name cannot be styled per part. Open one and use <strong>Check the name and split it up</strong>.</p>
         </div>` : ""}
+      ${state.taxaIncompleteOnly ? (() => {
+        const all = taxaIncompleteProfiles();
+        const worst = all.filter((t) => taxonProfileGaps(t).length >= 8).length;
+        return `
+        <div class="filter-note" style="margin-bottom:14px;">
+          <div class="row">
+            <span class="filter-note-head">Species with gaps in the profile</span>
+            <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaIncompleteOnly=false;render()">Show all</button>
+          </div>
+          <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">
+            ${countLabel(all.length, "species has", "species have")} at least one blank field${worst ? `, and ${worst} ${worst === 1 ? "is" : "are"} almost entirely empty` : ""}. Emptiest first. Open one and use <strong>Ask Claude</strong> &mdash; it proposes every blank at once and you accept them one by one.
+          </p>
+          <p class="subtle" style="margin:6px 0 0;font-size:12px;">Counts the same fields Claude is asked to fill, so the number can actually reach zero. Common name and cultivar are not counted &mdash; Claude is not asked for those.</p>
+        </div>`;
+      })() : ""}
       ${state.taxaOnlySuggestions ? `
         <div class="row" style="margin-bottom:12px;">
           <span class="subtle">Showing only species Claude has suggestions for</span>
@@ -5784,6 +5878,7 @@ function workQueue() {
   const photoSugs = new Set(state.suggestions.filter((x) => x.photo_id).map((x) => x.photo_id));
   const taxaSugs = new Set(state.suggestions.filter((x) => x.taxa_id).map((x) => x.taxa_id));
   const missingParts = taxaMissingNameParts().length;
+  const incompleteProfiles = taxaIncompleteProfiles().length;
 
   /* TODO-1. Six groups became three. "Species names" was a records job filed
      on its own; Claude's suggestions are something waiting on her, which is
@@ -5812,6 +5907,7 @@ function workQueue() {
 
     ${group("Records to finish", null, [
       tile(missingParts, "Names not split up", "Free text only — cannot group with relatives", "showTaxaMissingParts()"),
+      tile(incompleteProfiles, "Species profiles unfinished", "Blank fields Claude can fill", "showTaxaIncomplete()"),
       sect("plantsNoPhotos"),
       sect("plantsUnidentified"),
       sect("plantsNoTaxon"),

@@ -376,6 +376,12 @@ Audit trail for AI suggestions. Never silently overwrites confirmed data.
 - `confirmed_name` text, nullable
 - `created_at` timestamptz
 
+**Species-profile completeness (PROF-1, v2.14.0) is duplicated on purpose.**
+`TAXON_PROFILE_FIELDS` / `TAXON_SENTINELS` / `TAXON_HYBRID_ONLY` in
+`index.html` are a port of `FIELDS` / `SENTINELS` / `HYBRID_ONLY` in
+`suggest-species/index.ts`. The tile must count exactly what Claude is asked to
+fill, or it can never reach zero. **Change both or neither.**
+
 ### `suggestions`
 Everything Claude proposes, one row per proposal (v1.80.0). Separate from `identifications`, which stays the Pl@ntNet audit trail: that table has one `status` per row and a row means "a guess at a name", so a bundle holding a plant, a location and a bloom could not be half-accepted there — and half-accepting is the normal case.
 

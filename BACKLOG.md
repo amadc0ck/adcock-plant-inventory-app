@@ -419,6 +419,39 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.14.0 — PROF-1, species with unfinished profiles
+
+**"Species profiles unfinished"** tile on To Do → filters the Plants tab to taxa
+with blank fields, **emptiest first**, each card naming which fields are missing
+rather than showing a bare count. A bare count sends her into the record to find
+out which, and that is the trip the list exists to save.
+
+**The completeness test is a PORT of `suggest-species`'s blank test, not a
+second opinion.** If the tile counted fields Claude is never asked for, the
+number could never reach zero and it would become another uncompletable count —
+the fault NAME-4 and TODO-2 both had to correct. Consequences:
+
+- **`common_name` and `cultivar` are not counted.** They are not in the Edge
+  Function's `FIELDS`, so Claude never proposes them.
+- **`parentage` and `is_hybrid` are only counted on hybrids** — a named
+  cultivar, `is_hybrid` already true, a `×` prefix, or one of the nine
+  nothogenera. 132 of 133 taxa have no parentage and for most that is correct.
+- **Sentinels count as blank**: `origin = "unknown"` and
+  `bloom_season = "not_observed"`, matching the Edge Function.
+- **`frost_tender = false` is an answer, not a gap.** Only null counts.
+
+**These are two halves of one rule and must move together.** `FIELDS`,
+`SENTINELS` and `HYBRID_ONLY` in `suggest-species/index.ts` have counterparts
+named `TAXON_PROFILE_FIELDS`, `TAXON_SENTINELS` and `TAXON_HYBRID_ONLY` in
+`index.html`; changing one without the other desynchronises the tile from the
+action that clears it.
+
+Verified: an empty straight species reports **14 of 14** blank and is not asked
+for parentage; a filled one reports **0** and drops off the list.
+
+Expect a large number on first load — 133 taxa, and BACKLOG's 2026-08-28
+measurement found only 13 complete.
+
 ### v2.13.0 — LOC-9, `holds_plants` contradicting its own type
 
 **Reported from the app:** photos tagged to *Back Yard > Large Teal Ribbed Pot 3*

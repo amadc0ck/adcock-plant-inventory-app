@@ -364,6 +364,35 @@ records still need the Claude pass.
 
 Seven names are known-wrong and listed in the species-data section above.
 
+### Shipped 2026-08-31, NOT yet verified in real use
+
+Everything below is code-tested and syntax-clean; none of it has been exercised
+against the running app on the iPad. Listed so a later session does not assume
+it works.
+
+- **WATER-1 / WATER-2 — no row has ever been written to `watering_events`.**
+  Subtree resolution, due logic, the weather tie-in and the modal are all tested
+  against synthetic data in Node, but the actual insert path has never run. If
+  the RLS policy were somehow still wrong the error is special-cased to say so
+  rather than shrug. **First real watering is the test.**
+- **WEATHER-1 — no frost or heat event has occurred yet.** Concord's forecast
+  has been mild all week, so only the quiet strip has ever rendered. The banner,
+  the threshold logic and the link into the frostTender report are verified
+  against synthetic forecasts only.
+- **INB-2 (v2.15.1) — the Select button's new position.** Depends on
+  `--sticky-top` being computed correctly for the iPad's header height. Amanda
+  will confirm next time she takes progress photos.
+- **`suggest-species` v8 — the rewritten `origin` prompt.** Nobody has run Ask
+  Claude since the deploy. The check is whether `origin` now comes back varied
+  rather than `introduced` every time — ideally on something plausibly
+  Californian.
+- **LOC-9's "Containers that hold no plants" tile.** The detection logic is
+  tested; the real count against her 167 locations is unknown. Expect more than
+  the one pot that surfaced it.
+- **PROF-1 / PROF-2 filters.** Verified against synthetic taxa. The real numbers
+  — how many of 143 species are incomplete, how many Claude has already been
+  asked about — have not been seen.
+
 ### Shipped 2026-08-29, NOT verified against real data
 
 - **AI-4 — `parentage`, `light_conditions`, `is_hybrid`, `origin`.** Deployed

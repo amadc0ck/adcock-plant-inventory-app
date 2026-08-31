@@ -447,17 +447,40 @@ collection, in past and future tense.
 
 Raised in session and recorded so they survive it. None is blocking.
 
-1. **`buildContext` has no `ORDER BY`.** `_shared/abg-context.ts` selects `taxa`,
-   `plants` and `locations` with no ordering, and Postgres returns heap order —
-   which an UPDATE changes. The catalogue text therefore shifts under the
-   `cache_control` block and silently invalidates the prompt cache, roughly
-   tripling input cost on a batch. Fix: `.order("id")` on all three.
-2. **`callClaude` discards `data.usage`.** So `cache_read_input_tokens` is
-   invisible and nobody can confirm caching works or measure real per-call cost.
-   Log it. Pairs with #1 — #1 is the fix, #2 is how you know it worked.
-3. **Accepting a suggestion mid-sweep breaks the cache too**, because
-   `buildContext` feeds the last 20 accepted/dismissed rows back in as
-   `corrections`. Consequence for the health sweep: **sweep first, review after.**
+1. **CACHE-1 — the Claude prompt cache is probably never hitting.** Three
+   defects, one fix each. Do them together; they are one job.
+
+   The catalogue `buildContext()` assembles — every taxon, active specimen and
+   location, ~460 rows and roughly **15,000 tokens**, mostly UUIDs — is sent as
+   the system prompt under `cache_control: {type:"ephemeral"}`. Caching is
+   **prefix-matched**: one byte different anywhere and the whole block is a
+   miss. At Sonnet 5 rates a hit is ~$0.003 per call and a miss ~$0.030, so this
+   is a **10× difference on the largest part of every request** — about $3 vs
+   $7.50 across a 170-photo health sweep.
+
+   **(a) No `ORDER BY` on any of the three selects.** `taxa`, `plants` and
+   `locations` come back in heap order, and an `UPDATE` moves a row to the end
+   of the heap. So editing or moving a plant silently reshuffles the catalogue
+   text. Fix: `.order("id")` on all three.
+
+   **(b) `corrections` is inside the cached prefix, and it is the most volatile
+   thing in the request.** `buildContext` appends the last 20 accepted/dismissed
+   suggestions as examples, as the final element of the catalogue string — so
+   **every accept or dismiss invalidates the cache**, which is precisely what
+   she does while working a batch. Fix: move it out of the cached system block
+   into the user turn. ~600 tokens at full price instead of re-paying 15,000.
+   *This is the worse of the two and was missed on the first pass.*
+
+   **(c) `callClaude` discards `data.usage`.** `cache_read_input_tokens` and
+   `cache_creation_input_tokens` are never read, so nobody can confirm caching
+   works or measure real cost — every figure above is inferred, not measured.
+   Fix: log it; Supabase function logs will show it per call.
+
+   **Do (c) first.** Then (a) and (b) can be proven rather than assumed.
+
+   Until this is fixed, the operational workaround for the health sweep stands:
+   **sweep first, review after** — reviewing mid-sweep triggers (b) on every
+   remaining call.
 4. **`.btn-ghost` is `--blue` on parchment — about 2.2:1.** Legible but below any
    accessibility floor. Deliberately not swept in v2.12.2: unlike
    `.btn-secondary` it is genuinely visible, many call sites override the colour

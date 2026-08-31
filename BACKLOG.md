@@ -419,6 +419,45 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.15.0 — PROF-2 (working filters) + the `origin` prompt bias
+
+**`origin` was coming back `introduced` for everything, and the prompt was the
+cause.** Amanda spotted it 2026-08-30. The field description ended:
+
+> "Relative to the San Francisco Bay Area, California. **Almost every succulent
+> here is introduced.**"
+
+That handed Claude the answer before it looked at the plant, which made the
+field unfalsifiable. The prior was not even wrong on the facts — most of a
+succulent collection in Concord genuinely is introduced — it was wrong as a
+**method**, because it removed any reason to check the handful that are not.
+
+Rewritten to ask the actual question, reason from the wild distribution (the
+same knowledge `native_range` uses), and name the genera that really are native
+here: Dudleya, several Sedum, some Opuntia and Yucca. It also states explicitly
+that the field is **not** about wild-species-versus-cultivar — that is
+`is_hybrid` / `parentage`. **Deployed: `suggest-species` v7 → v8.**
+
+*Worth re-checking with Amanda:* if her mental model of `origin` is "wild plant
+vs human creation" rather than "native to this region", the field is answering
+a different question than she wants and the fix is a vocabulary change, not a
+prompt change.
+
+**PROF-2 — the list is now workable.** v2.14.0 shipped a true count, which on
+133 taxa is a wall rather than a queue: a third of them are two fields short and
+some have already been through Claude. Two filters, defaulting ON:
+
+- **"Never asked Claude"** — needs suggestion history, which the app did not
+  have: `suggestions` is loaded `status=eq.pending`, so accepted and dismissed
+  rows (which prove Claude HAS been asked) were invisible. Added a second
+  one-column fetch across all statuses into `state.taxaAskedIds`.
+- **"At least N blank"** — any / 3 / 5 / 8 / 12, default 5.
+
+The banner reads "Showing 34 of 118 incomplete, 84 filtered out", and each card
+marks *Claude already asked*. **The tile keeps counting the true total**, so the
+filters cannot hide work from the count — the filters are a working view, not a
+redefinition of what is incomplete.
+
 ### v2.14.0 — PROF-1, species with unfinished profiles
 
 **"Species profiles unfinished"** tile on To Do → filters the Plants tab to taxa

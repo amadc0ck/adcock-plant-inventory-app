@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.14.0";
+const APP_VERSION = "2.15.0";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -800,6 +800,9 @@ const state = {
   newVersion: "",         // a newer APP_VERSION seen on the server
   appSettings: {},
   weather: null,          // WEATHER-1 — {fetchedAt, days:[], alerts:[]}; null until loaded
+  taxaAskedIds: new Set(),// PROF-2 — taxa Claude has been asked about, ANY status
+  taxaMinGaps: 5,         // PROF-2 — hide nearly-complete records
+  taxaNeverAskedOnly: true,
   wateringEvents: [],     // WATER-1
   waterDraft: null,       // {ids:[], label, date, notes, locationId} while the modal is open
   lastWaterBatch: null,   // {batchId, count, label} — powers Undo on To Do
@@ -1543,7 +1546,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory, wateringEvents] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory, wateringEvents, askedTaxa] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -1578,6 +1581,11 @@ async function loadAll() {
       // WATER-1. Resilient like every table added after the app existed: it
       // loads before the migration and simply has no watering history.
       optional("watering_events", restGetAll("watering_events", "?select=*&order=watered_on.desc")),
+      /* PROF-2. `suggestions` above is fetched pending-only, which is right for
+         rendering but cannot answer "has Claude ever been asked about this
+         species" — an accepted or dismissed row means it HAS. One column, every
+         status, so the cost is small even as the table grows. */
+      optional("suggestion_history", restGetAll("suggestions", "?select=taxa_id&taxa_id=not.is.null")),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -1596,6 +1604,7 @@ async function loadAll() {
     state.appSettings = Object.fromEntries((appSettings || []).map((r) => [r.key, r.value]));
     state.plantLocationHistory = locHistory || [];
     state.wateringEvents = wateringEvents || [];
+    state.taxaAskedIds = new Set((askedTaxa || []).map((r) => r.taxa_id).filter(Boolean));
   } catch (e) {
     toast(e.message, true);
   }
@@ -2473,6 +2482,23 @@ function taxonProfileGaps(t) {
 }
 function taxonProfileFieldCount(t) {
   return TAXON_PROFILE_FIELDS.filter((f) => !(TAXON_HYBRID_ONLY.includes(f) && !taxonLooksHybrid(t))).length;
+}
+// PROF-2. An accepted or dismissed suggestion both mean Claude has been asked;
+// only a taxon with no row at all is untouched.
+function taxonWasAsked(t) {
+  return state.taxaAskedIds.has(t.id);
+}
+/* The list she actually works from. 133 taxa where a third are two fields short
+   is not a queue, it is a wall — so the default view is the records where one
+   Ask buys the most: never asked, and substantially empty. Both are relaxable
+   in the banner, and the tile keeps counting the true total so the filters
+   cannot hide work from the count. */
+function taxaIncompleteFiltered() {
+  return taxaIncompleteProfiles().filter((t) => {
+    if (state.taxaNeverAskedOnly && taxonWasAsked(t)) return false;
+    if (taxonProfileGaps(t).length < (state.taxaMinGaps || 0)) return false;
+    return true;
+  });
 }
 function taxaIncompleteProfiles() {
   // Most gaps first: the emptiest records are where one Ask buys the most.
@@ -4571,7 +4597,8 @@ function taxonCard(t) {
           const names = gaps.map((f) => FIELD_LABELS[f] || f);
           const shown = names.slice(0, 4).join(", ");
           return `<div style="font-size:11px;color:var(--orange);margin-top:3px;">
-            ${gaps.length} of ${taxonProfileFieldCount(t)} blank &middot; ${escapeHtml(shown)}${names.length > 4 ? ` +${names.length - 4} more` : ""}</div>`;
+            ${gaps.length} of ${taxonProfileFieldCount(t)} blank &middot; ${escapeHtml(shown)}${names.length > 4 ? ` +${names.length - 4} more` : ""}
+            ${taxonWasAsked(t) ? `<span class="subtle" style="color:var(--moss-dim);"> &middot; Claude already asked</span>` : ""}</div>`;
         })()}
         ${secondary ? `<div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${escapeHtml(secondary)}</div>` : ""}
         <div class="row" style="margin-top:8px;">
@@ -4587,7 +4614,11 @@ function screenTaxa() {
   const list = state.taxa.filter((t) => {
     if (state.taxaOnlySuggestions && !suggestionsForTaxon(t.id).length) return false;
     if (state.taxaOnlyMissingParts && !taxonMissingNameParts(t)) return false;
-    if (state.taxaIncompleteOnly && !taxonProfileGaps(t).length) return false;
+    if (state.taxaIncompleteOnly) {
+      if (!taxonProfileGaps(t).length) return false;
+      if (state.taxaNeverAskedOnly && taxonWasAsked(t)) return false;
+      if (taxonProfileGaps(t).length < (state.taxaMinGaps || 0)) return false;
+    }
     if (!q) return true;
     const hay = [taxonDisplayName(t), t.common_name, t.botanical_name, t.genus, t.family, t.working_label]
       .filter(Boolean).join(" ").toLowerCase();
@@ -4614,7 +4645,13 @@ function screenTaxa() {
         </div>` : ""}
       ${state.taxaIncompleteOnly ? (() => {
         const all = taxaIncompleteProfiles();
-        const worst = all.filter((t) => taxonProfileGaps(t).length >= 8).length;
+        const shown = taxaIncompleteFiltered();
+        const asked = all.filter(taxonWasAsked).length;
+        const hidden = all.length - shown.length;
+        const chip = (on, label, onclick) => `
+          <button class="btn-ghost" style="font-size:11.5px;padding:3px 10px;border-radius:20px;
+            border:1px solid ${on ? "var(--orange)" : "rgba(245,239,227,0.25)"};
+            color:${on ? "var(--orange)" : "var(--cream)"};" onclick="${onclick}">${label}</button>`;
         return `
         <div class="filter-note" style="margin-bottom:14px;">
           <div class="row">
@@ -4622,9 +4659,21 @@ function screenTaxa() {
             <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaIncompleteOnly=false;render()">Show all</button>
           </div>
           <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">
-            ${countLabel(all.length, "species has", "species have")} at least one blank field${worst ? `, and ${worst} ${worst === 1 ? "is" : "are"} almost entirely empty` : ""}. Emptiest first. Open one and use <strong>Ask Claude</strong> &mdash; it proposes every blank at once and you accept them one by one.
+            Showing <strong>${shown.length}</strong> of ${all.length} incomplete${hidden ? `, ${hidden} filtered out` : ""}. Emptiest first. Open one and use <strong>Ask Claude</strong> &mdash; it proposes every blank at once and you accept them one by one.
           </p>
-          <p class="subtle" style="margin:6px 0 0;font-size:12px;">Counts the same fields Claude is asked to fill, so the number can actually reach zero. Common name and cultivar are not counted &mdash; Claude is not asked for those.</p>
+          ${/* PROF-2. A third of the list being two fields short is not a queue,
+               it is a wall. These two chips are the difference between "here is
+               everything wrong" and "here is where an Ask pays". */""}
+          <div class="wrap-gap" style="margin-top:9px;align-items:center;gap:7px;">
+            ${chip(state.taxaNeverAskedOnly, `Never asked Claude${asked ? ` (hides ${asked})` : ""}`,
+                   "state.taxaNeverAskedOnly=!state.taxaNeverAskedOnly;render()")}
+            <span class="subtle" style="font-size:11.5px;">At least</span>
+            <select style="width:auto;font-size:11.5px;padding:3px 7px;"
+                    onchange="state.taxaMinGaps=parseInt(this.value,10);render()">
+              ${[0, 3, 5, 8, 12].map((v) => `<option value="${v}" ${(state.taxaMinGaps || 0) === v ? "selected" : ""}>${v === 0 ? "any" : v} blank</option>`).join("")}
+            </select>
+          </div>
+          <p class="subtle" style="margin:8px 0 0;font-size:12px;">Counts the same fields Claude is asked to fill, so the number can actually reach zero. Common name and cultivar are not counted &mdash; Claude is not asked for those.</p>
         </div>`;
       })() : ""}
       ${state.taxaOnlySuggestions ? `

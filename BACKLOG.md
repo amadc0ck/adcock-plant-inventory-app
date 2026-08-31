@@ -419,6 +419,36 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.12.1 — two rendering bugs in v2.12.0, one of them older
+
+**The "Water N plants here" button on Location Detail was invisible.**
+`.btn-secondary` is `color:var(--cream)` with a `--line` border — both designed
+for the dark screen background. The location info panel is **parchment**, so the
+button rendered as cream text on cream with an invisible border. `btn-on-cream`
+exists for exactly this and I did not use it. Amanda found the button by
+tapping blank space.
+
+**Icons inside buttons had no size anywhere in the stylesheet.** An `<svg>` with
+a `viewBox` and no `width`/`height` has no intrinsic size, so as a flex item in
+`.btn` it took its default replaced-element size — the droplet on "Water 201
+plants" rendered several hundred pixels tall and pushed the label into the
+corner. `.icon-btn svg` constrained it, but only for buttons that opted in.
+
+Fixed with a floor rule, `.btn svg{width:16px;height:16px}`, declared before
+`.icon-btn svg` so opted-in buttons keep their 15px.
+
+**This was not a new bug.** An audit of every `.btn` containing an `icon()` found
+**three pre-existing call sites with the same fault**: "Import from Google
+Photos" in the upload modal, the location card's "Add photos" (`photoPlus`), and
+a `pin` button — all `btn ... btn-block` or `btn ... btn-sm` without `icon-btn`.
+They are fixed by the same rule.
+
+**The lesson for this file:** which background a component sits on is not
+visible from the code, and `.btn-secondary` reads as neutral when it is not. On
+the parchment panels — Plant Detail's info card, Location Detail's info card —
+a `.btn-secondary` needs `btn-on-cream` and a ghost button needs
+`on-cream-icon`.
+
 ### v2.12.0 — WATER-1 / WATER-2
 
 **Watering tracking.** Table created by Amanda 2026-08-30; RLS policy added the

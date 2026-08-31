@@ -105,6 +105,14 @@
   .surface{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;}
 
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;font-weight:600;font-size:14px;padding:11px 16px;cursor:pointer;border:none;transition:opacity .15s;}
+  /* An <svg> with a viewBox and no width/height has no intrinsic size, so as a
+     flex item inside .btn it stretched to fill the button — a droplet the size
+     of the whole "Water 201 plants" bar. Nothing in the sheet constrained it;
+     .icon-btn svg did, but only for buttons that opted in. This is the floor.
+     .icon-btn svg (15px) is declared later at equal specificity and still wins
+     where it applies. Fixes the Import from Google Photos button too, which
+     carried the same fault. */
+  .btn svg{width:16px;height:16px;flex-shrink:0;}
   .btn:active{opacity:0.75;}
   .btn-primary{background:var(--moss);color:#0F1712;}
   .btn-accent{background:var(--orange);color:#3A2408;}
@@ -238,6 +246,10 @@
   .wx-strip{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#8AA090;
     font-family:'IBM Plex Mono',monospace;margin-bottom:14px;}
   .wx-strip b{color:var(--cream);font-weight:600;}
+  /* On the parchment detail panel, not the dark screen — --blue is too low
+     contrast there, and a bare span gives its svg no size at all. */
+  .water-line{display:flex;align-items:center;gap:7px;margin-top:14px;font-size:12.5px;color:var(--ink-soft);}
+  .water-line svg{width:15px;height:15px;flex-shrink:0;color:var(--moss-dim);}
   .suggestion-icon{display:flex;color:var(--blue);flex-shrink:0;}
   .suggestion-icon svg{width:18px;height:18px;}
 
@@ -736,7 +748,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.12.0";
+const APP_VERSION = "2.12.1";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5216,16 +5228,17 @@ function screenLocationDetail() {
               : w.never ? `${w.never} of ${w.total} never watered, rest ${fmtDaysAgo(w.newest)}`
               : w.mixed ? `mixed \u2014 oldest ${fmtDaysAgo(w.oldest)}, newest ${fmtDaysAgo(w.newest)}`
               : `all watered ${fmtDaysAgo(w.newest)}`;
-            return `<div style="display:flex;align-items:center;gap:7px;margin-top:14px;font-size:12.5px;color:var(--ink-soft);">
-              <span style="display:flex;color:var(--blue);">${icon("droplets")}</span>${escapeHtml(line)}</div>`;
+            return `<div class="water-line">${icon("droplets")}${escapeHtml(line)}</div>`;
           })()}
 
           ${plantsUnderLocation(l.id).length ? `
           <div style="margin-top:12px;">
-            <button class="btn btn-secondary btn-sm icon-btn" onclick="openWaterModal('location','${l.id}')">
+            ${/* btn-on-cream is not optional here: .btn-secondary is
+                 color:var(--cream), which on this parchment panel rendered the
+                 button as invisible text on an invisible border. */""}
+            <button class="btn btn-secondary btn-on-cream btn-sm icon-btn" onclick="openWaterModal('location','${l.id}')">
               ${icon("droplets")} Water ${countLabel(plantsUnderLocation(l.id).length, "plant", "plants")} here
             </button>
-            ${directChildLocations(l.id).length ? `<div class="subtle" style="font-size:11px;margin-top:5px;">Includes everything nested inside</div>` : ""}
           </div>` : ""}
 
           <div style="margin-top:14px;">

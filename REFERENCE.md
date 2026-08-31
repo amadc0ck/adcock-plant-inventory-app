@@ -600,6 +600,18 @@ Scroll is preserved the same way (v1.52.2), for both the page and the modal — 
 
 ## 12. Brand / Design System
 
+**Two backgrounds, and a component does not know which it is on.** Most screens
+are `--bg` (deep green); the info panels on Plant Detail and Location Detail are
+`--parchment`. `.btn-secondary` is `color:var(--cream)` and is **invisible on
+parchment** — it needs `btn-on-cream`, and a `.btn-ghost` icon needs
+`on-cream-icon`. This shipped broken once (v2.12.1); check the surrounding
+panel before choosing a button class.
+
+**Icons in buttons:** `.btn svg` sets a 16px floor because an inline `<svg>`
+with only a `viewBox` has no intrinsic size and will otherwise fill the button.
+`.icon-btn` narrows it to 15px. Never emit `icon()` into a container with no
+`svg` sizing rule.
+
 Approved palette. Do not deviate without a new brand sheet.
 
 | Token | Hex | Role |

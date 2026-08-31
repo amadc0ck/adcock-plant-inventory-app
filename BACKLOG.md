@@ -620,7 +620,38 @@ native like a *Dudleya* is now called native.
 - **CSV import.** Export exists (plants CSV, full JSON backup). Import is
   JSON-only, upsert-based.
 - **Guest / read-only view.** RLS grants full access to any authenticated user,
-  so this is a real design change, not a UI toggle.
+  so this is a real design change, not a UI toggle. Scoped 2026-08-31, not
+  started — Amanda is deciding.
+
+  Three tiers, and the right one depends only on the audience:
+  1. **Show it in person.** Nothing to build. Best demo of the three, because
+     the app is better to use than to look at.
+  2. **Add a Supabase user.** Two minutes; photos work, since `get-photo`
+     accepts any authenticated user. **They get full write access** — every
+     policy is `for all to authenticated`. Fine for one trusted person, not for
+     a stranger.
+  3. **A real read-only role.** Split every policy into `for select to
+     authenticated` plus a write policy gated on not being a viewer, driven by a
+     viewers table. **17 tables**, mechanical but fiddly, and the test that
+     matters is that her own access does not break. Worth it only for several
+     people or an ongoing arrangement.
+
+- **A PUBLIC site is a different thing entirely** and was scoped the same day.
+  Two blockers worth recording:
+  - **Photos may carry EXIF GPS.** The app preserves EXIF and the 2026-08-31
+    Drive migration copied bytes exactly, so whatever a phone wrote is still
+    there. **Publishing photos unmodified would publish her home coordinates**
+    in machine-readable form. Any public export MUST strip EXIF.
+  - **Location names map her property** — "Bucket 32, Wall Collection, Front
+    Yard" — and `acquisition_source_name` / `acquisition_notes` may name people
+    or prices. Publishing the *botanical* record (species pages) rather than the
+    *inventory* (specimens and their locations) sidesteps both.
+
+  Recommended architecture if ever built: **a static generator**, writing JSON
+  and resized EXIF-stripped images to a GitHub Pages repo like the legal site.
+  A live public API would mean anon RLS on the real database plus a public
+  endpoint proxying her Drive — a permanent attack surface in exchange for
+  liveness that a plant collection does not need.
 - **Bucket-level physical inventory.** All 92 wall buckets exist as rows;
   assigning actual plants to each is manual work, not automatable.
 - **Pl@ntNet per-specimen limitation.** Identifies the whole frame, not one

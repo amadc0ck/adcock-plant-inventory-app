@@ -443,6 +443,53 @@ empty — it is not optional.
 **Placement:** two toggles on the Plants tab, not new nav tabs. Still the
 collection, in past and future tense.
 
+### Found 2026-08-31, not yet built
+
+Raised in session and recorded so they survive it. None is blocking.
+
+1. **`buildContext` has no `ORDER BY`.** `_shared/abg-context.ts` selects `taxa`,
+   `plants` and `locations` with no ordering, and Postgres returns heap order —
+   which an UPDATE changes. The catalogue text therefore shifts under the
+   `cache_control` block and silently invalidates the prompt cache, roughly
+   tripling input cost on a batch. Fix: `.order("id")` on all three.
+2. **`callClaude` discards `data.usage`.** So `cache_read_input_tokens` is
+   invisible and nobody can confirm caching works or measure real per-call cost.
+   Log it. Pairs with #1 — #1 is the fix, #2 is how you know it worked.
+3. **Accepting a suggestion mid-sweep breaks the cache too**, because
+   `buildContext` feeds the last 20 accepted/dismissed rows back in as
+   `corrections`. Consequence for the health sweep: **sweep first, review after.**
+4. **`.btn-ghost` is `--blue` on parchment — about 2.2:1.** Legible but below any
+   accessibility floor. Deliberately not swept in v2.12.2: unlike
+   `.btn-secondary` it is genuinely visible, many call sites override the colour
+   inline, and restyling would change screens nobody has complained about.
+   `on-cream-icon` (`--moss-dim`) is the fix where it matters.
+5. **The frost report counts plants already brought indoors.** Nothing
+   distinguishes a sheltered location from an exposed one —
+   `LOCATION_TYPE_LABELS` has no such value and `indoor` was defined and went
+   unused. A `sheltered` boolean on `locations` would fix it. Small migration.
+6. **Service account + Shared Drive is unblocked.** REFERENCE §8 records Attempt 1
+   failing because service accounts have zero storage quota on personal Google
+   accounts, and Shared Drives — the fix — require Workspace. **Workspace now
+   exists.** This would retire `google_auth_tokens` and the refresh-token expiry
+   entirely. Two caveats: Shared Drives need Business Standard or above (not
+   Starter), and the Photos Picker still needs user OAuth, so the client stays.
+   **Do not start before the Drive migration finishes.**
+7. **Every table except `google_auth_tokens` still has blanket RLS.** That one was
+   tightened 2026-08-31 (REFERENCE §3). It is a prerequisite for a guest view,
+   not the whole job — a guest today could still read and write plants, photos
+   and locations.
+
+### Correction — Edge Function versions
+
+The "Reference — settled today" note below says `suggest-species` v6. It is
+**v8** as of 2026-08-31: v7, then v8 rewrote the `origin` prompt, which had been
+telling Claude the answer ("Almost every succulent here is introduced") and so
+returned `introduced` for everything. `suggest-photo` is still v10.
+
+**AI-4 remains unverified against real data**, and now matters more: nobody has
+confirmed that `origin` comes back varied — or that a genuinely Californian
+native like a *Dudleya* is now called native.
+
 ### Deferred / known gaps
 
 - **CSV import.** Export exists (plants CSV, full JSON backup). Import is

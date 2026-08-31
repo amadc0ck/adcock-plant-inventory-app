@@ -7,7 +7,67 @@ Item IDs are permanent. Never renumber.
 
 ---
 
-## Picking this up cold — state as of 2026-08-30
+## Picking this up cold — state as of 2026-08-31
+
+### GWS-1 — Google Workspace migration, IN FLIGHT
+
+Amanda set up `@justamanda.net` and wants Drive + the OAuth client moved off the
+personal Gmail account, and the app published so refresh tokens stop expiring
+weekly.
+
+**Decided 2026-08-31:** new GCP project in the `justamanda.net` Cloud
+Organization · skip publishing the old project, publish only the new one ·
+copy the photos and **leave the originals in place** as a backup ·
+~2,600 photos, under 10 GB.
+
+**Two findings that change the shape of this:**
+
+1. **Publishing needs no verification review.** `drive.file` is classified
+   **non-sensitive**, and apps using only non-sensitive scopes are not required
+   to verify. REFERENCE §8's "verification is a multi-week process" was the
+   reason the app stayed in Testing and the reason for the weekly reconnect.
+   That premise is wrong for these scopes. **Still to confirm in the Console:**
+   how `photospicker.mediaitems.readonly` is classified — the Console labels
+   each scope as you add it, and that label is the answer.
+
+2. **The photos cannot change hands.** `drive.file` is granted per
+   `(client_id, user)` pair, so sharing the folder or transferring ownership
+   both leave the app unable to see the files. The read side of any copy must
+   use the **OLD client id**. Therefore the account swap and the file copy
+   **cannot be separated** — swapping secrets first 404s every historical photo.
+
+**Tooling is written and committed:** `adcock-plant-inventory/tools/migrate-drive.mjs`
+plus `tools/README.md`. Resumable, checksum-verified both sides, writes nothing
+to Postgres. `tools/.migration/` is git-ignored because it holds refresh tokens.
+
+**Console checklist — Amanda, in the browser (nothing else can start until this
+is done):**
+
+1. Create a project inside the `justamanda.net` Cloud Organization.
+2. Enable **Google Drive API** and **Google Photos Picker API**.
+3. OAuth consent screen → audience **Internal** → publish **In Production**.
+   Add both scopes and **record the sensitivity label the Console shows for
+   `photospicker.mediaitems.readonly`.**
+4. Create an OAuth **Web application** client. Authorised redirect URI, exactly:
+   `https://fsckwgicmvviefuivgza.supabase.co/functions/v1/drive-oauth-callback`
+   — unchanged from today, so **no code change is needed**.
+5. Add `http://localhost:8910/callback` as a second redirect URI on **both** the
+   old and the new client, so the migration script can authorise. Remove it
+   afterwards.
+6. Hand over the new client id + secret, and the OLD `DRIVE_FOLDER_ID` (it is in
+   Supabase secrets).
+
+Then: `auth-old` → `auth-new` → `copy` → swap secrets → reconnect → `sql`.
+Order is in `tools/README.md` and must not be rearranged.
+
+**Not yet decided:** whether the Anthropic and Pl@ntNet keys move too. They are
+unrelated to Google and are not blocked by any of this — but a dedicated
+Anthropic key for this app is still worth doing (see the cost note below), and
+a Workspace-owned Anthropic account would be the moment to do it.
+
+---
+
+## Earlier — state as of 2026-08-30
 
 ### `watering_events` exists — RLS state UNVERIFIED
 

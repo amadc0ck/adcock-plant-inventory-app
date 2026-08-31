@@ -601,11 +601,21 @@ Scroll is preserved the same way (v1.52.2), for both the page and the modal — 
 ## 12. Brand / Design System
 
 **Two backgrounds, and a component does not know which it is on.** Most screens
-are `--bg` (deep green); the info panels on Plant Detail and Location Detail are
-`--parchment`. `.btn-secondary` is `color:var(--cream)` and is **invisible on
-parchment** — it needs `btn-on-cream`, and a `.btn-ghost` icon needs
-`on-cream-icon`. This shipped broken once (v2.12.1); check the surrounding
-panel before choosing a button class.
+are `--bg` (deep green). **Parchment containers:** `.tag-card` (all cards, and
+the Plant/Location Detail info panels via `.detail-body`), `.task-row`,
+`.hover-card`, `.checkin-bar`. **Dark despite appearances:** `.section-card` is
+`--bg-raised`, and so is `.modal` — the section cards on Plant Detail are dark
+even though the panel above them is not.
+
+`.btn-secondary` is `color:var(--cream)` and is invisible on parchment. **Since
+v2.12.2 this is handled in CSS** by an ancestor-scoped rule listing the
+parchment containers, so a call site cannot get it wrong; `btn-on-cream` remains
+as an explicit opt-in. It broke twice before that (the check-in bar's "Checked
+it", and Location Detail's water button) because it relied on the author knowing
+the background.
+
+`.btn-ghost` is `--blue` on any background — about 2.2:1 on parchment, legible
+but weak. `on-cream-icon` (`--moss-dim`) is the fix where it matters.
 
 **Icons in buttons:** `.btn svg` sets a 16px floor because an inline `<svg>`
 with only a `viewBox` has no intrinsic size and will otherwise fill the button.

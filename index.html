@@ -124,6 +124,22 @@
   .btn-block{width:100%;}
   .btn-sm{padding:7px 12px;font-size:12.5px;}
   .btn-on-cream{color:var(--ink);border-color:rgba(37,41,37,0.2);}
+  /* .btn-secondary is transparent with cream text — correct on the green
+     screen, INVISIBLE on a parchment card, where it renders as cream on cream
+     with a cream border. Requiring every call site to remember btn-on-cream
+     did not work: it was missed on the check-in bar's "Checked it" (since the
+     bar shipped) and again on Location Detail's water button (v2.12.0).
+
+     Scoped by ancestor instead, so it cannot be forgotten. Safe as a blanket
+     rule because a .btn-secondary inside one of these containers is broken by
+     definition — there is no correct-looking case to regress. .tag-card has no
+     dark sub-regions: .card-media and .plant-list-thumb are --parchment-dim,
+     and .detail-body is --parchment. btn-on-cream still works and is now
+     belt-and-braces where already used. */
+  .tag-card .btn-secondary,
+  .task-row .btn-secondary,
+  .hover-card .btn-secondary,
+  .checkin-bar .btn-secondary{color:var(--ink);border-color:rgba(37,41,37,0.2);}
   .icon-btn{display:inline-flex;align-items:center;gap:6px;}
   .icon-btn svg{width:15px;height:15px;flex-shrink:0;}
   .btn-danger.icon-btn{padding:9px 10px;}
@@ -748,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.12.1";
+const APP_VERSION = "2.12.2";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 

@@ -419,6 +419,44 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.12.2 — the cream/green button problem, fixed structurally
+
+v2.12.1 fixed **one** button by adding `btn-on-cream`. That was not the fix, it
+was a patch on one instance — so this audits all 66 `.btn-secondary` call sites
+and moves the fix into CSS.
+
+**A second live instance was already there:** the check-in bar's **"Checked
+it"** on Plant Detail. `checkInSectionFor()` renders at `index.html:4805` inside
+`.detail-body` → `.tag-card` → parchment, and `.checkin-bar` itself sets
+`color:var(--ink)` (it expects a light background), yet the button inside it is
+`.btn-secondary` — cream text on a pale pink bar. Invisible since the bar
+shipped, and nobody noticed because you have to be due for a check-in to see it.
+
+**The fix is scoped by ancestor**, so a call site cannot forget:
+
+```css
+.tag-card .btn-secondary, .task-row .btn-secondary,
+.hover-card .btn-secondary, .checkin-bar .btn-secondary{
+  color:var(--ink); border-color:rgba(37,41,37,0.2); }
+```
+
+Safe as a blanket rule: a `.btn-secondary` inside one of those containers is
+broken **by definition**, so there is no correct-looking case to regress.
+`.tag-card` has no dark sub-regions — `.card-media` and `.plant-list-thumb` are
+`--parchment-dim`, `.detail-body` is `--parchment`. `btn-on-cream` still works
+and is now belt-and-braces where already used.
+
+**The other 64 sites are on the green screen and were always correct** —
+screen-level headers, `.section-card` (which is `--bg-raised`, dark, despite
+sitting on Plant Detail), modals (`.modal` is `--bg-raised`), Gallery, Settings.
+
+**Not changed, worth a decision:** `.btn-ghost` is `color:var(--blue)`
+(`#7CA7A1`), which on parchment is about **2.2:1** contrast — legible but below
+any accessibility floor. Unlike `btn-secondary` it is genuinely visible, many
+call sites already override it inline, and restyling it would change a lot of
+screens nobody has complained about. Left alone deliberately; `on-cream-icon`
+(`--moss-dim`) is the established fix where it matters.
+
 ### v2.12.1 — two rendering bugs in v2.12.0, one of them older
 
 **The "Water N plants here" button on Location Detail was invisible.**

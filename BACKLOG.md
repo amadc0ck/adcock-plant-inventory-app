@@ -40,11 +40,21 @@ copy the photos and **leave the originals in place** as a backup ·
 plus `tools/README.md`. Resumable, checksum-verified both sides, writes nothing
 to Postgres. `tools/.migration/` is git-ignored because it holds refresh tokens.
 
+**GCP project — DONE 2026-08-31:** `adcock-botanical-garden-app`, created inside
+the `justamanda.net` organization (Organization and Parent resource both
+confirmed as `justamanda.net` at creation).
+
+**Skip Google's Cloud Setup / landing-zone wizard** — it is offered to any new
+org with no projects and builds Shared VPC, Security Command Center, central
+logging and a Terraform estate. Enterprise scaffolding with recurring cost, for
+a single-project app. Go straight to `console.cloud.google.com/projectcreate`.
+
 **Console checklist — Amanda, in the browser (nothing else can start until this
 is done):**
 
-1. Create a project inside the `justamanda.net` Cloud Organization.
-2. Enable **Google Drive API** and **Google Photos Picker API**.
+1. ~~Create a project inside the `justamanda.net` Cloud Organization.~~ **DONE**
+2. Enable **Google Drive API** (`drive.googleapis.com`) and **Google Photos
+   Picker API** (`photospicker.googleapis.com`). Neither should ask for billing.
 3. OAuth consent screen → audience **Internal** → publish **In Production**.
    Add both scopes and **record the sensitivity label the Console shows for
    `photospicker.mediaitems.readonly`.**

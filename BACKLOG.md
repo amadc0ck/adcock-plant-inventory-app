@@ -621,6 +621,35 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.16.0 — ADM-3, the "full backup" was missing five tables
+
+**Found by auditing a real export, 2026-08-31.** `exportFullBackup()` did not
+include:
+
+| Missing | What a restore lost |
+| --- | --- |
+| `bloom_events` | every recorded bloom, the whole flowering history |
+| `tasks` / `task_subjects` | the entire task system |
+| `app_settings` | check-in and watering intervals, garden coordinates, weather thresholds |
+| `watering_events` | all watering |
+
+**This is the fourth recurrence of one fault.** ADM-2 added
+`plant_location_history` after discovering the same thing — "its absence meant a
+restore silently lost all move history". Every table added since (BLOOM-1,
+TASK-1, app_settings, WATER-1) repeated it, because nothing connects "add a
+table" to "add it to the backup".
+
+Both sides fixed. Restore order matters: all five reference plants or taxa,
+which are already in by that point. `app_settings` upserts on `key`,
+`watering_events` on `(plant_id, watered_on)` — the same conflict target the app
+uses, so a restore merges rather than colliding with the unique index.
+
+**The rule, now stated in REFERENCE §3: adding a table to the schema means
+adding it to `exportFullBackup()` and to the restore, in the same change.**
+
+Note the backup taken this morning as the pre-migration snapshot was made with
+the old code, so it lacks all five. Take a fresh one.
+
 ### v2.15.1 — INB-2, Select moves down to the photos
 
 Reported by Amanda 2026-08-30: *"The select button sits at top of to do page when

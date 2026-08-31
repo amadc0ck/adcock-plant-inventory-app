@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.15.1";
+const APP_VERSION = "2.16.0";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1093,7 +1093,8 @@ function csvEscape(val) {
 async function exportFullBackup() {
   try {
     toast("Preparing backup…");
-    const [locations, plants, photos, identifications, photoPlants, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions, suggestionsAll] = await Promise.all([
+    const [locations, plants, photos, identifications, photoPlants, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions, suggestionsAll,
+           bloomEvents, tasks, taskSubjects, appSettings, wateringEvents] = await Promise.all([
       restGetAll("locations", "?select=*"),
       restGetAll("plants", "?select=*"),
       restGetAll("photos", "?select=*"),
@@ -1110,6 +1111,17 @@ async function exportFullBackup() {
       // May not exist yet — the app falls back to built-in lists (ADM-1).
       restGetAll("list_options", "?select=*").catch(() => []),
       restGetAll("suggestions", "?select=*").catch(() => []),
+      /* ADM-3. Five tables were missing from the "full" backup, found by
+         auditing a real export 2026-08-31: bloom history, the whole task
+         system, every app setting, and — most recently — watering. A restore
+         silently dropped all of it, which is exactly the fault ADM-2 fixed for
+         plant_location_history and which recurred four times since.
+         **Adding a table to the schema means adding it here.** */
+      restGetAll("bloom_events", "?select=*").catch(() => []),
+      restGetAll("tasks", "?select=*").catch(() => []),
+      restGetAll("task_subjects", "?select=*").catch(() => []),
+      restGetAll("app_settings", "?select=*", "key").catch(() => []),
+      restGetAll("watering_events", "?select=*").catch(() => []),
     ]);
     const backup = {
       exported_at: new Date().toISOString(),
@@ -1123,6 +1135,10 @@ async function exportFullBackup() {
       plant_location_history: plantLocationHistory,
       list_options: listOptions,
       suggestions: suggestionsAll,
+      bloom_events: bloomEvents,
+      tasks, task_subjects: taskSubjects,
+      app_settings: appSettings,
+      watering_events: wateringEvents,
     };
     downloadFile(
       `adcock-botanical-garden-backup-${new Date().toISOString().slice(0, 10)}.json`,
@@ -1217,6 +1233,16 @@ async function handleImportBackup() {
     if (data.plant_location_history?.length) await restUpsert("plant_location_history", data.plant_location_history);
     // No FKs; order does not matter.
     if (data.list_options?.length) await restUpsert("list_options", data.list_options);
+    /* ADM-3, restore side. Order matters: all five reference plants or taxa,
+       which are already in by this point. app_settings is keyed on `key`, and
+       watering_events on (plant_id, watered_on) — the same conflict target the
+       app upserts with, so a restore merges with anything already there rather
+       than colliding with the unique index. */
+    if (data.bloom_events?.length) await restUpsert("bloom_events", data.bloom_events);
+    if (data.tasks?.length) await restUpsert("tasks", data.tasks);
+    if (data.task_subjects?.length) await restUpsert("task_subjects", data.task_subjects);
+    if (data.app_settings?.length) await restUpsert("app_settings", data.app_settings, "key");
+    if (data.watering_events?.length) await restUpsert("watering_events", data.watering_events, "plant_id,watered_on");
 
     toast("Backup imported successfully");
     fileInput.value = "";

@@ -408,6 +408,15 @@ TASK-1 + RPT-3 (v1.84.0). A task is something Amanda wants to do; a subject is w
 
 **Tasks render as rows, not as counted tiles**, which is the one place the work queue's vocabulary is deliberately broken. A tile answers "how many"; a task's value is its text, and hiding "bucket 11, centre is rotted" behind a count would make her click to remember what she meant.
 
+> **Adding a table means adding it to the backup.** `exportFullBackup()` and the
+> restore beside it are not derived from the schema — they are hand-maintained
+> lists, and a table missing from them is lost silently on restore with no error.
+> This has now happened four times: `plant_location_history` (fixed by ADM-2),
+> then `bloom_events`, `tasks`/`task_subjects`, `app_settings` and
+> `watering_events` (all fixed by ADM-3, v2.16.0, found by auditing a real
+> export rather than by anything failing). **Change both sides in the same
+> commit as the migration.**
+
 ### `app_settings`
 Key/value, one row per setting, RLS on (v1.84.0). Holds `check_in_interval_days`
 and, since v2.11.0, the weather configuration: `garden_latitude`,

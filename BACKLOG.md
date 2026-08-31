@@ -11,8 +11,8 @@ Item IDs are permanent. Never renumber.
 
 ### GWS-1 — Google Workspace migration, IN FLIGHT
 
-Amanda set up `@justamanda.net` and wants Drive + the OAuth client moved off the
-personal Gmail account, and the app published so refresh tokens stop expiring
+Amanda set up `@justamanda.net` (**the account is `me@justamanda.net`**) and
+wants Drive + the OAuth client moved off the personal Gmail account, and the app published so refresh tokens stop expiring
 weekly.
 
 **Decided 2026-08-31:** new GCP project in the `justamanda.net` Cloud

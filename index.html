@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.16.0";
+const APP_VERSION = "2.16.1";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -6720,8 +6720,11 @@ function screenSettings() {
     <div class="container">
       ${screenHeader("Settings", `v${APP_VERSION} · ${APP_UPDATED}`)}
 
-      ${/* Drive stays open and first: its access expires about weekly, so it is
-           the one thing here she has to come back and act on. */""}
+      ${/* Drive stays first because it is the app's one external dependency and
+           the only thing here that can break on its own. It used to be first
+           because access expired about weekly and she had to keep coming back —
+           that stopped being true 2026-08-31 when the app was published to the
+           Workspace (GWS-1). Reconnect is now recovery, not routine. */""}
       <div class="surface" style="padding:16px;">
         <div class="row">
           <div class="connect-status">
@@ -6732,7 +6735,9 @@ function screenSettings() {
         </div>
         ${connected ? "" : `<p class="subtle" style="margin-top:12px;line-height:1.5;">Photos cannot upload or display until this is connected.</p>`}
         <p class="subtle" style="margin-top:12px;line-height:1.5;">
-          Access expires roughly every 7 days while this app is in personal-use (unverified) mode. If uploads start failing, tap Reconnect &mdash; about 10 seconds.
+          ${connected
+            ? `Photos live in Google Drive on your Workspace account. This connection <strong>does not expire</strong> &mdash; the weekly reconnect ended when the app was published. Only reconnect if photos or uploads start failing.`
+            : `Photos live in Google Drive on your Workspace account. Connecting takes about 10 seconds and does not need repeating &mdash; this connection does not expire.`}
         </p>
       </div>
 

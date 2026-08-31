@@ -667,6 +667,26 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.16.1 — Settings no longer promises a weekly reconnect
+
+The Drive panel said *"Access expires roughly every 7 days while this app is in
+personal-use (unverified) mode."* True until GWS-1; false from the moment the
+app was published. Left alone it would have had her reconnecting out of habit,
+and reading a real failure as normal.
+
+Now: *"This connection does not expire — the weekly reconnect ended when the app
+was published. Only reconnect if photos or uploads start failing."* Different
+wording when disconnected, since there the point is that connecting is a
+one-time thing.
+
+**The Reconnect button and the 401 message stay exactly as they were.**
+`driveErrorMessage()` still says "Google Drive needs to reconnect" on a 401,
+which is still the right advice — the path is unchanged, it just stopped being
+routine.
+
+The code comment explaining *why* Drive sits first in Settings was updated too;
+it gave the weekly expiry as the reason.
+
 ### v2.16.0 — ADM-3, the "full backup" was missing five tables
 
 **Found by auditing a real export, 2026-08-31.** `exportFullBackup()` did not

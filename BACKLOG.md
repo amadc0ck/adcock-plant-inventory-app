@@ -12,7 +12,13 @@ Item IDs are permanent. Never renumber.
 ### GWS-1 — Google Workspace migration, IN FLIGHT
 
 Amanda set up `@justamanda.net` (**the account is `me@justamanda.net`**) and
-wants Drive + the OAuth client moved off the personal Gmail account, and the app published so refresh tokens stop expiring
+wants Drive + the OAuth client moved off the personal Gmail account.
+
+**The personal account is `amdaoh@gmail.com`** — not the address on her Claude
+Code profile. That is the account that authorised the app and owns the Drive
+folder holding every photo, so it is the one `auth-old` must sign in as. Getting
+this wrong does not error: `drive.file` is per `(client_id, user)`, so the wrong
+Gmail account simply returns zero files and reads as an empty folder, and the app published so refresh tokens stop expiring
 weekly.
 
 **Decided 2026-08-31:** new GCP project in the `justamanda.net` Cloud

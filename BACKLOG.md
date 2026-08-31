@@ -9,7 +9,36 @@ Item IDs are permanent. Never renumber.
 
 ## Picking this up cold — state as of 2026-08-31
 
-### GWS-1 — Google Workspace migration, IN FLIGHT
+### GWS-1 — Google Workspace migration — ✅ COMPLETE 2026-08-31
+
+Drive storage and the OAuth client now live on `me@justamanda.net`, in GCP
+project `adcock-botanical-garden-app` inside the `justamanda.net` organization.
+Audience Internal, published In Production — **no more weekly reconnects.**
+
+**2,732 photos copied, 0 failed, every one checksum-verified on both sides.**
+1,542 orphaned Drive files were deliberately left behind (36% of the folder) —
+files from photos deleted in the app, which never deletes from Drive.
+`photos.drive_file_id` repointed in a single statement; verified by sampling and
+by the id range matching the new set exactly.
+
+**The originals are untouched** in `amdaoh@gmail.com`'s Drive. Rollback is: put
+the old secrets back, reconnect as the old account, and run the inverse update
+from `tools/.migration/migration-map.jsonl`, which holds both ids for every row.
+
+**Three things went wrong and are worth remembering:**
+- The Supabase SQL editor runs statements over a **pooled connection**, so
+  `create temp table` then `insert` fails with `42P01`. Generated SQL must be a
+  single self-contained statement.
+- Reconnecting in the app **before** the secrets were swapped sent her to the
+  old client's consent screen and produced `Error 403: access_denied` —
+  alarming, entirely expected, and diagnostic of nothing but ordering.
+- `get-photo` sets `Cache-Control: private, max-age=3600`, so photos kept
+  rendering from browser cache throughout the cutover. **Photos loading is not
+  evidence Drive works** for an hour after any change.
+
+**Cleanup still outstanding** — see the Deferred section.
+
+### ~~GWS-1 — Google Workspace migration, IN FLIGHT~~ (original plan, kept for reference)
 
 Amanda set up `@justamanda.net` (**the account is `me@justamanda.net`**) and
 wants Drive + the OAuth client moved off the personal Gmail account.
@@ -568,6 +597,23 @@ returned `introduced` for everything. `suggest-photo` is still v10.
 **AI-4 remains unverified against real data**, and now matters more: nobody has
 confirmed that `origin` comes back varied — or that a genuinely Californian
 native like a *Dudleya* is now called native.
+
+### GWS-1 cleanup, outstanding
+
+- **Remove `http://localhost:8910/callback`** from both OAuth clients — the old
+  `Adcock Plant Inventory - Web Client` and the new `Adcock Botanical Garden App`.
+  It was only ever for the migration script. Leave the Supabase redirect alone.
+- **`tools/.migration/` holds live refresh tokens** for both Google accounts.
+  Git-ignored, but delete `token-old.json` and `token-new.json` once you are
+  confident no rollback is needed. Keep `migration-map.jsonl` — it is the only
+  record of which new file corresponds to which old one.
+- **The old Drive folder** (`Plant Inventory Photos (App)`, 4,274 files) stays as
+  a backup. Delete by hand when ready; nothing points at it.
+- **The old GCP project** `adcock-garden-collection` can be deleted eventually.
+  Not yet — it is the rollback path.
+- **1,542 orphans were not copied**, so deleting the old folder makes them
+  unrecoverable. They are files whose photo rows were already deleted, so this
+  is almost certainly fine, but it is a one-way door.
 
 ### Deferred / known gaps
 

@@ -577,7 +577,35 @@ Photos predating the fix are repaired by **Settings → Photo capture dates**, w
 
 **Current design:** the app creates its own Drive folder via the API on first use. All uploads go there.
 
-**Ongoing tradeoff, by design:** the OAuth app stays in Google's "Testing" (unverified) status. Verification is a multi-week process, disproportionate for a single-user app. The cost: **refresh tokens expire roughly every 7 days.** Drive-dependent actions then 401, which the frontend translates into "Google Drive needs to reconnect — go to Settings and tap Reconnect" rather than a generic error. Reconnect takes ~10 seconds.
+**~~Ongoing tradeoff~~ — RESOLVED 2026-08-31.** This section used to read: *"the
+OAuth app stays in Google's Testing status. Verification is a multi-week
+process, disproportionate for a single-user app. The cost: refresh tokens expire
+roughly every 7 days."*
+
+**That premise was wrong.** `drive.file` is a **non-sensitive** scope, and an app
+requesting only non-sensitive scopes is not required to complete verification at
+all. Publishing was a status change, not a review. See GWS-1.
+
+**Current state:** the OAuth client lives in GCP project
+`adcock-botanical-garden-app`, inside the `justamanda.net` Cloud Organization,
+audience **Internal**, published **In Production**. No 7-day expiry, no weekly
+reconnect. The reconnect path in Settings still exists and still works; it is
+now a recovery tool rather than a weekly chore.
+
+**Drive storage moved to `me@justamanda.net` on 2026-08-31.** 2,732 photos
+copied and checksum-verified into a folder owned by the Workspace account, and
+`photos.drive_file_id` repointed in one statement. **The originals were left in
+place in `amdaoh@gmail.com`'s Drive** and are still there — the migration copied,
+never moved, so rollback remains possible.
+
+**The constraint that shaped all of it, and still applies:** `drive.file` access
+is granted per `(client_id, user)` pair. Files cannot change hands. Sharing does
+not work, ownership transfer does not work, and a new client authorising the
+same account sees nothing. This is why the account swap and the file copy could
+not be separated, and why `tools/migrate-drive.mjs` reads with the OLD client id
+and writes with the NEW one. If the Google account ever changes again, that
+whole exercise repeats — see BACKLOG for the Shared Drive option that would
+prevent it, and why it was declined.
 
 **Base64 gotcha (`identify-plant-claude`):** converting an image buffer via `String.fromCharCode(...new Uint8Array(buffer))` crashes on any real photo — the spread operator passes every byte as a separate argument and blows the JS engine's argument limit. Must chunk at 8KB.
 

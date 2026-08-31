@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.15.0";
+const APP_VERSION = "2.15.1";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4334,7 +4334,12 @@ function screenInbox() {
            competing with the group total. */
         `To Do${unassigned.length ? ` <span class="pill pill-terracotta" style="vertical-align:middle;">${unassigned.length} in the inbox</span>` : ""}`,
         selectMode ? "Tap photos to select them, then choose an action below." : "Everything waiting on you — records to finish, then photos to file.",
-        unassigned.length ? `<button class="btn btn-secondary btn-sm" onclick="toggleInboxSelectMode()">${selectMode ? "Cancel" : "Select"}</button>` : "")}
+        /* INB-2. Select used to live here, in the page header — above the whole
+           work queue. You scroll down to the photos, decide to select some, and
+           have to scroll back up to start. It now sits in .sticky-controls with
+           the sort and search, which is position:sticky and therefore follows
+           you down the grid. */
+        "")}
 
       ${/* WEATHER-1. Above the queue, because a freeze tonight outranks every
            count below it. Suppressed in select mode along with the queue. */""}
@@ -4368,6 +4373,17 @@ function screenInbox() {
           <button class="btn btn-secondary btn-sm icon-btn" onclick="setInboxView('${state.inboxView === "compact" ? "grid" : "compact"}')" title="Switch between full cards and compact rows">
             ${state.inboxView === "compact" ? icon("photo") + " Full" : icon("clipboard") + " Compact"}
           </button>
+          ${/* INB-2. Last in the row, so entering select mode does not reflow
+               the controls to its left. Accented while active because in select
+               mode a tap means something different everywhere on the screen. */""}
+          ${/* `|| selectMode` is not redundant: filter down to zero matches while
+               selecting and `unassigned.length` is 0, which would take Cancel
+               away and leave no way out of select mode — the bulk bar only
+               appears once something is selected. */""}
+          ${unassigned.length || selectMode ? `
+            <button class="btn ${selectMode ? "btn-accent" : "btn-secondary"} btn-sm" onclick="toggleInboxSelectMode()">
+              ${selectMode ? "Cancel" : "Select"}
+            </button>` : ""}
         </div>
         ${selectMode ? `
           <div class="row" style="margin-bottom:10px;">

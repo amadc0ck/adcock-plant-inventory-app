@@ -588,6 +588,29 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.15.1 — INB-2, Select moves down to the photos
+
+Reported by Amanda 2026-08-30: *"The select button sits at top of to do page when
+it needs to be down with the images."*
+
+It was in `screenHeader`'s actions slot — above the weather banner, above the
+whole work queue. You scroll down to the grid, decide to select some photos, and
+have to scroll back up to start.
+
+Now the last control in `.sticky-controls`, alongside sort, year, search and the
+view toggle. That block is `position:sticky` with `top:var(--sticky-top)` — set
+at runtime to header height plus any task banner — so it pins below the header
+and **follows you down the grid**.
+
+- **Last in the row on purpose**, so entering select mode does not reflow the
+  filters to its left.
+- **`btn-accent` while active.** In select mode a tap means something different
+  everywhere on the screen; that deserves more than a label change.
+- **Rendered when `unassigned.length || selectMode`.** The second clause is not
+  redundant: filter to zero matches while selecting and the count is 0, which
+  would remove Cancel and strand you in select mode — the bulk action bar only
+  appears once something is selected.
+
 ### v2.15.0 — PROF-2 (working filters) + the `origin` prompt bias
 
 **`origin` was coming back `introduced` for everything, and the prompt was the

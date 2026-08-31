@@ -370,12 +370,18 @@ Everything below is code-tested and syntax-clean; none of it has been exercised
 against the running app on the iPad. Listed so a later session does not assume
 it works.
 
-- **WATER-1 / WATER-2 — ✅ WRITES CONFIRMED 2026-08-31.** Amanda recorded
-  waterings for almost the whole Front Yard, so the insert path, the RLS policy
-  and the subtree resolution all work against the live table. **Still unchecked:
-  whether `watered_on` holds the intended date** — the modal defaults to the
-  local day (DATE-1) and she was back-dating to "yesterday", which is exactly
-  the case the UTC skew would have broken before v2.11.1.
+- **WATER-1 / WATER-2 — ✅ FULLY VERIFIED 2026-08-31.** Measured from
+  `watering_events`: **207 plants across 3 runs dated 2026-08-29**, plus 1 plant
+  dated 2026-08-28.
+  - **Dates are the ones she chose.** Both are deliberate back-dates recorded in
+    the Pacific evening, when UTC has already rolled over — the exact case the
+    pre-v2.11.1 skew would have pushed forward a day.
+  - **The unique index did its job.** Three overlapping runs produced 207 rows,
+    not duplicates, so "water an area then top up one pot" merges as designed.
+  - **207 = Front Yard's 201 + the hospital + the work area.** Which also
+    confirms `PLANT_HOLDING_TYPES` works for the non-container types — the water
+    button appeared on `hospital` and `work_area`, which is precisely what
+    LOC-9's `type === "container"` bug would have broken.
 - **WEATHER-1 — no frost or heat event has occurred yet.** Concord's forecast
   has been mild all week, so only the quiet strip has ever rendered. The banner,
   the threshold logic and the link into the frostTender report are verified

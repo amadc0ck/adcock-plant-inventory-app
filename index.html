@@ -736,7 +736,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.11.0";
+const APP_VERSION = "2.11.1";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2841,9 +2841,19 @@ function toast(msg, isError = false) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3200);
 }
+/* DATE-1. `new Date("2026-09-01")` is parsed by JS as UTC midnight and then
+   rendered in local time, so every date-only value in this app displayed as
+   THE PREVIOUS DAY anywhere west of Greenwich — Concord included. Care note
+   dates, bloom starts, date_acquired, due dates and next_check_date were all
+   one day early, silently, for the life of the app.
+
+   Only date-only strings are re-parsed. A timestamptz (`taken_at`,
+   `uploaded_at`, `started_at`) already carries a zone and is left alone, which
+   is why the regex is anchored rather than a blanket change. */
 function fmtDate(iso) {
   if (!iso) return "";
-  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? new Date(`${iso}T00:00:00`) : new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 function photoDate(p) {
   return p.taken_at || p.uploaded_at;
@@ -3134,21 +3144,15 @@ function heatRisk() {
 function recentRainInches() {
   const w = state.weather;
   if (!w || !w.days.length) return 0;
-  const today = localDateISO();
+  const today = todayISO();
   return w.days.filter((d) => d.date <= today).reduce((n, d) => n + (d.rain || 0), 0);
 }
 
-/* todayISO() is UTC — new Date().toISOString() — which is correct for the
-   timestamps it was written for and WRONG here. Open-Meteo is queried with
-   timezone=auto, so its day boundaries are Concord's, and after 5pm Pacific
-   the two disagree by a day: "tonight" would render as a bare date and the
-   rain total would count the wrong days. That is precisely the hour she would
-   be deciding whether to carry plants indoors.
-
-   Deliberately a separate helper rather than a fix to todayISO(): that one is
-   used by care notes, check-ins and bloom events, and changing its meaning is
-   a far bigger change than this ship. See BACKLOG — the same skew will matter
-   for watered_on when watering lands. */
+/* DATE-1. The calendar day where the garden is, not in UTC. Everything that
+   compares against a `date` column wants this: `toISOString()` rolls over at
+   5pm Pacific, so between then and midnight the app believed it was already
+   tomorrow — a task due today read as overdue, and a date input would not let
+   you pick today. todayISO() delegates here rather than the two coexisting. */
 function localDateISO(d) {
   const t = d ? new Date(d) : new Date();
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
@@ -3158,24 +3162,19 @@ function fmtTemp(f) {
   return Number.isFinite(f) ? `${Math.round(f)}\u00B0F` : "\u2014";
 }
 function wxDayLabel(dateISO) {
-  const today = localDateISO();
+  const today = todayISO();
   if (dateISO === today) return "tonight";
   const days = daysBetween(today, dateISO);
   if (days === 1) return "tomorrow night";
-  /* NOT fmtDate(). fmtDate does `new Date("2026-09-01")`, which JS parses as
-     UTC midnight and then renders in local time — so every date-only string in
-     this app displays a day early anywhere west of Greenwich, Concord included.
-     That is a real pre-existing bug across all 33 fmtDate call sites
-     (care-note dates, bloom starts, date_acquired) and its fix is a one-line
-     change to fmtDate, recorded in BACKLOG as DATE-1. It is not fixed here
-     because rewriting how every date in the app renders is not a weather
-     change. This call site sidesteps it by parsing as local. */
+  /* Its own format rather than fmtDate(): a frost three nights out reads
+     better as "Tue, Sep 1" than as "Sep 1, 2026". Both parse as local since
+     DATE-1. */
   const d = new Date(`${dateISO}T00:00:00`);
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateISO();
 }
 function daysBetween(fromISO, toISO) {
   if (!fromISO) return null;

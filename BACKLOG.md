@@ -255,45 +255,6 @@ workaround — the fix is a unique index on the composed name. Not designed yet:
 the composed name is computed in JS, not stored, so it needs a generated column
 or an expression index. **Schema change — ask first.**
 
-### DATE-1 — every date-only value renders a day early. NOT FIXED.
-
-**Found 2026-08-30 while building WEATHER-1, by test rather than by eye.**
-
-```js
-function fmtDate(iso) { return new Date(iso).toLocaleDateString(...); }
-```
-
-`new Date("2026-09-01")` is parsed by JS as **UTC midnight**, then rendered in
-local time — so anywhere west of Greenwich, Concord included, a date-only string
-displays as **the previous day**. `fmtDate('2026-09-01')` returns "Aug 31, 2026".
-
-This hits every date-only column: `care_notes.noted_on`, `bloom_events.started_on`
-/ `ended_on`, `plants.date_acquired`, and **`watering_events.watered_on` when
-watering lands**. Timestamps (`created_at`, `taken_at`) are unaffected — they
-carry a time and a zone.
-
-**33 call sites.** The fix is one function:
-
-```js
-function fmtDate(iso) {
-  if (!iso) return "";
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? new Date(`${iso}T00:00:00`) : new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-```
-
-**Deliberately not applied in v2.11.0** — changing how every date in the app
-renders is not a weather change. `wxDayLabel()` sidesteps it locally and carries
-a comment pointing here. **This is a patch-level fix (`x.y.Z`): it is fixing
-something that shipped broken.**
-
-**Related but separate: `todayISO()` is UTC too.** It returns
-`new Date().toISOString().slice(0,10)`, so after 5pm Pacific "today" is already
-tomorrow. That is correct for the timestamps it was written for and wrong for a
-calendar day. WEATHER-1 added `localDateISO()` for its own use rather than
-change it. **W-1 must decide which one `watered_on` defaults to** — watering at
-6pm and having it recorded as tomorrow is the exact failure this causes.
-
 ### SQL — NOTHING OUTSTANDING
 
 Both jobs done 2026-08-28. The **SPECIES-1 column drop** ran (see v2.6.0) and
@@ -457,6 +418,31 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.11.1 — DATE-1
+
+**Every date-only value in the app rendered a day early.** `fmtDate` did
+`new Date("2026-09-01")`, which JS parses as **UTC midnight** and then renders
+in local time — so anywhere west of Greenwich, Concord included, the date shown
+was the previous day. Care-note dates, bloom starts, `date_acquired`, task due
+dates and `next_check_date` were all wrong, silently, for the life of the app.
+Found by test while building WEATHER-1, not by eye — which is why it survived
+this long.
+
+- `fmtDate` re-parses **only** anchored date-only strings (`^\d{4}-\d{2}-\d{2}$`)
+  as local. A timestamptz already carries a zone and is left alone.
+- `todayISO()` now returns the **local** calendar day. It was
+  `new Date().toISOString().slice(0,10)`, so after 5pm Pacific the app believed
+  it was already tomorrow: a task due today read as overdue, and the recheck
+  date input would not let you pick today. Verified it is never written to the
+  database — all eight call sites are comparisons against `date` columns plus
+  one `<input type="date" min>`, and every one wants local.
+- `localDateISO()` (added by WEATHER-1) is now the single implementation;
+  `todayISO()` delegates to it rather than the two coexisting.
+
+**Patch, not minor:** this is fixing something that shipped broken.
+
+Amanda's standing preference, stated 2026-08-30: **local date and time**.
 
 ### v2.11.0 — WEATHER-1
 

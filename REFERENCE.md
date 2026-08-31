@@ -621,11 +621,12 @@ does not carry.
 degrees colder. All three thresholds are `app_settings` rows, editable in
 Settings → Preferences.
 
-**Timezone.** `loadWeather` stores Open-Meteo's **local** dates, so the weather
-code uses `localDateISO()` rather than the app-wide `todayISO()`, which is UTC
-and rolls over at 5pm Pacific. `wxDayLabel()` likewise parses with an explicit
-`T00:00:00` instead of calling `fmtDate()`, which has the same UTC fault across
-all 33 of its call sites — see BACKLOG **DATE-1**.
+**Timezone.** `loadWeather` stores Open-Meteo's **local** dates (`timezone=auto`),
+which is why DATE-1 was found here first. Since v2.11.1 the whole app is local:
+`todayISO()` returns the local calendar day and `fmtDate()` parses date-only
+strings as local. **Dates and times are local throughout — that is Amanda's
+stated preference, not an implementation accident.** Timestamps
+(`taken_at`, `uploaded_at`, `started_at`) carry a zone and are untouched.
 
 **Failure behaviour.** Both fetches are wrapped; a failure renders no weather
 rather than breaking To Do, the same discipline as `optional()` in `loadAll`.

@@ -366,7 +366,11 @@ TASK-1 + RPT-3 (v1.84.0). A task is something Amanda wants to do; a subject is w
 **Tasks render as rows, not as counted tiles**, which is the one place the work queue's vocabulary is deliberately broken. A tile answers "how many"; a task's value is its text, and hiding "bucket 11, centre is rotted" behind a count would make her click to remember what she meant.
 
 ### `app_settings`
-Key/value, one row per setting, RLS on (v1.84.0). Currently holds `check_in_interval_days`. Read into `state.appSettings` as a plain object at load; `settingInt()` coerces and falls back, so a missing table, a missing key or a junk value all degrade to the built-in default rather than breaking.
+Key/value, one row per setting, RLS on (v1.84.0). Holds `check_in_interval_days`
+and, since v2.11.0, the weather configuration: `garden_latitude`,
+`garden_longitude`, `frost_watch_f`, `frost_alert_f`, `heat_advisory_f` (§14).
+Adding a setting is an insert, never a migration — which is why WEATHER-1
+shipped with no SQL at all. Read into `state.appSettings` as a plain object at load; `settingInt()` coerces and falls back, so a missing table, a missing key or a junk value all degrade to the built-in default rather than breaking.
 
 ### `google_auth_tokens`
 Single-row table, one Google account ever. `access_token` (~1hr, auto-refreshed by Edge Functions), `refresh_token` (expires ~weekly, see §8), `expires_at`, `updated_at`.
@@ -586,6 +590,52 @@ Approved palette. Do not deviate without a new brand sheet.
 **Zero counts (v1.34.5).** Card metadata counts always render, including zero — a container with no plants or no photos is the record that needs work, and suppressing the zero hides the actionable state. Zeros are dimmed rather than removed (`countLabel()` → `.count-zero`, opacity 0.45) so a list of not-yet-populated buckets stays scannable without losing the signal. `countLabel()` returns HTML; do not escape it at the call site.
 
 **Logo assets** in `assets/`: `favicon.png`, `icon-192.png`, `icon-512.png`, `icon-submark.png`, `logo-horizontal.png`, `logo-horizontal-dark.png`, `logo-stacked.png`, `logo-stacked-dark.png`. Use `-dark` variants on the green page background; light variants only on cream/white surfaces such as the login card.
+
+---
+
+## 14. Weather (v2.11.0)
+
+Two **keyless, CORS-open** APIs called directly from the browser. No Edge
+Function, no secret, no migration.
+
+| | Endpoint | Gives |
+| --- | --- | --- |
+| Forecast | `api.open-meteo.com/v1/forecast` | 7-day min/max temp, precipitation |
+| Advisories | `api.weather.gov/alerts/active?point=lat,lon` | named NWS events |
+
+Open-Meteo is queried with `temperature_unit=fahrenheit&precipitation_unit=inch`
+and `timezone=auto`, so no unit or timezone conversion happens in the app.
+
+**NWS returns 403 to a blank User-Agent** (verified 2026-08-30 — an Akamai
+"Access Denied", not a JSON error) and 200 to a browser's own. A browser always
+sends one, so this works from `index.html`; **it would fail from an Edge
+Function** unless that function sets `User-Agent` explicitly. This is the reason
+weather is client-side, and the first thing to check if it is ever moved.
+
+**A named NWS event overrides the numeric threshold.** "Frost Advisory" at 41°F
+beats the app's own 38°F line — the forecasters know things the daily minimum
+does not carry.
+
+**Frost watch defaults to 38°F, not freezing.** Reported lows are measured at
+2m; on the still clear nights that produce frost, bucket level runs several
+degrees colder. All three thresholds are `app_settings` rows, editable in
+Settings → Preferences.
+
+**Timezone.** `loadWeather` stores Open-Meteo's **local** dates, so the weather
+code uses `localDateISO()` rather than the app-wide `todayISO()`, which is UTC
+and rolls over at 5pm Pacific. `wxDayLabel()` likewise parses with an explicit
+`T00:00:00` instead of calling `fmtDate()`, which has the same UTC fault across
+all 33 of its call sites — see BACKLOG **DATE-1**.
+
+**Failure behaviour.** Both fetches are wrapped; a failure renders no weather
+rather than breaking To Do, the same discipline as `optional()` in `loadAll`.
+Results cache in `localStorage` for 3 hours. `loadWeather()` is called unawaited
+at the end of `loadAll()` and gates itself on staleness.
+
+**Blind spot.** Nothing distinguishes an indoor location from an outdoor one
+(`LOCATION_TYPE_LABELS` has no such value; `indoor` was defined and went
+unused), so the frost count includes plants already brought in. The frostTender
+report has always had this. A `sheltered` boolean on `locations` would fix it.
 
 ---
 

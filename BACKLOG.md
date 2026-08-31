@@ -7,7 +7,33 @@ Item IDs are permanent. Never renumber.
 
 ---
 
-## Picking this up cold — state as of 2026-08-29
+## Picking this up cold — state as of 2026-08-30
+
+### `watering_events` exists — RLS state UNVERIFIED
+
+Amanda ran the `create table watering_events` block on **2026-08-30**, from a
+plan sketch rather than a finished migration. Verified present via PostgREST:
+`id`, `plant_id`, `watered_on`, `location_id`, `batch_id`, `notes`, `created_at`.
+**`method` did not land** — no matter, W-1/W-2 do not use it.
+
+**The sketch omitted the RLS policy**, and an anonymous probe cannot tell
+"RLS on with no policy" from "RLS off" — both return `[]` on an empty table, and
+every other table in this project returns `[]` to anon as well. A follow-up
+block (enable RLS + policy + indexes, all idempotent) was handed over the same
+day. **Confirm it ran before building W-1**, or the table will read back empty
+and the symptom will look like a broken feature rather than a missing policy.
+
+**The lesson worth keeping:** a fenced ```sql block in a *proposal* gets run
+immediately. Never post illustrative SQL that is not safe and complete.
+
+### Weather is live as of v2.11.0
+
+Coordinates and thresholds are in `app_settings`, not code. See Completed for
+the NWS User-Agent gotcha and the indoor/outdoor blind spot.
+
+---
+
+## Earlier — state as of 2026-08-29
 
 Written so a session with no memory of the conversation can continue without asking. Everything below is either **waiting on Amanda** or **decided but unbuilt**. Delete an entry when it is resolved.
 
@@ -229,6 +255,45 @@ workaround — the fix is a unique index on the composed name. Not designed yet:
 the composed name is computed in JS, not stored, so it needs a generated column
 or an expression index. **Schema change — ask first.**
 
+### DATE-1 — every date-only value renders a day early. NOT FIXED.
+
+**Found 2026-08-30 while building WEATHER-1, by test rather than by eye.**
+
+```js
+function fmtDate(iso) { return new Date(iso).toLocaleDateString(...); }
+```
+
+`new Date("2026-09-01")` is parsed by JS as **UTC midnight**, then rendered in
+local time — so anywhere west of Greenwich, Concord included, a date-only string
+displays as **the previous day**. `fmtDate('2026-09-01')` returns "Aug 31, 2026".
+
+This hits every date-only column: `care_notes.noted_on`, `bloom_events.started_on`
+/ `ended_on`, `plants.date_acquired`, and **`watering_events.watered_on` when
+watering lands**. Timestamps (`created_at`, `taken_at`) are unaffected — they
+carry a time and a zone.
+
+**33 call sites.** The fix is one function:
+
+```js
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? new Date(`${iso}T00:00:00`) : new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+```
+
+**Deliberately not applied in v2.11.0** — changing how every date in the app
+renders is not a weather change. `wxDayLabel()` sidesteps it locally and carries
+a comment pointing here. **This is a patch-level fix (`x.y.Z`): it is fixing
+something that shipped broken.**
+
+**Related but separate: `todayISO()` is UTC too.** It returns
+`new Date().toISOString().slice(0,10)`, so after 5pm Pacific "today" is already
+tomorrow. That is correct for the timestamps it was written for and wrong for a
+calendar day. WEATHER-1 added `localDateISO()` for its own use rather than
+change it. **W-1 must decide which one `watered_on` defaults to** — watering at
+6pm and having it recorded as tomorrow is the exact failure this causes.
+
 ### SQL — NOTHING OUTSTANDING
 
 Both jobs done 2026-08-28. The **SPECIES-1 column drop** ran (see v2.6.0) and
@@ -392,6 +457,49 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.11.0 — WEATHER-1
+
+**Frost and heat banners on To Do, from two keyless APIs called straight from
+the browser.** No Edge Function, no secret, and **no migration** — the
+coordinates and thresholds are rows in `app_settings`, which already existed.
+
+- **Open-Meteo** (`api.open-meteo.com/v1/forecast`) — 7-day min/max temp and
+  precipitation. Asked for `temperature_unit=fahrenheit&precipitation_unit=inch`
+  and `timezone=auto`, so there is no unit or timezone conversion in the app.
+- **NWS** (`api.weather.gov/alerts/active?point=`) — the named advisories a raw
+  number cannot express (Frost Advisory, Heat Advisory, Extreme Heat Warning).
+  A named event **overrides the numeric threshold**: NWS saying "Frost Advisory"
+  at 41°F beats the app's own 38°F line.
+- Banner renders above the work queue. The frost card's payoff is its button
+  into the existing **frostTender** report, which was already sorted by location
+  path as a walking route through the garden. That report existed and was unlit.
+- Quiet strip ("83°F / 56°F today · updated 5:05 PM") renders when there is no
+  risk, so *no banner* is distinguishable from *the fetch failed*.
+- Settings → Preferences holds coordinates, the three thresholds, and a manual
+  refresh. Defaults are Concord, CA (37.9779, −122.0311).
+- Cached in `localStorage` for 3 hours; `loadWeather()` is called unawaited at
+  the end of `loadAll()` and gates itself on staleness, so it is not a request
+  per save. A failure renders nothing rather than breaking To Do.
+
+**Frost watch defaults to 38°F, not 32°F.** Reported lows are measured at 2m,
+and on the still clear nights that actually produce frost, bucket level runs
+several degrees colder. Tunable in Settings.
+
+**NWS User-Agent gotcha — verified 2026-08-30.** `api.weather.gov` returns
+**403 to a blank User-Agent** and 200 to a browser's own. So this works from the
+app and would **NOT** work from an Edge Function unless that function sets a
+User-Agent explicitly. Do not "move it to the backend" without reading this.
+
+**Known limit: the frost count includes plants already brought inside.**
+`LOCATION_TYPE_LABELS` has no indoor/outdoor distinction (`indoor` was defined
+and went unused), so nothing can tell a sheltered location from an exposed one.
+The existing frostTender report has the same blind spot, so this is not a
+regression. A `sheltered` boolean on `locations` would fix it — a small
+migration, not yet proposed.
+
+**The heat→watering tie-in is not built.** It needs W-1/W-2 to exist before it
+can shorten a watering interval; today the heat card is advisory only.
 
 ### v2.7.1
 **Full code audit — 374 functions, 9,593 lines.** Fourteen checks, drawn from the

@@ -467,13 +467,36 @@ Raised in session and recorded so they survive it. None is blocking.
    distinguishes a sheltered location from an exposed one —
    `LOCATION_TYPE_LABELS` has no such value and `indoor` was defined and went
    unused. A `sheltered` boolean on `locations` would fix it. Small migration.
-6. **Service account + Shared Drive is unblocked.** REFERENCE §8 records Attempt 1
-   failing because service accounts have zero storage quota on personal Google
-   accounts, and Shared Drives — the fix — require Workspace. **Workspace now
-   exists.** This would retire `google_auth_tokens` and the refresh-token expiry
-   entirely. Two caveats: Shared Drives need Business Standard or above (not
-   Starter), and the Photos Picker still needs user OAuth, so the client stays.
-   **Do not start before the Drive migration finishes.**
+6. **Service account + Shared Drive — DECIDED AGAINST 2026-08-31. Do not
+   re-open without a trigger.** REFERENCE §8 records Attempt 1 failing because
+   service accounts have zero storage quota on personal Google accounts, and
+   Shared Drives — the fix — require Workspace. Workspace now exists, on
+   **Business Standard**, so it is technically available.
+
+   **Weighed and declined.** The acute problem it was going to solve — weekly
+   reconnects — is already solved by publishing the app as Internal. What
+   remained was insurance against repeating the 2026-08-31 file migration, and
+   that migration only happened because the Google account changed.
+
+   *An argument that was made and is wrong:* it does NOT protect against
+   password-change token revocation. Google revokes refresh tokens on password
+   change **for mail scopes only**, not Drive. Checked, not assumed.
+
+   What it would still buy, for the record: files owned by the organisation
+   rather than by `me@justamanda.net`; access by Shared Drive membership rather
+   than the `(client_id, user)` pair, so no future account change costs another
+   copy; and a smaller blast radius, since a dead OAuth token would then break
+   only Google Photos import rather than every photo in the app.
+
+   Costs: rewriting `_shared/google-auth.ts` for JWT auth, a long-lived private
+   key in Supabase secrets (worse hygiene than a refresh token), and the Photos
+   Picker still needing user OAuth regardless.
+
+   **Reopen only if:** another person joins the Workspace · another Google
+   account change is contemplated · the OAuth token starts dying for reasons
+   Internal publishing did not fix. Amanda expects none of these — the Workspace
+   exists to consolidate her email onto a custom domain and merge several
+   personal Google Drives, not to become multi-user.
 7. **Every table except `google_auth_tokens` still has blanket RLS.** That one was
    tightened 2026-08-31 (REFERENCE §3). It is a prerequisite for a guest view,
    not the whole job — a guest today could still read and write plants, photos

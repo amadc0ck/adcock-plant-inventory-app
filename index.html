@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.12.2";
+const APP_VERSION = "2.13.0";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2188,11 +2188,38 @@ const GALLERY_ROW_LABELS = { none: "Not shown in the Gallery", albums: "Garden A
 // hides plants that exist — a wrongly flagged location would otherwise make its
 // own plants invisible. Existing plants always render; the flag governs only the
 // empty state and the add-specimen action.
+// The types that hold plants unless a location says otherwise. Was inlined in
+// locationHoldsPlants and separately (and WRONGLY) approximated as
+// `type === "container"` in the quick-add form, which stamped an explicit
+// false onto every hospital, staging area and work area created there.
+const PLANT_HOLDING_TYPES = ["container", "hospital", "staging", "work_area"];
+function typeHoldsPlants(type) {
+  return PLANT_HOLDING_TYPES.includes(String(type || ""));
+}
 function locationHoldsPlants(l) {
   if (!l) return false;
   if (l.holds_plants === true) return true;
   if (l.holds_plants === false) return false;
-  return ["container", "hospital", "staging", "work_area"].includes(l.type);
+  return typeHoldsPlants(l.type);
+}
+/* LOC-9. A location whose stored flag contradicts its own type. The New
+   location form saved an unticked checkbox as an explicit `false`, and
+   locationHoldsPlants honours an explicit false over the type default — so a
+   pot created without touching that checkbox silently could not hold plants,
+   and "New plant from this photo" vanished from its photo feed with no
+   explanation. Found on Large Teal Ribbed Pot 3, 2026-08-30.
+   Some may be deliberate, which is why this is a queue tile to review rather
+   than a migration that rewrites them. */
+function locationsMistypedForPlants() {
+  return state.locations.filter((l) => l.holds_plants === false && typeHoldsPlants(l.type));
+}
+// Keeps a form's checkbox honest about what its type select implies. Sets the
+// DOM directly rather than re-rendering — a render here would discard whatever
+// else is half-typed in the form.
+function syncHoldsPlants(prefix) {
+  const t = document.getElementById(`${prefix}-type`);
+  const cb = document.getElementById(`${prefix}-holdsplants`);
+  if (t && cb) cb.checked = typeHoldsPlants(t.value);
 }
 
 // LOC-7. A photo with no plant is a GAP only where plants are expected. At an
@@ -5549,6 +5576,11 @@ function reportSections() {
     // to the top: unknown is not the same as freshly watered.
     { key: "needsWater", title: "Needs watering", sub: `Nothing recorded in ${effectiveWateringInterval()} days`,
       items: plantsNeedingWater(), kind: "plant" },
+    // LOC-9. Finds the rest of what the New location form's unticked checkbox
+    // did. Reviewable, not auto-corrected — a container genuinely used as a
+    // staging shelf is a legitimate false.
+    { key: "mistypedLocations", title: "Containers that hold no plants", sub: "Type says container, flag says no",
+      items: locationsMistypedForPlants(), kind: "location" },
     { key: "plantsNoTaxon", title: "Specimens with no species", sub: "Not linked to a species record",
       items: state.plants.filter((pl) => !pl.taxa_id), kind: "plant" },
     { key: "plantsStaging", title: "Waiting to be planted", sub: "In a staging area, not yet in the ground",
@@ -5785,6 +5817,7 @@ function workQueue() {
       sect("plantsNoTaxon"),
       sect("plantsNoLocation"),
       sect("locationsNoPlants"),
+      sect("mistypedLocations"),
       sect("emptyLocations"),
       tile(dupPhotos.length, "Duplicate photos", `Same capture time — ${countLabel(dupExtras, "extra copy", "extra copies")}`, "openModal('duplicatePhotos')"),
       tile(duplicateGroups.length, "Duplicate plants", "Same species, same location", "openModal('duplicatePlants')"),
@@ -7311,19 +7344,23 @@ function modalContent() {
         <label>Name *</label>
         <input id="nl-name" required placeholder="e.g. Bucket 12" />
         <label>Type</label>
-        <select id="nl-type">
+        <select id="nl-type" onchange="syncHoldsPlants('nl')">
           <option value="">— Unspecified —</option>
-          ${Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+          ${Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${k === "container" ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Parent location</label>
         <select id="nl-parent">${locationSelectOptions(null)}</select>
         <label>Code (optional)</label>
         <input id="nl-code" placeholder="e.g. W-T-12" />
         <div class="checkbox-row">
-          <input type="checkbox" id="nl-holdsplants" />
+          <input type="checkbox" id="nl-holdsplants" checked />
           <label for="nl-holdsplants">Plants are assigned directly to this location</label>
         </div>
-        <div class="field-help">Leave off for areas whose photos are views of the whole space. Turn on for buckets, pots, and ground beds. Containers get this automatically.</div>
+        ${/* It said "Containers get this automatically" and they did not: the
+             form saved this checkbox's raw state, and an unticked box became an
+             explicit false that overrode the container default. Now the box
+             follows the type select, so what is shown is what is saved. */""}
+        <div class="field-help">Follows the type — on for containers, hospitals, staging and work areas; off for areas and rows, whose photos are views of the whole space. Override it here if this one is different.</div>
         <label>Show in the Gallery as</label>
         <select id="nl-galleryrow">
           ${Object.entries(GALLERY_ROW_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
@@ -7952,7 +7989,7 @@ function modalContent() {
         <label>Name *</label>
         <input id="el-name" required value="${escapeHtml(l.name)}" />
         <label>Type</label>
-        <select id="el-type">
+        <select id="el-type" onchange="syncHoldsPlants('el')">
           <option value="">— Unspecified —</option>
           ${Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) =>
             `<option value="${k}" ${l.type === k ? "selected" : ""}>${v}</option>`).join("")}
@@ -10303,7 +10340,7 @@ async function quickAddLocation(pickFn) {
       name,
       type: (typeEl && typeEl.value) || "container",
       parent_location_id: state.locPickerParent || null,
-      holds_plants: ((typeEl && typeEl.value) || "container") === "container",
+      holds_plants: typeHoldsPlants((typeEl && typeEl.value) || "container"),
     });
     if (!created) throw new Error("Could not create the location");
     await loadAll();

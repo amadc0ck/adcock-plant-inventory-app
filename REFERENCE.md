@@ -59,6 +59,15 @@ Physical containers and spaces. Self-referencing hierarchy (Front Yard → Wall 
 - `notes` text, nullable
 - `created_at` timestamptz
 
+**`locations.holds_plants` is tri-state, and that matters.** `true` and `false`
+are explicit overrides; **null means "ask the type"**. `locationHoldsPlants()`
+checks the explicit value first, so a stored `false` beats the type default —
+which is how a Container ended up unable to hold plants (LOC-9, v2.13.0). The
+default set is `PLANT_HOLDING_TYPES` = container, hospital, staging, work_area;
+never re-approximate it as `type === "container"`. Gating on this flag hides
+"New plant from this photo" on a location's feed with no error, so a wrong value
+presents as a missing feature rather than a fault.
+
 ### `taxa`
 The **kind** of plant — whatever the most specific level is known: a species, a cultivar, or a bare genus. Introduced v1.41.0 (SPECIES-1 phase 1). Species-level facts live here once instead of on every specimen.
 

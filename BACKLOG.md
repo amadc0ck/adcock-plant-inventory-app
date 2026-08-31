@@ -419,6 +419,41 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.13.0 — LOC-9, `holds_plants` contradicting its own type
+
+**Reported from the app:** photos tagged to *Back Yard > Large Teal Ribbed Pot 3*
+offered no way to assign plants. Cause: `locationHoldsPlants()` honours an
+explicit `false` **in preference to** the type default, and the New location
+form was saving an unticked checkbox as exactly that. A pot created without
+touching that checkbox silently could not hold plants — `New plant from this
+photo` is gated on `locationHoldsPlants(l)` (`index.html:5470`) and simply
+vanished, with the only clue a subtle line reading "Plants are not assigned
+directly here."
+
+**The help text was actively false.** It said *"Containers get this
+automatically."* They did not: the form saved the raw checkbox state.
+
+Three write sites, two of them wrong:
+
+| Site | Was | Now |
+| --- | --- | --- |
+| Quick-add | `(type \|\| "container") === "container"` | `typeHoldsPlants(type)` |
+| New location modal | raw `.checked`, box unticked by default | box defaults on, follows the type select |
+| Edit location | `.checked`, seeded from `locationHoldsPlants()` | unchanged (was correct) — now also follows the type select |
+
+**The quick-add bug was wider than containers.** It stamped `false` onto every
+**hospital, staging and work_area** created there, because it compared against
+the single literal `"container"` while `locationHoldsPlants` has always
+recognised four types. `PLANT_HOLDING_TYPES` is now the one source of truth.
+
+**New queue tile — "Containers that hold no plants"** (`mistypedLocations`):
+locations whose stored `false` contradicts their own type. This is how the
+*other* instances get found, and it is deliberately a review list rather than a
+migration — a container genuinely used as a staging shelf is a legitimate
+`false`, and rewriting those silently would be the same class of mistake.
+
+**Minor, not patch:** it adds a queue tile, which is a new capability.
+
 ### v2.12.2 — the cream/green button problem, fixed structurally
 
 v2.12.1 fixed **one** button by adding `btn-on-cream`. That was not the fix, it

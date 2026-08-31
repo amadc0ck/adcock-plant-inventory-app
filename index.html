@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.16.1";
+const APP_VERSION = "2.16.2";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -6720,11 +6720,6 @@ function screenSettings() {
     <div class="container">
       ${screenHeader("Settings", `v${APP_VERSION} · ${APP_UPDATED}`)}
 
-      ${/* Drive stays first because it is the app's one external dependency and
-           the only thing here that can break on its own. It used to be first
-           because access expired about weekly and she had to keep coming back —
-           that stopped being true 2026-08-31 when the app was published to the
-           Workspace (GWS-1). Reconnect is now recovery, not routine. */""}
       <div class="surface" style="padding:16px;">
         <div class="row">
           <div class="connect-status">

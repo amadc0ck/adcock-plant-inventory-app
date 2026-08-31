@@ -731,6 +731,29 @@ report has always had this. A `sheltered` boolean on `locations` would fix it.
 
 ---
 
+## 15. Legal pages — and the coupling they create
+
+`adcock-plant-inventory-legal/` (public, GitHub Pages, linked from the Google
+OAuth consent screen). Rebuilt 2026-08-31; shares the app's brand tokens via
+`style.css`.
+
+**The privacy policy names every outside service the app transmits to**, in a
+table, with what each receives. That list was wrong before — it claimed no data
+went to any third party while photographs were going to Anthropic, Pl@ntNet and
+Google Drive.
+
+**So adding a new outside call is a two-repo change.** WEATHER-1 added
+Open-Meteo and the National Weather Service, and the policy had to gain a row.
+Before shipping anything that sends data anywhere new, check whether
+`privacy.html` still tells the truth. Current recipients: Google Drive, Google
+Photos Picker, Anthropic, Pl@ntNet, Supabase, Open-Meteo, US NWS, Google Fonts.
+
+The policy also carries the **Google API Services User Data Policy Limited Use**
+disclosure, which Google's consent screen expects, and explains why
+`drive.file` and `photospicker.mediaitems.readonly` are narrow.
+
+---
+
 ## 13. Deployment Quick Reference
 
 ```bash

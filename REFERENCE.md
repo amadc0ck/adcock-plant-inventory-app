@@ -418,6 +418,32 @@ shipped with no SQL at all. Read into `state.appSettings` as a plain object at l
 ### `google_auth_tokens`
 Single-row table, one Google account ever. `access_token` (~1hr, auto-refreshed by Edge Functions), `refresh_token` (expires ~weekly, see §8), `expires_at`, `updated_at`.
 
+**This is the only table whose RLS differs from the rest, deliberately (2026-08-31).**
+It held a live Google refresh token under the same `for all to authenticated
+using (true)` policy as everything else, which meant any signed-in user could
+read *or overwrite* it. Harmless with one user; disqualifying the moment a guest
+view exists, which is why it was tightened before that work rather than after.
+
+```sql
+create policy google_auth_tokens_select on google_auth_tokens
+  for select to authenticated using (true);
+revoke all on google_auth_tokens from anon, authenticated;
+grant select (expires_at) on google_auth_tokens to authenticated;
+```
+
+**RLS is row-level; the column grant is what actually hides the token.** The
+policy admits the row, and `grant select (expires_at)` limits which columns come
+back. Safe because nothing legitimately needs more: the frontend reads
+`google_auth_tokens` exactly once (`index.html:1553`), selects only
+`expires_at`, and uses it purely as a boolean (`!!state.driveToken`, three call
+sites). The Edge Functions authenticate with `getSupabaseAdmin()` — the service
+role, which **bypasses RLS entirely** — so refresh, insert and delete are
+unaffected.
+
+**Consequence for any future guest view:** this table is already safe, but every
+other table still carries the blanket policy. Tightening one table is not the
+same as having a read-only role.
+
 ### Junction tables (§6)
 - **`photo_plants`** — multiple plants tagged on one photo. `id, photo_id, plant_id, created_at`, unique on `(photo_id, plant_id)`.
 - **`plant_locations`** — **DROPPED 2026-08-28**, closing SPECIES-2. It let one plant be in several places at once, which was a workaround for having no taxon/specimen distinction. With specimens real, a specimen is one physical individual in exactly one place, and `plants.location_id` is the whole answer. The 6 rows that remained at drop time were 4 exact duplicates of a `location_id` and 2 ancestor rows (Car Port, the parent of the two Black Pedestal Pots) — no information was lost.

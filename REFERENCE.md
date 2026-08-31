@@ -313,6 +313,34 @@ A running dated log of care events, separate from the free-text `plants.notes`.
 
 Displayed newest-first on Plant Detail. Included in the full JSON backup and restored **after** plants, since `plant_id` is a hard FK. See §6 for merge/delete handling.
 
+### `watering_events`
+WATER-1 (v2.12.0). One row per plant per watering — **not** one row per run.
+"When was this last watered" is the query every screen needs, and a run is just
+a shared `batch_id`, which is also what makes a mis-tap undoable as one unit.
+
+- `id` uuid PK
+- `plant_id` uuid FK → plants.id, **not null**, `on delete cascade`
+- `watered_on` date, not null, default `current_date` — set from the **local**
+  day by the client (DATE-1), never `toISOString()`
+- `location_id` uuid FK → locations.id, nullable — **snapshot** of where it was
+  watered, like `bloom_events.location_id`. The plant may move; that it was
+  watered in Bucket 40 on this date stays true.
+- `batch_id` uuid, nullable — groups one watering run
+- `notes` text, nullable
+- `created_at` timestamptz
+
+**Unique index on `(plant_id, watered_on)`.** Watering an area and then topping
+up one pot inside it on the same day is normal, not a mistake, so the client
+upserts with `on_conflict=plant_id,watered_on` and the second write merges. The
+cost is that a same-day re-water overwrites the earlier note.
+
+`method` was in the original sketch and never created. Nothing uses it.
+
+**RLS:** `watering_events_all` — `for all to authenticated using (true) with
+check (true)`, matching every other table. The table was created without it and
+read back empty until the policy was added; an anonymous probe cannot tell that
+state from RLS being off, because every table here returns `[]` to anon.
+
 ### `bloom_events`
 When a specimen actually flowered. An event with a start and an end, not a flag — a plant blooms repeatedly and the history is the point.
 

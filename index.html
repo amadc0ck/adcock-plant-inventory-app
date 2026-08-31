@@ -736,7 +736,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.11.1";
+const APP_VERSION = "2.12.0";
 const APP_UPDATED = "2026-08-30";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -772,6 +772,9 @@ const state = {
   newVersion: "",         // a newer APP_VERSION seen on the server
   appSettings: {},
   weather: null,          // WEATHER-1 — {fetchedAt, days:[], alerts:[]}; null until loaded
+  wateringEvents: [],     // WATER-1
+  waterDraft: null,       // {ids:[], label, date, notes, locationId} while the modal is open
+  lastWaterBatch: null,   // {batchId, count, label} — powers Undo on To Do
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
   taskSubjectSearch: "",
   taskFilter: "open",     // open | done | all
@@ -1512,7 +1515,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory, wateringEvents] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -1544,6 +1547,9 @@ async function loadAll() {
       // backup, so "where did this plant used to live?" was answerable only by
       // exporting a backup and reading the JSON by hand.
       optional("plant_location_history", restGetAll("plant_location_history", "?select=*&order=started_at.desc")),
+      // WATER-1. Resilient like every table added after the app existed: it
+      // loads before the migration and simply has no watering history.
+      optional("watering_events", restGetAll("watering_events", "?select=*&order=watered_on.desc")),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -1561,6 +1567,7 @@ async function loadAll() {
     state.taskSubjects = taskSubjects || [];
     state.appSettings = Object.fromEntries((appSettings || []).map((r) => [r.key, r.value]));
     state.plantLocationHistory = locHistory || [];
+    state.wateringEvents = wateringEvents || [];
   } catch (e) {
     toast(e.message, true);
   }
@@ -3158,6 +3165,107 @@ function localDateISO(d) {
   return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
 }
 
+/* ============================================================
+   WATERING — WATER-1 / WATER-2
+
+   One row per plant per watering, not one row per run. "When was this last
+   watered" is the query that matters on every screen, and a run is just a
+   shared batch_id — which also makes a mis-tap undoable as one unit. At ~170
+   specimens a whole-garden watering is 170 rows, which is nothing.
+
+   `watered_on` is a DATE defaulted from the LOCAL day (DATE-1): watering at
+   6pm Pacific must record as today, not tomorrow.
+
+   The unique index on (plant_id, watered_on) makes a double-tap idempotent —
+   water the Front Yard, then water one plant in it individually, and the
+   second write merges rather than duplicating.
+   ============================================================ */
+const DEFAULT_WATERING_INTERVAL_DAYS = 7;
+
+function wateringIntervalDays() {
+  return settingInt("watering_interval_days", DEFAULT_WATERING_INTERVAL_DAYS);
+}
+
+/* The weather tie-in. Heat shortens the interval because containers dry out
+   faster; measurable rain pushes it out because the sky already did the job.
+   Both are bounded, and the reason is always named in the UI — this nudges a
+   threshold, it does not decide anything for her. */
+function effectiveWateringInterval() {
+  const base = wateringIntervalDays();
+  let days = base;
+  if (heatRisk()) days = Math.max(2, Math.round(base * 0.6));
+  if (recentRainInches() >= 0.25) days = Math.round(days * 1.5);
+  return days;
+}
+function wateringIntervalReason() {
+  const heat = heatRisk();
+  const rain = recentRainInches();
+  if (heat && rain >= 0.25) return `heat and ${rain.toFixed(2)}\u2033 of rain`;
+  if (heat) return heat.event ? heat.event.toLowerCase() : "the heat";
+  if (rain >= 0.25) return `${rain.toFixed(2)}\u2033 of rain`;
+  return "";
+}
+
+function wateringsForPlant(plantId) {
+  return state.wateringEvents
+    .filter((w) => w.plant_id === plantId)
+    .sort((a, b) => (b.watered_on || "").localeCompare(a.watered_on || ""));
+}
+function lastWateredFor(plantId) {
+  const w = wateringsForPlant(plantId)[0];
+  return w ? w.watered_on : null;
+}
+function daysSinceWatered(plantId) {
+  const last = lastWateredFor(plantId);
+  return last ? daysBetween(last, todayISO()) : null;
+}
+// Never watered is not "0 days overdue" — it is unknown, and it sorts above
+// everything rather than being mistaken for freshly watered.
+function wateringIsDue(pl) {
+  if (pl.status !== "active") return false;
+  const n = daysSinceWatered(pl.id);
+  return n === null || n >= effectiveWateringInterval();
+}
+function plantsNeedingWater() {
+  return state.plants.filter(wateringIsDue).sort((a, b) => {
+    const da = daysSinceWatered(a.id), db = daysSinceWatered(b.id);
+    if (da === null && db !== null) return -1;
+    if (db === null && da !== null) return 1;
+    return (db || 0) - (da || 0);
+  });
+}
+
+// The whole subtree, which is the point: "water the Front Yard" must reach
+// every bucket nested under it, not only plants pinned to the area itself.
+function plantsUnderLocation(locationId) {
+  const ids = new Set([locationId, ...descendantLocationIds(locationId)]);
+  return state.plants.filter((p) => p.status === "active" && ids.has(p.location_id));
+}
+
+/* A rollup for Location Detail. "All watered 3 days ago" and "mixed — oldest
+   12 days" are different answers and both are worth saying; an average would
+   hide the one plant nobody has watered in a month. */
+function wateringSummaryForLocation(locationId) {
+  const plants = plantsUnderLocation(locationId);
+  if (!plants.length) return null;
+  const days = plants.map((p) => daysSinceWatered(p.id));
+  const never = days.filter((d) => d === null).length;
+  const known = days.filter((d) => d !== null);
+  return {
+    total: plants.length, never,
+    oldest: known.length ? Math.max(...known) : null,
+    newest: known.length ? Math.min(...known) : null,
+    mixed: known.length ? Math.max(...known) !== Math.min(...known) : false,
+  };
+}
+
+function fmtDaysAgo(n) {
+  if (n === null || n === undefined) return "never";
+  if (n <= 0) return "today";
+  if (n === 1) return "yesterday";
+  return `${n} days ago`;
+}
+
 function fmtTemp(f) {
   return Number.isFinite(f) ? `${Math.round(f)}\u00B0F` : "\u2014";
 }
@@ -4083,6 +4191,10 @@ function screenInbox() {
 
       ${/* WEATHER-1. Above the queue, because a freeze tonight outranks every
            count below it. Suppressed in select mode along with the queue. */""}
+      ${/* Undo is rendered separately from the weather banner on purpose: it
+           must survive a failed or unloaded forecast, and weatherBanner()
+           returns early when state.weather is null. */""}
+      ${selectMode ? "" : undoStrip()}
       ${selectMode ? "" : weatherBanner()}
 
       ${/* The queue sits above the grid rather than behind a toggle: the counts
@@ -4194,6 +4306,12 @@ function weatherBanner() {
           <div class="wx-sub">${heat.headline ? escapeHtml(heat.headline)
             : `Forecast high of ${fmtTemp(heat.day.max)}. Containers dry out fastest \u2014 worth an extra check.`}${
             rain >= 0.1 ? ` ${rain.toFixed(2)}\u2033 of rain has fallen recently.` : ""}</div>
+          ${(() => {
+            const due = plantsNeedingWater().length;
+            return due ? `<div class="wx-act">
+              <button class="btn btn-secondary btn-sm" onclick="state.reportView='needsWater';render()">Show the ${due} due for water</button>
+            </div>` : "";
+          })()}
         </div>
       </div>`);
   }
@@ -4209,6 +4327,24 @@ function weatherBanner() {
     </div>` : "";
 
   return cards.join("") + strip;
+}
+
+/* WATER-1. "Water everything" is one tap and can be the wrong tap. This is the
+   way back, and it stays until dismissed rather than vanishing with a toast. */
+function undoStrip() {
+  const b = state.lastWaterBatch;
+  if (!b) return "";
+  return `
+    <div class="wx-banner" style="border-color:rgba(124,167,161,0.4);">
+      ${icon("droplets")}
+      <div class="wx-body">
+        <div class="wx-title">Watered ${b.count} ${b.count === 1 ? "plant" : "plants"}${b.label ? ` \u2014 ${escapeHtml(b.label)}` : ""}</div>
+        <div class="wx-act" style="display:flex;gap:14px;">
+          <button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--terracotta);" onclick="undoWateringBatch('${b.batchId}',${b.count})">Undo</button>
+          <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="state.lastWaterBatch=null;render()">Dismiss</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function fmtTime(ms) {
@@ -4679,6 +4815,7 @@ function screenPlantDetail() {
         <div class="detail-actions">
           <div class="action-card">
             <button class="action-row" onclick="openModal('editPlant',{plantId:'${pl.id}'})">${icon("edit")}<span class="action-label">Edit full record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            <button class="action-row" onclick="openWaterModal('plant','${pl.id}')">${icon("droplets")}<span class="action-label">Water this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="openModal('movePlant',{plantId:'${pl.id}'})">${icon("pin")}<span class="action-label">Move to another location</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="moveToHospital('${pl.id}')">${icon("ambulance")}<span class="action-label">Move to Plant Hospital</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">${icon("seedling")}<span class="action-label">Propagate from this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>
@@ -4787,6 +4924,15 @@ function screenPlantDetail() {
           ${fieldRow("info", "Status", STATUS_LABELS[pl.status] || pl.status)}
           ${fieldRow("alertTriangle", "Health", HEALTH_LABELS[pl.health_status] || pl.health_status)}
           ${fieldRow("clipboard", "Next check", pl.next_check_date ? fmtDate(pl.next_check_date) : "")}
+          ${(() => {
+            // WATER-2. Rendered even when never watered, as a dimmed em-dash
+            // via fieldRow's blank handling — an unrecorded field marks the
+            // record as incomplete, which is information (v1.38.0's rule).
+            const last = lastWateredFor(pl.id);
+            const n = daysSinceWatered(pl.id);
+            return fieldRow("droplets", "Last watered", null,
+              last ? `${escapeHtml(fmtDate(last))} <span class="subtle" style="font-size:11.5px;">\u00B7 ${escapeHtml(fmtDaysAgo(n))}</span>` : null);
+          })()}
         </div>
 
         <div class="section-card">
@@ -4821,6 +4967,32 @@ function screenPlantDetail() {
           </div>`;
         })()}
       </div>
+
+      ${(() => {
+        // WATER-2. Kept short on purpose: the answer is "when", and the last
+        // handful gives the rhythm. The full history is the calendar's job
+        // (W-3), which is not built.
+        const events = wateringsForPlant(pl.id);
+        if (!events.length) return "";
+        return `
+        <div class="row" style="margin-top:26px;margin-bottom:4px;">
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Watering</h3>
+          <button class="btn btn-secondary btn-sm icon-btn" onclick="openWaterModal('plant','${pl.id}')">${icon("droplets")} Water</button>
+        </div>
+        <div class="section-card">
+          ${events.slice(0, 6).map((w) => `
+            <div class="field-row" style="align-items:flex-start;">
+              <span class="field-row-icon">${icon("droplets")}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13.5px;color:#C9D6CC;">${escapeHtml(fmtDate(w.watered_on))}
+                  <span class="subtle" style="font-size:11.5px;">\u00B7 ${escapeHtml(fmtDaysAgo(daysBetween(w.watered_on, todayISO())))}</span></div>
+                ${w.notes ? `<div style="font-size:12.5px;color:#8AA090;margin-top:2px;white-space:pre-wrap;">${escapeHtml(w.notes)}</div>` : ""}
+              </div>
+              <button class="btn-ghost icon-btn" style="padding:0;font-size:12px;color:var(--terracotta);flex-shrink:0;" onclick="deleteWateringEvent('${w.id}')">${icon("trash")}</button>
+            </div>`).join("")}
+          ${events.length > 6 ? `<div class="subtle" style="font-size:11.5px;padding:10px 14px 0;">${events.length - 6} older not shown</div>` : ""}
+        </div>`;
+      })()}
 
       <div class="row" style="margin-top:26px;margin-bottom:4px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
@@ -5033,6 +5205,28 @@ function screenLocationDetail() {
 
           ${l.notes ? `<div style="font-size:13.5px;color:var(--ink-soft);margin-top:12px;">${escapeHtml(l.notes)}</div>` : ""}
           ${!locationHoldsPlants(l) ? `<div class="subtle" style="font-size:11.5px;margin-top:10px;">Plants are not assigned directly here — they live in the containers inside.</div>` : ""}
+
+          ${(() => {
+            // WATER-2. The rollup, not an average: "mixed — oldest 12 days"
+            // is the answer that sends her somewhere, and a mean would bury
+            // the one pot nobody has watered in a month.
+            const w = wateringSummaryForLocation(l.id);
+            if (!w) return "";
+            const line = w.never === w.total ? "never watered"
+              : w.never ? `${w.never} of ${w.total} never watered, rest ${fmtDaysAgo(w.newest)}`
+              : w.mixed ? `mixed \u2014 oldest ${fmtDaysAgo(w.oldest)}, newest ${fmtDaysAgo(w.newest)}`
+              : `all watered ${fmtDaysAgo(w.newest)}`;
+            return `<div style="display:flex;align-items:center;gap:7px;margin-top:14px;font-size:12.5px;color:var(--ink-soft);">
+              <span style="display:flex;color:var(--blue);">${icon("droplets")}</span>${escapeHtml(line)}</div>`;
+          })()}
+
+          ${plantsUnderLocation(l.id).length ? `
+          <div style="margin-top:12px;">
+            <button class="btn btn-secondary btn-sm icon-btn" onclick="openWaterModal('location','${l.id}')">
+              ${icon("droplets")} Water ${countLabel(plantsUnderLocation(l.id).length, "plant", "plants")} here
+            </button>
+            ${directChildLocations(l.id).length ? `<div class="subtle" style="font-size:11px;margin-top:5px;">Includes everything nested inside</div>` : ""}
+          </div>` : ""}
 
           <div style="margin-top:14px;">
             <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
@@ -5321,6 +5515,11 @@ function reportSections() {
           return la.localeCompare(lb) || (a.accession_number || "").localeCompare(b.accession_number || "");
         }),
       kind: "plant" },
+    // WATER-2. Interval comes from app_settings and is shortened by heat /
+    // lengthened by rain (see effectiveWateringInterval). Never-watered sorts
+    // to the top: unknown is not the same as freshly watered.
+    { key: "needsWater", title: "Needs watering", sub: `Nothing recorded in ${effectiveWateringInterval()} days`,
+      items: plantsNeedingWater(), kind: "plant" },
     { key: "plantsNoTaxon", title: "Specimens with no species", sub: "Not linked to a species record",
       items: state.plants.filter((pl) => !pl.taxa_id), kind: "plant" },
     { key: "plantsStaging", title: "Waiting to be planted", sub: "In a staging area, not yet in the ground",
@@ -5533,6 +5732,7 @@ function workQueue() {
     ${group("Needs you now", null, [
       sect("frostTender", true),
       sect("plantsAttention", true),
+      sect("needsWater"),
       sect("checkIns", true),
       sect("plantsStaging"),
       photoSugs.size ? tile(photoSugs.size, "Photos Claude answered", "Filing it proposed — accept or dismiss", "showGalleryHasSuggestions()") : "",
@@ -5839,6 +6039,7 @@ function reportRowActions(pl) {
     out.push(btn("Not this year", `deferBloomNudge('${pl.id}')`));
   }
   if (v === "closeBlooms" && open) out.push(btn("It has finished", `endBloom('${open.id}')`));
+  if (v === "needsWater") out.push(btn("Water it", `openWaterModal('plant','${pl.id}')`));
   if (v === "plantsNoLocation" || v === "frostTender") out.push(btn(v === "frostTender" ? "Move it in" : "Set a location", `openModal('movePlant',{plantId:'${pl.id}'})`));
   // The one action that resolves a staging row: put it where it is going.
   // Moving it out of staging is what clears it — there is no flag to unset.
@@ -6317,6 +6518,22 @@ function screenSettings() {
           <span class="subtle" style="font-size:12.5px;">days</span>
           <button class="btn btn-secondary btn-sm" onclick="saveAppSetting('check_in_interval_days', document.getElementById('setting-checkin').value)">Save</button>
         </div>
+
+        <div class="divider" style="margin:18px 0;"></div>
+
+        ${/* WATER-2. Same shape as the check-in interval above. */""}
+        <div style="font-weight:600;font-size:13.5px;">Watering interval</div>
+        <p class="subtle" style="margin:6px 0 12px;line-height:1.5;">
+          A plant with nothing recorded for this many days is flagged. Currently ${countLabel(plantsNeedingWater().length, "plant is", "plants are")} due${
+            effectiveWateringInterval() !== wateringIntervalDays()
+              ? `, using <strong>${effectiveWateringInterval()} days</strong> right now because of ${escapeHtml(wateringIntervalReason())}` : ""}.
+        </p>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input type="number" id="setting-waterdays" min="1" max="365" value="${wateringIntervalDays()}" style="max-width:110px;" />
+          <span class="subtle" style="font-size:12.5px;">days</span>
+          <button class="btn btn-secondary btn-sm" onclick="saveWateringInterval()">Save</button>
+        </div>
+        <div class="field-help">Heat shortens this automatically; measurable rain pushes it out. The reason is always named where the number is shown.</div>
 
         <div class="divider" style="margin:18px 0;"></div>
 
@@ -7819,6 +8036,29 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  if (type === "waterPlants") {
+    const d = state.waterDraft;
+    if (!d) return `<p>Nothing selected.</p>`;
+    const eff = effectiveWateringInterval();
+    const reason = wateringIntervalReason();
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Record watering</h3>
+      <p class="subtle" style="margin:0 0 14px;">
+        ${countLabel(d.ids.length, "plant", "plants")}${d.label ? ` \u2014 ${escapeHtml(d.label)}` : ""}${d.kind === "location" ? ", including everything nested below it" : ""}.
+      </p>
+      <label>Date</label>
+      <input type="date" id="water-date" value="${d.date}" max="${todayISO()}" />
+      <div class="field-help">Defaults to today. Set it back if you are recording a watering you did earlier.</div>
+      <label style="margin-top:12px;">Notes (optional)</label>
+      <textarea id="water-notes" rows="2" placeholder="e.g. deep soak, first since the heat"></textarea>
+      ${reason ? `<div class="field-help" style="margin-top:10px;">Currently flagging plants after <strong>${eff} days</strong> rather than ${wateringIntervalDays()}, because of ${escapeHtml(reason)}.</div>` : ""}
+      <button class="btn btn-accent btn-block" style="margin-top:18px;" onclick="confirmWatering()">
+        ${icon("droplets")} Water ${countLabel(d.ids.length, "plant", "plants")}
+      </button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="state.waterDraft=null;closeModal()">Cancel</button>`;
+  }
+
   if (type === "upload") {
     const loc = data.locationId ? locationById(data.locationId) : null;
     // v1.85.0: uploading straight onto a specimen. uploadPhoto() has always
@@ -8789,6 +9029,113 @@ async function saveAppSetting(key, value) {
     toast("Saved");
     await loadAll();
   } catch (e) { toast(e.message, true); }
+}
+
+/* ============================================================
+   WATERING ACTIONS — WATER-1
+   ============================================================ */
+
+// Opens the modal against a scope rather than a plant list, so the confirm can
+// say "34 plants under Front Yard" instead of a bare count with no provenance.
+function openWaterModal(kind, id) {
+  let ids = [], label = "", locationId = null;
+  if (kind === "plant") {
+    const pl = state.plants.find((p) => p.id === id);
+    if (!pl) { toast("Plant not found", true); return; }
+    ids = [pl.id];
+    label = plantPickerName(pl).primary;
+    locationId = pl.location_id || null;
+  } else if (kind === "location") {
+    const loc = locationById(id);
+    if (!loc) { toast("Location not found", true); return; }
+    ids = plantsUnderLocation(loc.id).map((p) => p.id);
+    label = locationPath(loc);
+    locationId = loc.id;
+  } else if (kind === "due") {
+    ids = plantsNeedingWater().map((p) => p.id);
+    label = "everything due";
+  } else if (kind === "all") {
+    ids = state.plants.filter((p) => p.status === "active").map((p) => p.id);
+    label = "the whole collection";
+  }
+  if (!ids.length) { toast("No active plants in that scope", true); return; }
+  state.waterDraft = { ids, label, kind, locationId, date: todayISO(), notes: "" };
+  openModal("waterPlants");
+}
+
+/* One row per plant, one batch_id for the run. Upserted on
+   (plant_id, watered_on) so re-watering the same plant on the same day merges
+   instead of erroring against the unique index — watering a whole area and
+   then topping up one pot is a normal thing to do, not a mistake. */
+async function confirmWatering() {
+  const d = state.waterDraft;
+  if (!d) return;
+  const dateEl = document.getElementById("water-date");
+  const notesEl = document.getElementById("water-notes");
+  const watered_on = (dateEl && dateEl.value) || d.date || todayISO();
+  const notes = (notesEl && notesEl.value || "").trim() || null;
+  // Not crypto.randomUUID() alone: older iPadOS Safari only exposes it on a
+  // secure context and this must not fail on the one device that matters.
+  const batch_id = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const rows = d.ids.map((plant_id) => {
+    const pl = state.plants.find((p) => p.id === plant_id);
+    return {
+      plant_id, watered_on, batch_id, notes,
+      // A snapshot of where it was watered. The plant may move later; that it
+      // was watered in Bucket 40 on this date stays true.
+      location_id: (pl && pl.location_id) || null,
+    };
+  });
+  try {
+    // Chunked: a whole-collection watering is ~170 rows and a single request
+    // carrying all of them is both slower to fail and harder to diagnose.
+    for (let i = 0; i < rows.length; i += 100) {
+      await restUpsert("watering_events", rows.slice(i, i + 100), "plant_id,watered_on");
+    }
+    state.waterDraft = null;
+    closeModal();
+    // toast() is text-only and gone in 3.2s, which is no use for undoing a
+    // 170-row mistake. The Undo lives on To Do until dismissed or superseded.
+    state.lastWaterBatch = { batchId: batch_id, count: rows.length, label: d.label };
+    toast(`Watered ${rows.length} ${rows.length === 1 ? "plant" : "plants"}`);
+    await loadAll();
+  } catch (e) {
+    // The shape of a missing policy is an empty-looking success or a 401/403.
+    // Naming it beats "watering failed", which sent us round this loop once.
+    const msg = String(e.message || e);
+    toast(/42501|permission|policy/i.test(msg)
+      ? "The database refused the write — check the watering_events RLS policy"
+      : msg, true);
+  }
+}
+
+// Undo the run, not the row. A mis-tap on "water the whole collection" is the
+// case this exists for, and deleting 170 rows one at a time is not an undo.
+async function undoWateringBatch(batchId, count) {
+  if (!confirm(`Undo this watering? ${countLabel(count, "record", "records")} will be removed.`)) return;
+  try {
+    await restDelete("watering_events", `batch_id=eq.${batchId}`);
+    state.lastWaterBatch = null;
+    toast("Watering undone");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deleteWateringEvent(id) {
+  if (!confirm("Remove this watering record?")) return;
+  try {
+    await restDelete("watering_events", `id=eq.${id}`);
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function saveWateringInterval() {
+  const el = document.getElementById("setting-waterdays");
+  const n = parseInt(el && el.value, 10);
+  if (!Number.isFinite(n) || n < 1 || n > 365) { toast("Between 1 and 365 days", true); return; }
+  await saveAppSetting("watering_interval_days", n);
 }
 
 // WEATHER-1. Both saves go through saveAppSetting's upsert, then force a

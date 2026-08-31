@@ -419,6 +419,51 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.12.0 — WATER-1 / WATER-2
+
+**Watering tracking.** Table created by Amanda 2026-08-30; RLS policy added the
+same day after the first `create table` sketch shipped without one (see
+"Picking this up cold").
+
+**Recording (WATER-1).** `openWaterModal(kind, id)` takes a *scope*, not a plant
+list, so the confirm can say "34 plants — Front Yard, including everything
+nested below it" rather than a bare count.
+- **One plant** — action row on Plant Detail, and "Water it" on each row of the
+  Needs watering queue.
+- **A location and its whole subtree** — button on Location Detail.
+  `plantsUnderLocation()` walks `descendantLocationIds()`, so watering Front
+  Yard reaches buckets nested two levels down. Verified against a synthetic
+  tree; inactive plants are excluded.
+- **`watered_on` is the LOCAL day** (DATE-1). Watering at 6pm records as today.
+- **One row per plant, one `batch_id` per run.** Upserted on
+  `(plant_id, watered_on)` so watering an area and then topping up one pot in
+  it merges instead of erroring against the unique index. Written in chunks of
+  100 — a whole-collection run is ~170 rows.
+- **Undo is per batch**, rendered on To Do until dismissed. `toast()` is
+  text-only and gone in 3.2s, which is no use for undoing a 170-row mistake.
+  Deliberately rendered *outside* `weatherBanner()`, which returns early when
+  the forecast has not loaded — Undo must survive a dead weather API.
+
+**Reading it back (WATER-2).**
+- "Last watered" on Plant Detail (blank renders as a dimmed em-dash, per
+  v1.38.0's rule), plus a short watering list with per-entry delete.
+- Location Detail carries a rollup — "all watered 3 days ago", "mixed — oldest
+  12 days", "2 of 9 never watered". Not an average: a mean would bury the one
+  pot nobody has touched in a month.
+- **Needs watering** tile in the work queue. **Never watered sorts above
+  everything** — unknown is not the same as freshly watered.
+
+**The weather tie-in is live.** `effectiveWateringInterval()` shortens the base
+interval to 60% under heat (floor of 2 days) and multiplies it by 1.5 after
+≥0.25″ of rain. Measured: base 7 → **4 under a 99°F day** → **11 after 0.40″ of
+rain** → 6 with both. The reason is always named next to the number, in the
+modal and in Settings — this nudges a threshold, it does not decide anything.
+The heat card on To Do now links straight to the due list.
+
+**Not built: W-3, the calendar.** Droplets on a month grid. The watering list on
+Plant Detail is capped at 6 entries precisely because the calendar is where the
+full history belongs.
+
 ### v2.11.1 — DATE-1
 
 **Every date-only value in the app rendered a day early.** `fmtDate` did

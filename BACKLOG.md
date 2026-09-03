@@ -355,6 +355,20 @@ marked as unverified. Two possible shapes, and the choice matters:
 **Start with the link.** It is the honest version of what she does by hand, and
 it does not pretend the app verified anything it did not.
 
+**POWO cannot be fetched server-side** (checked 2026-09-03). Kew sits behind
+Cloudflare: a scripted request gets 403 and a headless browser gets the "Just a
+moment..." challenge. Links work fine — a reader's own browser passes it — but
+an Edge Function cannot read it. If automated name-checking is ever wanted, the
+route is the **WFO Plant List**, which publishes downloadable snapshots twice a
+year and shares POWO's WCVP backbone. Do not burn a day discovering the obvious
+approach is silently blocked.
+
+**And POWO does not cover cultivars at all.** A large share of this collection is
+cultivars — 'Zwartkop', 'Fred Ives', 'Blue Spruce' — and most succulent genera
+have no cultivar registration authority, so there is frequently nothing to check
+a name against. Any "verify this name" feature has to handle "no authority
+exists" as a normal answer rather than a failure.
+
 Related: she also asked for the public plant inventory on justamanda.net (below,
 site-side). A per-species San Marcos link belongs on that page too.
 

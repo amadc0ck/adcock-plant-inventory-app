@@ -335,6 +335,30 @@ order by location_count desc;
 
 ## Open — verified 2026-08-28, end of session
 
+### AI-4 — cite San Marcos Growers when researching a species — `ready`
+
+Requested 2026-09-03. Species facts suggested by AI arrive unattributed, so
+there is no way to tell a looked-up fact from a plausible one. Amanda verifies
+against **San Marcos Growers** (`smgrowers.com`), whose plant database is a
+solid California reference for succulents and cacti.
+
+Wire it into the species research path — `suggest-species`, and the species
+fields on the taxon record — so a suggestion either points at a source or is
+marked as unverified. Two possible shapes, and the choice matters:
+
+- **Link out.** Compose a search or species URL from the botanical name and show
+  it beside the suggestion. Cheap, honest, no claim the fact came from there.
+- **Actually read it.** Fetch the page and ground the suggestion in it. Better
+  facts, but it is scraping a third party's site from an Edge Function — check
+  their terms first, and cache hard.
+
+**Start with the link.** It is the honest version of what she does by hand, and
+it does not pretend the app verified anything it did not.
+
+Related: she also asked for the public plant inventory on justamanda.net (below,
+site-side). A per-species San Marcos link belongs on that page too.
+
+
 Everything below is either **waiting on Amanda** or **decided but unbuilt**.
 Nothing here is blocked on code that has not shipped.
 

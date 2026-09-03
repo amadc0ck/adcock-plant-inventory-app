@@ -698,6 +698,43 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.18.0 — a location's photos read down the columns, not across
+
+Two reports that turned out to be one cause: *"the pictures are listed
+vertically in a weird way but I only scroll up and down"*, then *"some galleries
+show different than others."* The second is the key — there are two photo
+layouts and she was comparing them.
+
+The Gallery tab renders `.card-grid`: a real grid, square crops, reads
+left-to-right. A location's Area/Archive feed rendered `.photo-feed`, which was
+**CSS multi-column** (`columns:3` at desktop) showing whole uncropped frames.
+Multi-column flows content DOWN column one and then back to the top for column
+two, so scrolling straight down ran the dates out of order and back again — and
+because the frames were uncropped, no two cards were the same height.
+
+REFERENCE already had the rule, written about `.section-grid`: columns are
+*"acceptable for independent reference cards and would not be for a sequence."*
+A chronological photo feed is a sequence. The rule was right and this view was
+on the wrong side of it.
+
+`.photo-feed` now mirrors `.card-grid` exactly — one column on a phone, two at
+700px, three at 1100px, square crops via `aspect-ratio:1` and `object-fit:cover`.
+The `break-inside` hints and the `margin-bottom` on cards are gone; both were
+multi-column artefacts, and the margin would have doubled the grid row gap.
+
+`object-position` is deliberately left at `top` in the stylesheet so `photoImg`'s
+inline `focalStyle()` still wins — a fixed value here would have overridden the
+focal point on every cropped thumbnail.
+
+**Nothing is lost by cropping:** `.lightbox-body img` is `object-fit:contain`, so
+tapping a photo still shows the whole frame. Only the thumbnail is cropped.
+
+Verified by rendering the real stylesheet against nine numbered photos with
+deliberately wild aspect ratios (300x600 through 600x300) at 1280, 820 and
+485px: reading order 1-2-3 / 4-5-6 / 7-8-9 across, every tile an identical
+square, at all three breakpoints.
+
+
 ### v2.17.3 — the sticky headers have been dead since v2.6.1
 
 Reported as a feature request: *"it would be really great if the select button

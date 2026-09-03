@@ -526,11 +526,16 @@
   .on-cream-icon{padding:0;color:var(--moss-dim);display:flex;}
   .on-cream-icon svg{width:20px;height:20px;}
   .on-cream-icon:hover{color:var(--ink);}
-  .photo-feed{max-width:620px;margin:0 auto;display:flex;flex-direction:column;gap:26px;}
-  .photo-feed-card{break-inside:avoid;-webkit-column-break-inside:avoid;}
+  /* v2.18.0. Was CSS multi-column, which flows a chronological feed DOWN column
+     one and then back to the top for column two — so scrolling straight down
+     ran the dates out of order and back again. REFERENCE's own rule on
+     .section-grid says columns are "acceptable for independent reference cards
+     and would not be for a sequence", and a photo feed is a sequence. Mirrors
+     .card-grid now, so the Gallery tab and a location's photos agree. */
+  .photo-feed{display:flex;flex-direction:column;gap:10px;}
   .photo-feed-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
-  .photo-feed-media{width:100%;background:#0B1410;cursor:zoom-in;line-height:0;min-height:80px;}
-  .photo-feed-media .photo-img{width:100%;height:auto;object-fit:contain;object-position:center;}
+  .photo-feed-media{width:100%;aspect-ratio:1;background:#0B1410;cursor:zoom-in;line-height:0;overflow:hidden;}
+  .photo-feed-media .photo-img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
   .photo-feed-body{padding:12px 15px 15px;}
   .photo-feed-actions{display:flex;align-items:center;gap:18px;margin-bottom:10px;}
   .photo-feed-actions .icon-only{background:none;border:none;padding:0;cursor:pointer;color:var(--cream);display:flex;}
@@ -729,8 +734,7 @@
     .modal{max-width:760px;border-radius:16px;border-top:none;border:1px solid var(--line);
       max-height:86vh;padding:24px 26px;}
     .modal-handle{display:none;}
-    .photo-feed{columns:2;column-gap:18px;max-width:none;display:block;}
-    .photo-feed-card{display:inline-block;vertical-align:top;width:100%;margin-bottom:18px;}
+    .photo-feed{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;align-items:start;}
     .section-grid > *{display:inline-block;vertical-align:top;width:100%;margin-bottom:14px;}
   }
   @media (min-width: 1100px) {
@@ -746,8 +750,7 @@
     .section-grid{columns:3;column-gap:16px;}
     /* Columns, not grid: photos are shown at their own aspect ratio, so cell
        heights vary wildly and a grid would leave every short one over a hole. */
-    .photo-feed{columns:3;column-gap:20px;max-width:none;display:block;}
-    .photo-feed-card{margin-bottom:20px;}
+    .photo-feed{grid-template-columns:repeat(3,1fr);gap:16px;}
     .section-grid > *{margin-bottom:16px;}
     /* Actions become the hero's third column only when there is room. */
     .detail-split .detail-media{width:34%;max-width:420px;}
@@ -773,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.17.3";
+const APP_VERSION = "2.18.0";
 const APP_UPDATED = "2026-09-03";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 

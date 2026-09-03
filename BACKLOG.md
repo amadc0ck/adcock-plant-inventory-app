@@ -698,6 +698,39 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.17.2 — the recent-plants list never populated
+
+Reported straight after v2.17.0 shipped: no "Recently used" row in the Assign a
+plant modal. **My bug, and the feature did nothing at all.**
+
+`notePlantUse()` was hooked into `assignPhotosToPlant` and
+`attachInboxPhotoToPlant`. Neither is the function the Gallery actually uses.
+That modal calls `plantPicker("assignPlantToPhoto('...','{id}')")`, and
+`assignPlantToPhoto` was never hooked — so nothing was ever recorded, the list
+was always empty, and an empty list renders nothing. It failed silently and
+looked exactly like a feature that had not deployed.
+
+There are **seven** paths that commit a plant onto a photo, not two. All seven
+now record: `assignPlantToPhoto`, `makePrimaryPlantForPhoto`,
+`bulkAttachToPlant`, `applyGalleryBatch`, `assignPhotosToPlant`,
+`attachInboxPhotoToPlant`, and the edit-photo form in `wireModalForms()`.
+`unassignPlantFromPhoto` deliberately does not.
+
+Two of the seven stage rather than act — `setBatchPlant` and
+`setEditPhotoPlant` write into a form and commit later — which is why
+`notePlantUse` is **not** called from `plantPicker` itself despite that being
+the one place that would have caught all of them. Recording on the pick would
+list plants she chose and then abandoned. The comment above `notePlantUse` now
+carries the full list and the reasoning.
+
+A coverage check runs over `index.html` and asserts each of the seven calls it,
+and that `unassignPlantFromPhoto` does not. That is the actual regression risk
+here: the failure mode is silence, not an error.
+
+**Note for testing it:** the list is built from use, so it is empty until a
+photo is attached. One attach, reopen the picker, and the row appears.
+
+
 ### v2.17.1 — the broken thumbnails deep in the archive galleries
 
 Reported with a screenshot: scroll far enough into a history gallery and every

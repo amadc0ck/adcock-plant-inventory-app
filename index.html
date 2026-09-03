@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.17.1";
+const APP_VERSION = "2.17.2";
 const APP_UPDATED = "2026-09-03";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2028,6 +2028,19 @@ function recentPlantIds() {
     return Array.isArray(ids) ? ids.filter((id) => state.plants.some((p) => p.id === id)) : [];
   } catch (e) { return []; }
 }
+// EVERY path that commits a plant onto a photo must call this, or the list
+// silently stays empty — which is exactly how v2.17.0 shipped: only two of the
+// seven were hooked, and the one the Gallery actually uses
+// (assignPlantToPhoto) was not among them, so the feature did nothing at all.
+//
+// The seven, as of v2.17.2: assignPlantToPhoto · makePrimaryPlantForPhoto ·
+// bulkAttachToPlant · applyGalleryBatch · assignPhotosToPlant ·
+// attachInboxPhotoToPlant · the edit-photo form in wireModalForms().
+//
+// Deliberately NOT called from plantPicker itself: two callers (setBatchPlant,
+// setEditPhotoPlant) only STAGE the pick into a form, so recording there would
+// list plants she chose and then abandoned. Recorded at the write instead.
+// unassignPlantFromPhoto is excluded for the obvious reason.
 function notePlantUse(id) {
   if (!id) return;
   try {
@@ -3970,6 +3983,7 @@ async function bulkAttachToPlant(plantId) {
     try { await restPatch("photos", `id=eq.${id}`, { plant_id: plantId }); }
     catch (e) { toast(`Failed on one photo: ${e.message}`, true); }
   }
+  notePlantUse(plantId);
   toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} attached`);
   closeModal();
   clearActiveBulkSelection();
@@ -4234,6 +4248,7 @@ async function applyGalleryBatch() {
     for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
       await restPatch("photos", `id=in.(${ids.slice(i, i + DELETE_CHUNK).join(",")})`, body);
     }
+    if (plant && plant !== "__clear__") notePlantUse(plant);
     toast(`Updated ${countLabel(ids.length, "photo", "photos")}`);
     state.gallerySelectMode = false;
     state.gallerySelected = new Set();
@@ -9743,6 +9758,7 @@ async function assignPlantToPhoto(photoId, plantId) {
     } else if (ph.plant_id !== plantId && !state.photoPlants.some((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
       await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
     }
+    notePlantUse(plantId);
     toast("Plant assigned");
     await loadAll();
   } catch (e) { toast(e.message, true); }
@@ -9776,6 +9792,7 @@ async function makePrimaryPlantForPhoto(photoId, plantId) {
     if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
     if (ph.plant_id) await restPost("photo_plants", { photo_id: photoId, plant_id: ph.plant_id });
     await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
+    notePlantUse(plantId);
     toast("Now this plant's photo");
     await loadAll();
   } catch (e) { toast(e.message, true); }
@@ -11359,6 +11376,7 @@ function wireModalForms() {
           plant_id: state.editPhotoPlant || null,
           notes: document.getElementById("eph-notes").value || null,
         });
+        if (state.editPhotoPlant) notePlantUse(state.editPhotoPlant);
         toast("Photo updated");
         closeModal();
         await loadAll();

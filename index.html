@@ -44,7 +44,16 @@
   /* Nothing in this app scrolls sideways at the page level — the Gallery rows
      scroll inside their own containers. A stray wide element shifting every
      screen left is always a bug, so stop it becoming one silently. */
-  html,body{max-width:100%;overflow-x:hidden;}
+  /* clip, NOT hidden (v2.17.3). overflow-x:hidden makes the element a scroll
+     container, and position:sticky inside a scroll container no longer pins to
+     the viewport — so the rule v2.6.1 added to stop screens scrolling sideways
+     silently killed every sticky header in the app, .sticky-header-group and
+     .sticky-controls alike. Nobody would connect those two things; the Select
+     button had simply been scrolling out of reach ever since.
+     `clip` clips the overflow without creating a scroll container, so it still
+     stops the sideways scroll AND sticky works. Measured both ways: hidden puts
+     a sticky bar at top=-1959 after a 2000px scroll, clip holds it at 0. */
+  html,body{max-width:100%;overflow-x:clip;}
   body{padding-bottom:76px;min-height:100vh;}
   body.has-task-banner{padding-top:46px;}
   h1,h2,h3,.display{font-family:'Fraunces',serif;}
@@ -764,7 +773,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.17.2";
+const APP_VERSION = "2.17.3";
 const APP_UPDATED = "2026-09-03";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 

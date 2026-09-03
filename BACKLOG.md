@@ -698,6 +698,38 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.17.3 — the sticky headers have been dead since v2.6.1
+
+Reported as a feature request: *"it would be really great if the select button
+was visible this far down in the gallery. We really need that sticky header."*
+The sticky header is not missing. It was built in v1.73.2, it is still in the
+markup, and it has been broken app-wide for months.
+
+v2.6.1 — *"duplicated Plants header, and every screen scrolled sideways"* —
+added `html,body{max-width:100%;overflow-x:hidden;}`. `overflow-x:hidden` makes
+the element a **scroll container**, and `position:sticky` inside a scroll
+container stops pinning to the viewport. So the sideways-scroll fix silently
+killed both sticky layers everywhere: `.sticky-header-group` (brand bar) and
+`.sticky-controls` (search, Filters, Select, view toggle). That is why the brand
+bar was missing from her screenshot too, not just the Select button.
+
+Two rules landing in different versions, months apart, with no error between
+them. Nothing would connect them by reading either one.
+
+Fixed by one word: `overflow-x:clip`. `clip` clips the overflow **without**
+creating a scroll container, so it still does v2.6.1's job and sticky works
+again. Measured in an isolated repro, three identical pages scrolled 2000px:
+
+    overflow-x: (none)   barTop=0      sticks
+    overflow-x: hidden   barTop=-1959  scrolled away
+    overflow-x: clip     barTop=0      sticks
+
+**Watch for:** any screen scrolling sideways again. `clip` and `hidden` differ
+in edge cases and the real screens could not be exercised from here — they need
+a login. If it recurs, revert this one word and fix the overflowing element
+instead, rather than reinstating a rule that breaks every sticky header.
+
+
 ### v2.17.2 — the recent-plants list never populated
 
 Reported straight after v2.17.0 shipped: no "Recently used" row in the Assign a

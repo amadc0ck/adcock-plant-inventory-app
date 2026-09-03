@@ -478,6 +478,60 @@ Internal only. `year int PK, last_number int`.
 
 ---
 
+## 3b. `public_plant_inventory` — the one public slice (2026-09-03)
+
+justamanda.net publishes the collection at `/inventory.html`, read live so it
+tracks the catalogue rather than going stale. It reads a **view**, not the
+tables:
+
+```sql
+create or replace view public_plant_inventory as
+select t.id, t.botanical_name, t.common_name, t.family, t.genus,
+       t.species_epithet, t.cultivar, t.is_hybrid, t.infraspecific,
+       t.working_label, t.description, t.growth_habit, t.mature_size,
+       t.bloom_season, t.native_range, t.hardy_to, t.water_needs,
+       t.light_conditions, t.frost_tender, t.plant_type,
+       nullif(t.origin, 'unknown') as origin,
+       count(p.id) as specimens
+from taxa t
+join plants p on p.taxa_id = t.id and p.status = 'active'
+group by t.id;
+
+grant select on public_plant_inventory to anon, authenticated;
+```
+
+**A view rather than an RLS policy on the tables, deliberately.** Opening `taxa`
+and `plants` to `anon` would expose every column on them — `location_id`,
+`health_status`, `identification_notes`, `accession_number`. The view exposes
+exactly the columns listed and there is no way to reach the others through it.
+RLS on the base tables is untouched and still denies anonymous reads: verified
+2026-09-03 with the publishable key, `plants`, `photos`, `locations` and `taxa`
+each return `200` with `[]`, which is what a denying policy looks like through
+PostgREST — not a 403.
+
+- **Locations are excluded on purpose.** `Front Yard > Wall Collection > Top Row
+  > Bucket 02` maps the inside of her home, and the plants page already carries
+  a photograph of the house.
+- **Photographs cannot be published through this at all.** Every Edge Function
+  except `drive-oauth-callback` is `auth: "user"`, `get-photo` included, so a
+  logged-out page has no route to a Drive image. Making it public would expose
+  every photo in the collection to anyone who could guess a file id. If public
+  images are ever wanted, that needs its own design — not a relaxation of
+  `get-photo`.
+- **The join is inner and filters `status = 'active'`**, so a species she no
+  longer grows leaves the inventory on its own. It is an inventory, not an
+  archive.
+- `origin` is `nullif(...,'unknown')` because the column defaults to `unknown`
+  and would otherwise render "Unknown" as though it were a recorded fact.
+
+Measured the day it shipped: 143 species, 230 specimens; `genus` on 142 of 143,
+`family` on 111, and the researched block (`description`, `growth_habit`,
+`mature_size`, `bloom_season`, `native_range`, `hardy_to`) on about 85. The page
+renders only the fields a species actually carries — the records are still being
+filled in, and a row of em-dashes would dress absence up as information.
+
+---
+
 ## 4. Edge Functions
 
 Deployed from `~/Projects/adcock-plant-inventory/supabase/functions/`.

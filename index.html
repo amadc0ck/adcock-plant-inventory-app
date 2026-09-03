@@ -764,7 +764,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.17.0";
+const APP_VERSION = "2.17.1";
 const APP_UPDATED = "2026-09-03";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1431,10 +1431,30 @@ function idsOnScreen() {
   });
   return live;
 }
-function evictPhotoCache() {
+// Any <img> still pointing at a blob we are about to revoke must be blanked and
+// handed back to the observer, or it renders as a dead blob: URL — which is a
+// broken-image icon that never recovers, because nothing is watching it any
+// more. Blanking lets it re-fetch the next time it nears the viewport.
+function releaseRenderedPhoto(id) {
+  document.querySelectorAll("img[data-drive-id]").forEach((el) => {
+    if (el.dataset.driveId !== id || !el.getAttribute("src")) return;
+    el.removeAttribute("src");
+    if (photoObserver) photoObserver.observe(el);
+  });
+}
+
+// `protectId` is the photo that has just this moment arrived. It MUST NOT be
+// evicted (v2.17.1): ensurePhotoLoaded caches it, queues it and calls this
+// before patching it into the DOM, so it has no src yet and idsOnScreen() does
+// not count it. Once ~600 photos are in the DOM with a src — one long gallery —
+// every older entry is live and the newcomer is the only thing eviction can
+// drop. It was revoked the instant it arrived and then painted as a dead
+// blob: URL, so every photo past that depth broke and stayed broken.
+function evictPhotoCache(protectId) {
   const order = state.photoCacheOrder;
   if (order.length <= PHOTO_CACHE_LIMIT) return;
   const live = idsOnScreen();
+  if (protectId) live.add(protectId);
   let i = 0;
   // Oldest first, but skip the on-screen ones rather than revoking them. If the
   // whole window is live there is nothing safe to drop, and holding a few extra
@@ -1450,6 +1470,7 @@ function evictPhotoCache() {
     if (order.includes(id)) continue;
     const url = state.photoUrlCache[id];
     if (url) {
+      releaseRenderedPhoto(id);
       try { URL.revokeObjectURL(url); } catch (e) {}
       delete state.photoUrlCache[id];
     }
@@ -1527,7 +1548,6 @@ function ensurePhotoLoaded(driveFileId) {
       state.photoUrlCache[driveFileId] = url;
       state.photoCacheOrder.push(driveFileId);
       state.photoFetchInFlight.delete(driveFileId);
-      evictPhotoCache();
       // Fill the waiting <img> elements directly instead of re-rendering.
       // render() replaces app.innerHTML wholesale, so a re-render here
       // destroyed and recreated every image on screen — already-painted ones
@@ -1555,11 +1575,23 @@ function ensurePhotoLoaded(driveFileId) {
       // Everything else has already been patched in place or does not need the
       // image at all.
       if (!patched && state.lightbox) debouncedRender();
+      // Evicted last, and told to spare this photo. Both matter: the <img>
+      // above now holds the src, and protecting it explicitly means the order
+      // of these two steps can never resurrect the bug.
+      evictPhotoCache(driveFileId);
     })
     .catch(() => {
       state.photoFetchInFlight.delete(driveFileId);
-      // Fails silently in the UI (placeholder icon just stays) — a toast
-      // per-thumbnail would be noisy if Drive is briefly unreachable.
+      // Still silent in the UI — a toast per thumbnail would be noise if Drive
+      // blinks. But observeLazyPhotos() unobserves BEFORE fetching, so without
+      // this a single transient failure left the tile blank permanently: no
+      // observer, no retry, nothing to trigger one. Handing it back means it
+      // tries again the next time it nears the viewport (v2.17.1).
+      document.querySelectorAll("img[data-drive-id]").forEach((el) => {
+        if (el.dataset.driveId === driveFileId && !el.getAttribute("src") && photoObserver) {
+          photoObserver.observe(el);
+        }
+      });
     });
 }
 

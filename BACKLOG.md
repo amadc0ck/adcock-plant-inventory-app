@@ -698,6 +698,56 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.17.1 — the broken thumbnails deep in the archive galleries
+
+Reported with a screenshot: scroll far enough into a history gallery and every
+tile from that point on is a broken image. The console showed the answer —
+`GET blob:https://garden.justamanda.net/... net::ERR_FILE_NOT_FOUND`, over and
+over. **Blob URLs, not Drive.** Nothing to do with GWS-1, the migration, Drive
+quotas or missing files, which is where I would have looked first without it.
+
+`ensurePhotoLoaded()` cached the blob, queued it, called `evictPhotoCache()` and
+**only then** patched the `<img>`. So at eviction time the photo that had just
+arrived still had no `src`, and `idsOnScreen()` — which counts any `<img>`
+holding a src — did not count it. Past roughly 600 photos in the DOM (one long
+gallery) every older entry is live, so the newest arrival is the only thing
+eviction is allowed to drop. It was revoked the instant it arrived, and the dead
+`blob:` URL was then painted into the tile.
+
+That is why it started at a depth rather than at the top, and why it never
+recovered.
+
+Three changes:
+- `evictPhotoCache(protectId)` never evicts the photo that just arrived.
+- It is called **after** the DOM patch, not before, so the new tile is live
+  anyway. Belt and braces: either alone fixes it, and the ordering can no
+  longer resurrect it.
+- `releaseRenderedPhoto()` — when a blob genuinely is revoked, any `<img>` still
+  pointing at it is blanked and handed back to the observer, so a dead blob can
+  never be rendered and the tile reloads when it next nears the viewport.
+
+**Also fixed, found while reading: a failed photo fetch was never retried.**
+`observeLazyPhotos()` unobserves the element *before* the fetch, and the catch
+only cleared the in-flight flag — so one transient failure left a tile blank
+permanently, with nothing watching it and nothing able to trigger a retry. It is
+now re-observed on failure. Still silent in the UI; a toast per thumbnail would
+be noise if Drive blinks.
+
+Seven assertions against the functions extracted from `index.html`: the exact
+screenshot scenario, that eviction still frees memory once tiles leave the DOM,
+that the cache stays at its limit, that no revoked id is left in the cache, and
+that a dead blob is never left in a rendered `<img>`.
+
+**Known tradeoff, unchanged from before:** while a gallery holds more than
+`PHOTO_CACHE_LIMIT` (600) painted tiles, nothing is evictable and the cache
+grows past the limit. That was already the stated intent — *"holding a few extra
+blobs is better than blanking the page"* — the old code simply did the opposite.
+The real ceiling is that `idsOnScreen()` means "in the DOM", not "on screen";
+making it mean the viewport would let eviction reclaim scrolled-past tiles.
+Deferred: it needs `getBoundingClientRect()` per image on every arrival, which
+is its own performance problem at 2,700 photos.
+
+
 ### v2.17.0 — PHOTO-5 and PHOTO-6, filing photos from the Gallery
 
 Both reported from a real session: attaching photos to plants one at a time,

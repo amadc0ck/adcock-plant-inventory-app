@@ -698,6 +698,48 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.17.0 — PHOTO-5 and PHOTO-6, filing photos from the Gallery
+
+Both reported from a real session: attaching photos to plants one at a time,
+and losing your place after every single one.
+
+**PHOTO-5 — the Gallery jumped to the top after every attach.** The
+scroll-restore machinery was already there and already correct; the key it
+consulted was too coarse. `currentViewKey()` included the modal type, so opening
+the attach picker counted as navigating to a new screen, and closing it counted
+as navigating again — two trips to `window.scrollTo(0, 0)` per photo filed.
+
+Split into two keys. `pageViewKey()` is tab plus record and deliberately
+excludes the modal, because a modal is an overlay on the page behind it, not a
+different screen. Page scroll restores whenever the page key is unchanged; modal
+scroll still keys on the full view key, so a freshly opened modal starts at its
+own top. Real navigation (`openPlant`, `openTaxon`, `openLocation`) all change
+`state.tab`, so they still scroll to top — verified.
+
+`captureScroll()` now also snapshots the Gallery's horizontal `.gal-scroll`
+rows, which died with the DOM the same way the page did. Captured by position,
+since render() rebuilds the rows rather than moving them.
+
+**PHOTO-6 — recently used plants, five of them.** Mirrors LOC-9 exactly, which
+solved the identical problem for locations: `abg_recent_plants` in localStorage,
+`recentPlantIds()` / `notePlantUse()`, ids validated on read so a deleted
+specimen cannot render as a dead button. Recorded wherever a photo is actually
+attached — `assignPhotosToPlant` and `attachInboxPhotoToPlant`.
+
+It lives in the shared `plantPicker()`, so it appears everywhere a plant is
+picked, not only the Gallery. It ignores the search and filters above it —
+skipping the search box is the entire point — and hides itself the moment
+either is in use, because a row quietly disobeying the filter above it reads as
+a bug. `locationPicker` hides its recents on the same reasoning.
+
+**No schema change.** Both are client-side only.
+
+Eleven assertions covering both, driven against the functions extracted from
+`index.html` rather than a copy: the five scroll decisions (open modal, re-render
+modal, close modal, and two real navigations) and six recents cases (ordering,
+de-duplication, the five cap, deleted specimens, null input).
+
+
 ### v2.16.1 — Settings no longer promises a weekly reconnect
 
 The Drive panel said *"Access expires roughly every 7 days while this app is in

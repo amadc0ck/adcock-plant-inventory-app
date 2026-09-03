@@ -764,8 +764,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.16.3";
-const APP_UPDATED = "2026-08-31";
+const APP_VERSION = "2.17.0";
+const APP_UPDATED = "2026-09-03";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -1720,6 +1720,39 @@ function plantPicker(onPick, opts) {
       <span class="subtle" style="font-size:11.5px;">${countLabel(matches.length, "plant", "plants")}</span>
     </div>
     ${(() => {
+      // PHOTO-6. Sits above the list and ignores the filters, because skipping
+      // the search entirely is the whole point of it. Hidden the moment she
+      // starts searching or filtering: at that point she is hunting one
+      // specific plant, and a row that quietly disobeys the filter above it
+      // reads as a bug. Same reason locationPicker hides its recents once you
+      // drill into a parent.
+      if (state.pickerSearch || state.pickerTaxon || state.pickerLocation) return "";
+      const recents = recentPlantIds()
+        .filter((id) => !o.excludeIds || !o.excludeIds.includes(id))
+        .map((id) => state.plants.find((p) => p.id === id))
+        .filter(Boolean);
+      if (!recents.length) return "";
+      return `
+      <div class="subtle" style="font-size:11px;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">Recently used</div>
+      <div class="stack" style="margin-bottom:14px;">
+        ${recents.map((pl) => {
+          const nm = plantPickerName(pl);
+          const cover = plantCoverPhoto(pl);
+          return `
+          <button class="tag-card plant-list-card" style="width:100%;padding:7px 11px;border:none;text-align:left;cursor:pointer;"
+                  onclick="${onPick.replace("{id}", pl.id)}">
+            <div class="plant-list-thumb" style="width:38px;height:38px;">
+              ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">${escapeHtml(nm.primary)}</div>
+              <div class="mono" style="font-size:10.5px;color:var(--moss-dim);margin-top:1px;">${pl.accession_number}</div>
+            </div>
+          </button>`;
+        }).join("")}
+      </div>`;
+    })()}
+    ${(() => {
       // A reference shot of the filtered species. Choosing "Aeonium arboreum"
       // from a dropdown of 33 botanical names is a guess until you can see one
       // — and picking the wrong species then creating a specimen under it is
@@ -1945,6 +1978,29 @@ function noteRecentLocation(id) {
   try {
     const next = [id, ...recentLocationIds().filter((x) => x !== id)].slice(0, RECENT_LOCATIONS_MAX);
     localStorage.setItem(RECENT_LOCATIONS_KEY, JSON.stringify(next));
+  } catch (e) {}
+}
+
+// PHOTO-6. The same shortcut LOC-9 gave locations, for plants — and for the
+// same reason. Attaching a photo means finding one specimen among 230, but a
+// photo session is a handful of plants shot repeatedly, so the one you want
+// next is usually the one you just used. Five, because she asked for five.
+//
+// Ids are validated on read: a specimen deleted since it was last used must
+// not render as a dead button.
+const RECENT_PLANTS_KEY = "abg_recent_plants";
+const RECENT_PLANTS_MAX = 5;
+function recentPlantIds() {
+  try {
+    const ids = JSON.parse(localStorage.getItem(RECENT_PLANTS_KEY) || "[]");
+    return Array.isArray(ids) ? ids.filter((id) => state.plants.some((p) => p.id === id)) : [];
+  } catch (e) { return []; }
+}
+function notePlantUse(id) {
+  if (!id) return;
+  try {
+    const next = [id, ...recentPlantIds().filter((x) => x !== id)].slice(0, RECENT_PLANTS_MAX);
+    localStorage.setItem(RECENT_PLANTS_KEY, JSON.stringify(next));
   } catch (e) {}
 }
 
@@ -9896,6 +9952,7 @@ async function assignPhotosToPlant(plantId) {
   const plant = state.plants.find((p) => p.id === plantId);
   try {
     await restPatch("photos", `id=in.(${ids.join(",")})`, { plant_id: plantId });
+    notePlantUse(plantId);
     toast(`${countLabel(ids.length, "photo", "photos")} attached to ${plant ? plant.accession_number : "plant"}`);
     state.assignSelected = new Set();
     await loadAll();
@@ -9912,6 +9969,7 @@ async function attachInboxPhotoToPlant(photoId, plantId) {
     // it was taken, so it must not follow the plant when the plant later moves.
     if (!photo.location_id && plant.location_id) body.location_id = plant.location_id;
     await restPatch("photos", `id=eq.${photoId}`, body);
+    notePlantUse(plantId);
     toast("Photo attached");
     await loadAll();
   } catch (e) { toast(e.message, true); }
@@ -10733,27 +10791,51 @@ function configGate() {
 // view as the last one: same tab, same record, same modal. A view key captures
 // that; anything else is treated as navigation.
 let lastRenderKey = "";
+let lastPageKey = "";
 
-function currentViewKey() {
+// PHOTO-5. Two keys, not one. The PAGE key deliberately excludes the modal: a
+// modal is an overlay on the page behind it, not a different screen, so opening
+// or closing one must not move the page. Keying page scroll on the full view key
+// meant attaching a photo from the Gallery threw you to the top twice — once
+// when the picker opened, once when it closed — which made filing a batch of
+// photos a scroll hunt after every single one.
+function pageViewKey() {
   return [
     state.tab,
     state.currentPlantId,
     state.currentLocationId,
     state.currentTaxonId,
     state.reportView,
-    state.modal ? state.modal.type : "",
   ].join("|");
+}
+
+function currentViewKey() {
+  return [pageViewKey(), state.modal ? state.modal.type : ""].join("|");
 }
 
 function captureScroll() {
   const modal = document.querySelector(".modal");
-  return { page: window.scrollY || 0, modal: modal ? modal.scrollTop : 0 };
+  // The Gallery's rows scroll sideways, and they die with the DOM exactly the
+  // way the page does. Captured by position because render() rebuilds the rows
+  // rather than moving them, so there is no node identity to key on.
+  const rows = [...document.querySelectorAll(".gal-scroll")].map((el) => el.scrollLeft);
+  return { page: window.scrollY || 0, modal: modal ? modal.scrollTop : 0, rows };
 }
 
-function restoreScroll(snap) {
+// `what` says which layers to put back. Page scroll survives a modal opening
+// and closing; modal scroll only survives a re-render of the SAME modal, so a
+// freshly opened one still starts at its own top.
+function restoreScroll(snap, what) {
   if (!snap) return;
-  if (snap.page) window.scrollTo(0, snap.page);
-  if (snap.modal) {
+  const w = what || { page: true, modal: true };
+  if (w.page) {
+    if (snap.page) window.scrollTo(0, snap.page);
+    if (snap.rows && snap.rows.some(Boolean)) {
+      const rows = document.querySelectorAll(".gal-scroll");
+      snap.rows.forEach((left, i) => { if (left && rows[i]) rows[i].scrollLeft = left; });
+    }
+  }
+  if (w.modal && snap.modal) {
     const modal = document.querySelector(".modal");
     if (modal) modal.scrollTop = snap.modal;
   }
@@ -10797,6 +10879,7 @@ function render() {
   const focusSnapshot = captureFocus();
   const scrollSnapshot = captureScroll();
   const sameView = currentViewKey() === lastRenderKey;
+  const samePage = pageViewKey() === lastPageKey;
 
   if (state.configKey === "REPLACE_WITH_YOUR_PUBLISHABLE_KEY" || !state.configKey) {
     app.innerHTML = configGate();
@@ -10865,9 +10948,10 @@ function render() {
   // when it changed — so arriving somewhere new kept the previous page's Y
   // offset. Scrolled far down the Plants list, opening a species landed you at
   // the bottom of a shorter page with the header off screen.
-  if (sameView) restoreScroll(scrollSnapshot);
+  if (samePage) restoreScroll(scrollSnapshot, { page: true, modal: sameView });
   else window.scrollTo(0, 0);
   lastRenderKey = currentViewKey();
+  lastPageKey = pageViewKey();
   observeLazyPhotos();
 }
 

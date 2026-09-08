@@ -541,6 +541,46 @@ Contrast with the paths that DO dedupe and were never affected:
 `plantPhotosOrdered()` and `plantsAssignedToPhoto()`. The rule is the same one
 REFERENCE §6 states for counting; these three are the display side of it.
 
+### LIGHT-1 — 65 species were asked before `light_conditions` was a question — `ready`
+
+**Diagnosed 2026-09-08, and it is not a bug.** After v2.20.0 the tile reads 76,
+and `light_conditions` is what most of the remainder is waiting on. Measured:
+
+| Verdict | Taxa |
+| --- | --- |
+| asked BEFORE `light_conditions` existed in the prompt | **65** |
+| never asked at all | 1 |
+| light was suggested (any status) | **0** |
+
+`light_conditions` entered `suggest-species`'s `FIELDS` in **e23496e,
+2026-08-29 12:59:35 -0700** (AI-4). `description`, `frost_tender` and the rest
+were there from the first version, **2026-08-26**. So there is a three-day window
+in which Ask Claude was in real use and simply never asked about light. Those
+species were not skipped; the question did not exist yet.
+
+**The fix is re-running Ask Claude on them.** No code change.
+
+**But do ONE first and confirm the value lands.** Zero of the 66 have ever had a
+light suggestion of any status, which means **the AI-4 array branch in
+`acceptSuggestion` has never been exercised on a real accept.** BACKLOG has
+listed it as shipped-but-unverified since 2026-08-29 and this proves it still
+is. It is not broken — there is no evidence either way. One call answers it;
+sixty-five is an expensive way to find out.
+
+**Two costs, both new:**
+- **The merged button is two calls per species** (name pass + blanks pass), so
+  this batch is ~130 calls, not 65. First time v2.20.0's merge has a real price.
+- **CACHE-1 is unfixed and this is exactly where it bites** — ~15,000 tokens of
+  catalogue per call, ~$0.003 on a hit vs ~$0.030 on a miss. Roughly $4 instead
+  of $0.40. Worth doing CACHE-1 first if the batch grows.
+
+**There is no bulk "ask about all incomplete species" action** — it is 65 taps
+through the filtered list. The photo sweep's sequential-with-progress pattern is
+the thing to copy if one is wanted.
+
+**Once these are filled the tile should reach roughly 23**, which is genuine
+remaining research across the other fields.
+
 ### MERGE-1 — `mergePlants()` silently destroys watering and bloom history — `ready`
 
 **This is the most serious thing in the 2026-09-08 triage and it is already

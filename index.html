@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.20.0";
+const APP_VERSION = "2.21.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4890,6 +4890,26 @@ function screenTaxa() {
             </select>
           </div>
           <p class="subtle" style="margin:8px 0 0;font-size:12px;">Counts the same fields Claude is asked to fill, so the number can actually reach zero. Common name and cultivar are not counted &mdash; Claude is not asked for those.</p>
+          ${/* LIGHT-1. The one batch worth offering, because it is the one case
+               where the answer is known good and the work is pure repetition:
+               light_conditions entered the prompt three days after Ask Claude
+               went live, so ~65 records were never asked about it. They are one
+               field from done and the field is one Claude answers well. */""}
+          ${(() => {
+            const oneAway = taxaMissingOnlyLight().length;
+            const waiting = pendingLightSuggestions().length;
+            if (!oneAway && !waiting) return "";
+            return `
+            <div class="wrap-gap" style="margin-top:10px;gap:8px;">
+              ${oneAway ? `<button class="btn btn-accent btn-sm" onclick="runTaxaLightBatch()">
+                Ask Claude for light on ${oneAway} ${oneAway === 1 ? "species" : "species"}</button>` : ""}
+              ${waiting ? `<button class="btn btn-secondary btn-sm" onclick="acceptAllLightSuggestions()">
+                Accept ${waiting} light ${waiting === 1 ? "answer" : "answers"}</button>` : ""}
+            </div>
+            <p class="subtle" style="margin:6px 0 0;font-size:11.5px;">${oneAway
+              ? `${oneAway === 1 ? "One species is" : `These ${oneAway} are`} a single light value from complete. One call each, nothing written until you accept.`
+              : `Claude has answered — review them on each species, or accept them all at once.`}</p>`;
+          })()}
         </div>`;
       })() : ""}
       ${state.taxaOnlySuggestions ? `
@@ -8995,12 +9015,15 @@ async function askClaudeAboutPhoto(photoId, opts) {
 
 async function askClaudeAboutSpecies(taxaId, opts) {
   const focus = (opts && opts.focus) || "all";
+  // LIGHT-1. Quiet mode is what the batch drives: no per-record spinner, no
+  // toast per species, and it RETURNS the error instead of showing it, so the
+  // caller can stop a run that is failing the same way every time.
+  const quiet = !!(opts && opts.quiet);
   // "both" runs the name pass and the blanks pass and merges them. Sequential,
   // not parallel: two concurrent calls is how you meet a rate limit, and the
   // same reasoning already governs the photo sweep.
   const passes = focus === "both" ? ["name", "all"] : [focus];
-  state.suggestingTaxaId = taxaId;
-  render();
+  if (!quiet) { state.suggestingTaxaId = taxaId; render(); }
   try {
     // Collected first, merged after. Clearing up front would drop the pending
     // suggestions she already had if the second call failed.
@@ -9019,16 +9042,83 @@ async function askClaudeAboutSpecies(taxaId, opts) {
     }
     state.suggestions = state.suggestions.filter((x) => x.taxa_id !== taxaId);
     collected.forEach((row) => state.suggestions.unshift(row));
-    const replaces = collected.filter(suggestionReplacesValue).length;
-    toast(collected.length
-      ? `Claude suggests ${countLabel(collected.length, "value", "values")}${replaces ? ` — ${replaces} would change what you entered` : ""} — review below`
-      : (note || "Nothing to suggest"), !collected.length);
+    if (!quiet) {
+      const replaces = collected.filter(suggestionReplacesValue).length;
+      toast(collected.length
+        ? `Claude suggests ${countLabel(collected.length, "value", "values")}${replaces ? ` — ${replaces} would change what you entered` : ""} — review below`
+        : (note || "Nothing to suggest"), !collected.length);
+    }
+    return null;
   } catch (e) {
-    toast(e.message, true);
+    if (!quiet) toast(e.message, true);
+    return e.message || "Failed";
   } finally {
-    state.suggestingTaxaId = null;
+    if (!quiet) { state.suggestingTaxaId = null; render(); }
+  }
+}
+
+/* LIGHT-1. The 65 species missing light were not skipped — `light_conditions`
+   only entered suggest-species's FIELDS on 2026-08-29, three days after Ask
+   Claude went live, so anything asked before then was never asked about light.
+   Re-asking fills it; Amanda confirmed 2026-09-08, which also finally verified
+   the AI-4 array branch in acceptSuggestion against real data.
+
+   Deliberately STRICT: light and nothing else. A record with other gaps too
+   would have them filled in the same call for the same price, which is the
+   better trade on cost — but this batch is unattended across dozens of records,
+   and Amanda chose to keep it to the one field whose answer is already known to
+   be good rather than let a sweep quietly reshape records she has curated. */
+function taxaMissingOnlyLight() {
+  return state.taxa.filter((t) => {
+    const gaps = taxonProfileGaps(t);
+    return gaps.length === 1 && gaps[0] === "light_conditions";
+  });
+}
+
+async function runTaxaLightBatch() {
+  const ids = taxaMissingOnlyLight().map((t) => t.id);
+  if (!ids.length) { toast("Nothing is one light value from done", true); return; }
+  if (!confirm(`Ask Claude for the light conditions of ${ids.length} species?\n\n`
+    + `One call each. Nothing is written — every answer arrives as a suggestion to accept or dismiss.`)) return;
+  state.suggestBatch = { done: 0, total: ids.length, failed: 0 };
+  render();
+  let firstError = null;
+  for (const id of ids) {
+    // Blanks pass only, never the name pass: that one can overwrite a field she
+    // filled, which is not something to run unattended across sixty records.
+    // It also halves the cost, since the merged button makes two calls.
+    const err = await askClaudeAboutSpecies(id, { quiet: true, focus: "all" });
+    state.suggestBatch.done += 1;
+    if (err) {
+      state.suggestBatch.failed += 1;
+      if (!firstError) firstError = err;
+      // Same rule as the photo sweep: everything failing identically means the
+      // cause is the setup, not the records. Stop rather than bill for it.
+      if (state.suggestBatch.failed >= 3 && state.suggestBatch.done === state.suggestBatch.failed) break;
+    }
     render();
   }
+  const { done, failed } = state.suggestBatch;
+  state.suggestBatch = null;
+  if (failed) toast(`${failed} of ${done} failed — ${firstError}`, true);
+  else toast(`Asked about ${countLabel(done, "species", "species")} — accept the answers below`);
+  await loadAll();
+}
+
+// Every pending light suggestion, across all species. The batch produces one
+// per record and reviewing them one record at a time is the tapping the batch
+// was supposed to remove.
+function pendingLightSuggestions() {
+  return state.suggestions.filter((x) => x.kind === "species_field" && x.field === "light_conditions" && x.taxa_id);
+}
+
+async function acceptAllLightSuggestions() {
+  const rows = pendingLightSuggestions();
+  if (!rows.length) { toast("No light suggestions waiting", true); return; }
+  if (!confirm(`Accept the light conditions Claude proposed for ${countLabel(rows.length, "species", "species")}?`)) return;
+  for (const r of rows) await acceptSuggestion(r.id, { deferReload: true });
+  await loadAll();
+  toast(`Accepted light for ${countLabel(rows.length, "species", "species")}`);
 }
 
 /* The name pass can propose a value for a field she has already filled — that
@@ -9105,7 +9195,12 @@ async function dismissSuggestion(id) {
 // Accepting writes the record AND marks the suggestion, in that order: if the
 // write fails the suggestion stays pending rather than vanishing having done
 // nothing.
-async function acceptSuggestion(id) {
+async function acceptSuggestion(id, opts) {
+  // `deferReload` is for the accept-all loops. loadAll() refetches eighteen
+  // tables; doing that once per suggestion is fine for the two or three on a
+  // record and is sixty-five full reloads on the LIGHT-1 batch. The callers
+  // that pass it reload once at the end instead.
+  const deferReload = !!(opts && opts.deferReload);
   const sg = state.suggestions.find((x) => x.id === id);
   if (!sg) return;
   try {
@@ -9166,7 +9261,7 @@ async function acceptSuggestion(id) {
     }
     await restPatch("suggestions", `id=eq.${id}`, { status: "accepted" });
     state.suggestions = state.suggestions.filter((x) => x.id !== id);
-    await loadAll();
+    if (!deferReload) await loadAll();
   } catch (e) { toast(e.message, true); }
 }
 
@@ -9176,7 +9271,8 @@ async function acceptAllSpeciesSuggestions(taxaId) {
   const replaces = rows.filter(suggestionReplacesValue).length;
   if (!confirm(`Accept all ${rows.length} suggested values for this species?`
     + (replaces ? `\n\n${replaces} of them would REPLACE a value you entered.` : ""))) return;
-  for (const r of rows) await acceptSuggestion(r.id);
+  for (const r of rows) await acceptSuggestion(r.id, { deferReload: true });
+  await loadAll();
 }
 
 // Retired in v1.80.0. Species guessing belongs to Pl@ntNet — cheaper, purpose

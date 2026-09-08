@@ -525,6 +525,14 @@ PostgREST — not a 403.
 - **The join is inner and filters `status = 'active'`**, so a species she no
   longer grows leaves the inventory on its own. It is an inventory, not an
   archive.
+- **A field added to `suggest-species` later is invisible in the data as a
+  *gap*, not as an error (LIGHT-1, v2.21.0).** `light_conditions` joined `FIELDS`
+  on 2026-08-29, three days after the function went live, and every taxon asked
+  before that simply never received a light suggestion — 65 of them. It read as
+  "Claude does not fill this field" and was really "Claude was never asked."
+  **When a field is added to the prompt, the records already asked are stale and
+  nothing says so.** Re-ask them, or the gap looks like a defect forever.
+
 - **`origin` was removed from this view and from the schema (ORIG-1, v2.20.0).**
   It was published as `nullif(t.origin,'unknown')` because the column defaulted
   to `unknown` and would otherwise have rendered "Unknown" as a recorded fact —

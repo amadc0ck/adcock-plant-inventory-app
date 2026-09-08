@@ -541,46 +541,6 @@ Contrast with the paths that DO dedupe and were never affected:
 `plantPhotosOrdered()` and `plantsAssignedToPhoto()`. The rule is the same one
 REFERENCE §6 states for counting; these three are the display side of it.
 
-### LIGHT-1 — 65 species were asked before `light_conditions` was a question — `ready`
-
-**Diagnosed 2026-09-08, and it is not a bug.** After v2.20.0 the tile reads 76,
-and `light_conditions` is what most of the remainder is waiting on. Measured:
-
-| Verdict | Taxa |
-| --- | --- |
-| asked BEFORE `light_conditions` existed in the prompt | **65** |
-| never asked at all | 1 |
-| light was suggested (any status) | **0** |
-
-`light_conditions` entered `suggest-species`'s `FIELDS` in **e23496e,
-2026-08-29 12:59:35 -0700** (AI-4). `description`, `frost_tender` and the rest
-were there from the first version, **2026-08-26**. So there is a three-day window
-in which Ask Claude was in real use and simply never asked about light. Those
-species were not skipped; the question did not exist yet.
-
-**The fix is re-running Ask Claude on them.** No code change.
-
-**But do ONE first and confirm the value lands.** Zero of the 66 have ever had a
-light suggestion of any status, which means **the AI-4 array branch in
-`acceptSuggestion` has never been exercised on a real accept.** BACKLOG has
-listed it as shipped-but-unverified since 2026-08-29 and this proves it still
-is. It is not broken — there is no evidence either way. One call answers it;
-sixty-five is an expensive way to find out.
-
-**Two costs, both new:**
-- **The merged button is two calls per species** (name pass + blanks pass), so
-  this batch is ~130 calls, not 65. First time v2.20.0's merge has a real price.
-- **CACHE-1 is unfixed and this is exactly where it bites** — ~15,000 tokens of
-  catalogue per call, ~$0.003 on a hit vs ~$0.030 on a miss. Roughly $4 instead
-  of $0.40. Worth doing CACHE-1 first if the batch grows.
-
-**There is no bulk "ask about all incomplete species" action** — it is 65 taps
-through the filtered list. The photo sweep's sequential-with-progress pattern is
-the thing to copy if one is wanted.
-
-**Once these are filled the tile should reach roughly 23**, which is genuine
-remaining research across the other fields.
-
 ### MERGE-1 — `mergePlants()` silently destroys watering and bloom history — `ready`
 
 **This is the most serious thing in the 2026-09-08 triage and it is already
@@ -1052,6 +1012,50 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.21.0 — LIGHT-1, the light-conditions batch
+
+The 65 species missing `light_conditions` were never skipped. The field only
+entered `suggest-species`'s `FIELDS` in **e23496e, 2026-08-29 12:59:35 -0700**;
+`description`, `frost_tender` and the rest were there from the first version on
+**2026-08-26**. Three days in which Ask Claude was in real use and simply never
+asked about light. Measured: **65 of the 66 blanks were asked before the field
+existed**, 1 never asked, and **0 had ever had a light suggestion of any status.**
+
+**AI-4's array branch is now VERIFIED.** Amanda re-ran Ask Claude and light
+filled in correctly. It had been listed as shipped-but-unverified since
+2026-08-29, and that zero above is why: no accept had ever exercised it. She also
+made the corroborating point independently — every record that dropped off the
+list when `origin` went must already have had light filled.
+
+**What shipped:**
+
+- **"Ask Claude for light on N species"** on the Species-profiles-unfinished
+  banner. `taxaMissingOnlyLight()` selects taxa whose ONLY gap is
+  `light_conditions`; sequential, progress via the existing `state.suggestBatch`,
+  and the photo sweep's stop-after-three-identical-failures rule so a broken
+  setup cannot bill for sixty calls.
+- **Blanks pass only, never the name pass.** The name pass can overwrite a field
+  she filled, which is not something to run unattended across dozens of records.
+  It also halves the cost, since v2.20.0's merged button makes two calls.
+- **"Accept N light answers"** — one action for every pending
+  `light_conditions` suggestion across all species. The batch produces one per
+  record, and reviewing them one record at a time is the tapping the batch
+  existed to remove.
+- **`askClaudeAboutSpecies` gained a `quiet` mode** that returns the error
+  instead of toasting it, matching `askClaudeAboutPhoto`.
+
+**Deliberately STRICT — light and nothing else.** A record missing light *and*
+other fields would have them all filled in the same call for the same price,
+which is the better trade on cost. Amanda chose the narrow version anyway: an
+unattended sweep across dozens of records should not quietly reshape records she
+has curated. **Cost is not the only axis; predictability is one too.**
+
+**`acceptSuggestion(id, {deferReload:true})`.** It called `loadAll()` — eighteen
+tables — after every single accept. Fine for the two or three on one record,
+**sixty-five full reloads** on this batch. Both accept-all loops now defer and
+reload once at the end. The per-taxon `acceptAllSpeciesSuggestions` had the same
+latent cost and was fixed with it.
 
 ### v2.20.0 — origin removed everywhere, the profile count made completable, one Claude button
 

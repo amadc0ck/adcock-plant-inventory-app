@@ -918,9 +918,21 @@ native like a *Dudleya* is now called native.
 
 ### GWS-1 cleanup, outstanding
 
-- **Remove `http://localhost:8910/callback`** from both OAuth clients — the old
-  `Adcock Plant Inventory - Web Client` and the new `Adcock Botanical Garden App`.
-  It was only ever for the migration script. Leave the Supabase redirect alone.
+- ~~**Remove `http://localhost:8910/callback`** from both OAuth clients.~~
+  **CLOSED 2026-09-08 — not present on the new client.** Amanda checked
+  `Adcock Botanical Garden App` while rotating the secret and it is not there.
+
+  It was genuinely required during the migration: `tools/migrate-drive.mjs` uses
+  it as `redirect_uri` and **Google validates the redirect before redirecting**,
+  so it had to be registered even though the paste-the-URL flow (5dd371f) runs
+  no server — the browser lands on a dead localhost page and you paste the URL
+  back.
+
+  **Not chasing the old client.** `Adcock Plant Inventory - Web Client` lives in
+  `adcock-garden-collection`, a project already slated for deletion, and seeing
+  it means switching back to `amdaoh@gmail.com`. A registered localhost redirect
+  is minor hygiene rather than a live risk — exploiting one needs code already
+  running on the machine — and it dies with the project regardless.
 - **`tools/.migration/` holds live refresh tokens** for both Google accounts.
   Git-ignored, but delete `token-old.json` and `token-new.json` once you are
   confident no rollback is needed. Keep `migration-map.jsonl` — it is the only

@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.19.0";
+const APP_VERSION = "2.20.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1162,7 +1162,7 @@ async function exportFullBackup() {
 
 function exportPlantsCsv() {
   const headers = ["accession_number", "botanical_name", "common_name", "cultivar", "family", "genus", "species",
-    "description", "plant_type", "growth_habit", "mature_size", "bloom_season", "origin",
+    "description", "plant_type", "growth_habit", "mature_size", "bloom_season",
     "identification_status", "collection_category", "original_collection", "status", "health_status",
     "location_path", "date_acquired", "acquisition_source_type", "acquisition_source_name",
     "native_range", "hardy_to", "light_requirements", "water_needs", "notes",
@@ -1179,7 +1179,7 @@ function exportPlantsCsv() {
     return [
       pl.accession_number, taxonDisplayName(t) === "Unknown" ? "" : taxonDisplayName(t),
       tv("common_name"), tv("cultivar"), tv("family"), tv("genus"), tv("species_epithet"),
-      tv("description"), tv("plant_type"), tv("growth_habit"), tv("mature_size"), tv("bloom_season"), tv("origin"),
+      tv("description"), tv("plant_type"), tv("growth_habit"), tv("mature_size"), tv("bloom_season"),
       pl.identification_status, pl.collection_category, pl.original_collection, pl.status, pl.health_status,
       loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
       tv("native_range"), tv("hardy_to"), (t && t.light_conditions || []).join("; "), tv("water_needs"), pl.notes,
@@ -2224,7 +2224,7 @@ function locationOptionList() {
 // whether or not the table exists.
 //
 // Only lists that are PURE VOCABULARY are editable. `status`, `health_status`,
-// `identification_status`, `collection_category` and `origin` are deliberately
+// `identification_status` and `collection_category` are deliberately
 // excluded: code branches on their exact values (needsAttention, the Plants
 // filter bar, locationHoldsPlants), so a renamed or removed value would break
 // logic rather than just a label. Location `type` is excluded for the same
@@ -2273,7 +2273,7 @@ const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Speci
   botanical_name: "Botanical name", common_name: "Common name", cultivar: "Cultivar",
   is_hybrid: "Hybrid", working_label: "Working label",
   plant_type: "Type", growth_habit: "Growth habit", mature_size: "Mature size", bloom_season: "Bloom season",
-  origin: "Origin", native_range: "Native range", hardy_to: "Hardy to", water_needs: "Water needs",
+  native_range: "Native range", hardy_to: "Hardy to", water_needs: "Water needs",
   frost_tender: "Frost tender" };
 // `overview` and `progress` are photos OF A PLACE, not of a plant: a wide shot
 // of the wall, or the same section re-shot over months to watch it fill in.
@@ -2606,15 +2606,33 @@ function taxonSecondaryName(t) {
    ============================================================ */
 const TAXON_PROFILE_FIELDS = [
   "family", "genus", "species_epithet", "description", "plant_type",
-  "growth_habit", "mature_size", "bloom_season", "origin", "native_range",
+  "growth_habit", "mature_size", "bloom_season", "native_range",
   "hardy_to", "water_needs", "frost_tender", "light_conditions",
-  "parentage", "is_hybrid",
+  "is_hybrid",
 ];
-// Present, but says nothing. `origin` defaults to "unknown" on every taxon.
-const TAXON_SENTINELS = { origin: ["unknown"], bloom_season: ["not_observed"] };
-// Only worth asking on a cross. 132 of 133 taxa have no parentage and for most
-// that is correct — a straight species has no cross to record.
-const TAXON_HYBRID_ONLY = ["parentage", "is_hybrid"];
+const TAXON_SENTINELS = { bloom_season: ["not_observed"] };
+const TAXON_HYBRID_ONLY = ["is_hybrid"];
+/* PROF-3, measured 2026-09-08 across 143 taxa. The tile read 135 of 143
+   unfinished, and 55 of those were records already FINISHED that could not say
+   so — three of the counted fields were being counted where they cannot apply.
+   That is the NAME-4 / TODO-2 uncompletable-count fault a third time.
+
+   - `origin` is gone from the schema entirely (ORIG-1).
+   - `parentage` was blank on 35 of 43 hybrids. Most succulent genera have no
+     cultivar registration authority (AI-4), so frequently there is no pedigree
+     that exists to be recorded. Asking forever for a fact that does not exist
+     is what makes a count stop being read.
+   - `species_epithet` had 26 blanks and ALL 26 were correct — 20 cultivars,
+     which have no epithet by definition, five bare-genus placeholders, and one
+     record needing a working label. Hence TAXON_CULTIVAR_EXEMPT below.
+
+   The five bare-genus placeholders (Agave, Echeveria, Graptopetalum,
+   Haworthiopsis, Opuntia) are STILL COUNTED, by Amanda's decision: v2.10.1
+   blesses a bare genus as the right way to RECORD an unidentified plant, but
+   that record is still a plant not yet identified to species, and that is real
+   work. Measured either way and the number is identical — those six already
+   carry other gaps — so counting them costs nothing and says something true. */
+const TAXON_CULTIVAR_EXEMPT = ["species_epithet"];
 const TAXON_NOTHOGENERA = new Set([
   "graptoveria", "graptosedum", "pachyveria", "sedeveria", "cremneria",
   "mangave", "gasteraloe", "gastrolea", "alworthia",
@@ -2629,8 +2647,12 @@ function taxonLooksHybrid(t) {
 // Returns the field keys that are still blank, so the list can say WHICH.
 function taxonProfileGaps(t) {
   const hybridish = taxonLooksHybrid(t);
+  const hasCultivar = !!(t.cultivar && String(t.cultivar).trim());
   return TAXON_PROFILE_FIELDS.filter((f) => {
     if (TAXON_HYBRID_ONLY.includes(f) && !hybridish) return false;
+    // A cultivar has no species epithet — REFERENCE, and Kalanchoe 'Roseleaf'
+    // sat at "1 of 16 blank" on a finished record because of it.
+    if (TAXON_CULTIVAR_EXEMPT.includes(f) && hasCultivar) return false;
     const v = t[f];
     if (f === "frost_tender" || f === "is_hybrid") return v === null || v === undefined;
     if (Array.isArray(v)) return v.length === 0;
@@ -2639,7 +2661,12 @@ function taxonProfileGaps(t) {
   });
 }
 function taxonProfileFieldCount(t) {
-  return TAXON_PROFILE_FIELDS.filter((f) => !(TAXON_HYBRID_ONLY.includes(f) && !taxonLooksHybrid(t))).length;
+  const hasCultivar = !!(t.cultivar && String(t.cultivar).trim());
+  return TAXON_PROFILE_FIELDS.filter((f) => {
+    if (TAXON_HYBRID_ONLY.includes(f) && !taxonLooksHybrid(t)) return false;
+    if (TAXON_CULTIVAR_EXEMPT.includes(f) && hasCultivar) return false;
+    return true;
+  }).length;
 }
 // PROF-2. An accepted or dismissed suggestion both mean Claude has been asked;
 // only a taxon with no row at all is untouched.
@@ -3120,7 +3147,6 @@ const GROWTH_HABIT_LABELS = { columnar: "Columnar", globular: "Globular / barrel
 const BLOOM_SEASON_LABELS = { spring: "Spring", early_summer: "Early summer", summer: "Summer", late_summer: "Late summer", fall: "Fall", winter: "Winter", intermittent: "Intermittent / year-round", monocarpic: "Monocarpic — blooms once, then dies", not_observed: "Not yet observed" };
 // Native or introduced relative to the garden's own region. Distinct from
 // `native_range`, which holds where the plant is from ("Central Mexico").
-const ORIGIN_LABELS = { native: "Native", introduced: "Introduced", unknown: "Unknown" };
 
 // Seed data and fallback for ADM-1. light_conditions had no map — its values
 // lived inline in two modals — so it gets one here.
@@ -4831,7 +4857,7 @@ function screenTaxa() {
             <span class="filter-note-head">Names stored as free text only</span>
             <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaOnlyMissingParts=false;render()">Show all</button>
           </div>
-          <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">No genus, epithet or cultivar recorded, so these cannot group with their relatives and the name cannot be styled per part. Open one and use <strong>Check the name and split it up</strong>.</p>
+          <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">No genus, epithet or cultivar recorded, so these cannot group with their relatives and the name cannot be styled per part. Open one and use <strong>Ask Claude about this species</strong>.</p>
         </div>` : ""}
       ${state.taxaIncompleteOnly ? (() => {
         const all = taxaIncompleteProfiles();
@@ -4970,17 +4996,25 @@ function screenTaxonDetail() {
               <button class="action-row" onclick="openModal('editTaxon',{taxonId:'${t.id}'})">${icon("edit")}<span class="action-label">Edit species record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
               ${/* AI-2. No photograph: every field here follows from the name,
                    so a text call answers it for a tenth of the cost. */""}
-              ${/* NAME-2. A separate ask, because it is a different question:
-                   "fill the blanks" never touches what she has already typed,
-                   which is exactly why a misspelled name could not be fixed. */""}
-              <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}',{focus:'name'})">
+              ${/* Was two buttons — "Check the name and split it up" and "Ask
+                   Claude to fill the blanks". NAME-2 split them because they
+                   are different questions to CLAUDE: the blanks pass never
+                   touches a filled field, which is why it could not fix a
+                   misspelling. That is still true and the two prompts stay
+                   separate — this function's own note is that a narrow prompt
+                   is cheaper and does not divide the model's attention.
+
+                   But it is ONE question to her: "look at this species." So one
+                   button, two calls, one merged review list. No more expensive
+                   than pressing both, which is what she did anyway, and they
+                   share the cached catalogue prefix.
+
+                   The safety the two buttons used to provide — knowing whether
+                   an answer might overwrite something she typed — moves into
+                   the suggestion row, which now renders "was → now". */""}
+              <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}',{focus:'both'})">
                 ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("claude")}
-                <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Check the name and split it up"}</span>
-                <span class="action-chevron">${icon("chevronRight")}</span>
-              </button>
-              <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}')">
-                ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("claude")}
-                <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Ask Claude to fill the blanks"}</span>
+                <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Ask Claude about this species"}</span>
                 <span class="action-chevron">${icon("chevronRight")}</span>
               </button>
               <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
@@ -5006,7 +5040,6 @@ function screenTaxonDetail() {
           ${fieldRow("seedling", "Growth habit", listOptionsFor("growth_habit")[t.growth_habit] || t.growth_habit)}
           ${fieldRow("map", "Mature size", t.mature_size)}
           ${fieldRow("plant2", "Bloom season", listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season)}
-          ${fieldRow("pin", "Origin", ORIGIN_LABELS[t.origin] || t.origin)}
         </div>
         <div class="section-card">
           <h4>Care</h4>
@@ -7615,7 +7648,7 @@ function modalContent() {
           <input id="ep-newtaxon-common" placeholder="e.g. Lady Finger Cactus" />
           <div class="field-help">Split into genus, species and cultivar automatically. This specimen moves to the new species — it keeps ${escapeHtml(pl.accession_number)}, its photos and its notes, and no second plant is created.</div>
         </div>
-        <div class="field-help">Name, description, type, growth habit, bloom season, origin and care all live on the species and apply to every specimen of it.</div>
+        <div class="field-help">Name, description, type, growth habit, bloom season and care all live on the species and apply to every specimen of it.</div>
         ${pl.taxa_id ? `<button type="button" class="btn btn-secondary btn-block" style="margin-top:10px;" onclick="closeModal();openModal('editTaxon',{taxonId:'${pl.taxa_id}'})">Edit species record</button>` : ""}
 
         <div class="section-label">Collection</div>
@@ -8033,11 +8066,6 @@ function modalContent() {
           <option value="">— Not recorded —</option>
           ${Object.entries(listChoicesFor("bloom_season", t.bloom_season)).map(([k, v]) => `<option value="${k}" ${t.bloom_season === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
-        <label>Origin</label>
-        <select id="et-origin">
-          ${Object.entries(ORIGIN_LABELS).map(([k, v]) => `<option value="${k}" ${(t.origin || "unknown") === k ? "selected" : ""}>${v}</option>`).join("")}
-        </select>
-
         <div class="section-label">Care</div>
         <label>Native range</label>
         <input id="et-native" placeholder="e.g. Central Mexico" value="${escapeHtml(t.native_range || "")}" />
@@ -8837,7 +8865,14 @@ function suggestionLine(sg) {
   else if (sg.kind === "bloom") { ic = "plant2"; label = "Looks like it is in bloom — record a bloom"; }
   else if (sg.kind === "health_note") { ic = "alertTriangle"; label = sg.value_text; }
   else if (sg.kind === "health_status") { ic = "ambulance"; label = `Set health to ${HEALTH_LABELS[sg.value_text] || sg.value_text}`; }
-  else if (sg.kind === "species_field") { ic = "leaf"; label = `${FIELD_LABELS[sg.field] || sg.field}: ${sg.value_text}`; }
+  else if (sg.kind === "species_field") {
+    ic = "leaf";
+    // "was → now" only where something is actually being replaced. On a blank
+    // it would be noise, and most of these are blanks.
+    label = suggestionReplacesValue(sg)
+      ? `${FIELD_LABELS[sg.field] || sg.field}: ${escapeHtml(suggestionCurrentValue(sg))} &rarr; ${sg.value_text}`
+      : `${FIELD_LABELS[sg.field] || sg.field}: ${sg.value_text}`;
+  }
   const stale = (sg.kind === "plant_tag" && !pl) || (sg.kind === "location_tag" && !loc) || (sg.kind === "new_specimen" && !tx);
   return `
     <div class="suggestion-row" style="margin-top:6px;">
@@ -8960,27 +8995,65 @@ async function askClaudeAboutPhoto(photoId, opts) {
 
 async function askClaudeAboutSpecies(taxaId, opts) {
   const focus = (opts && opts.focus) || "all";
+  // "both" runs the name pass and the blanks pass and merges them. Sequential,
+  // not parallel: two concurrent calls is how you meet a rate limit, and the
+  // same reasoning already governs the photo sweep.
+  const passes = focus === "both" ? ["name", "all"] : [focus];
   state.suggestingTaxaId = taxaId;
   render();
   try {
-    const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-species`, () => ({
-      method: "POST",
-      headers: apiHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ taxa_id: taxaId, focus }),
-    }));
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
+    // Collected first, merged after. Clearing up front would drop the pending
+    // suggestions she already had if the second call failed.
+    const collected = [];
+    let note = "";
+    for (const f of passes) {
+      const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/suggest-species`, () => ({
+        method: "POST",
+        headers: apiHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ taxa_id: taxaId, focus: f }),
+      }));
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      (data.suggestions || []).forEach((row) => collected.push(row));
+      if (data.note) note = data.note;
+    }
     state.suggestions = state.suggestions.filter((x) => x.taxa_id !== taxaId);
-    (data.suggestions || []).forEach((row) => state.suggestions.unshift(row));
-    toast(data.suggestions && data.suggestions.length
-      ? `Claude filled in ${countLabel(data.suggestions.length, "field", "fields")} — review below`
-      : (data.note || "Nothing to suggest"), !(data.suggestions || []).length);
+    collected.forEach((row) => state.suggestions.unshift(row));
+    const replaces = collected.filter(suggestionReplacesValue).length;
+    toast(collected.length
+      ? `Claude suggests ${countLabel(collected.length, "value", "values")}${replaces ? ` — ${replaces} would change what you entered` : ""} — review below`
+      : (note || "Nothing to suggest"), !collected.length);
   } catch (e) {
     toast(e.message, true);
   } finally {
     state.suggestingTaxaId = null;
     render();
   }
+}
+
+/* The name pass can propose a value for a field she has already filled — that
+   is its entire purpose, and it is the one thing the blanks pass promises never
+   to do. While they were two buttons, the button she pressed told her which she
+   was looking at. Merged, nothing did: a suggestion rendered as "Genus:
+   Echeveria" whether it filled a blank or overwrote "Echevaria", and Accept all
+   took it either way. This is the signal that had to come with the merge. */
+function suggestionReplacesValue(sg) {
+  if (!sg || sg.kind !== "species_field" || !sg.taxa_id || !sg.field) return false;
+  const t = taxonById(sg.taxa_id);
+  if (!t) return false;
+  const cur = t[sg.field];
+  if (cur === null || cur === undefined) return false;
+  if (Array.isArray(cur)) return cur.length > 0 && String(cur) !== String(sg.value_text || "");
+  const c = String(cur).trim();
+  if (!c) return false;
+  if ((TAXON_SENTINELS[sg.field] || []).includes(c.toLowerCase())) return false;
+  return c !== String(sg.value_text || "").trim();
+}
+function suggestionCurrentValue(sg) {
+  const t = sg.taxa_id ? taxonById(sg.taxa_id) : null;
+  if (!t) return "";
+  const cur = t[sg.field];
+  return Array.isArray(cur) ? cur.join(", ") : (cur === null || cur === undefined ? "" : String(cur));
 }
 
 // Batch, on a selection she made — never automatic on upload. At 1,605 unfiled
@@ -9100,7 +9173,9 @@ async function acceptSuggestion(id) {
 async function acceptAllSpeciesSuggestions(taxaId) {
   const rows = suggestionsForTaxon(taxaId);
   if (!rows.length) return;
-  if (!confirm(`Accept all ${rows.length} suggested values for this species?`)) return;
+  const replaces = rows.filter(suggestionReplacesValue).length;
+  if (!confirm(`Accept all ${rows.length} suggested values for this species?`
+    + (replaces ? `\n\n${replaces} of them would REPLACE a value you entered.` : ""))) return;
   for (const r of rows) await acceptSuggestion(r.id);
 }
 
@@ -11484,7 +11559,6 @@ function wireModalForms() {
           growth_habit: document.getElementById("et-growthhabit").value || null,
           mature_size: document.getElementById("et-maturesize").value || null,
           bloom_season: document.getElementById("et-bloomseason").value || null,
-          origin: document.getElementById("et-origin").value || "unknown",
           native_range: document.getElementById("et-native").value || null,
           hardy_to: document.getElementById("et-hardy").value || null,
           frost_tender: document.getElementById("et-frosttender").checked,

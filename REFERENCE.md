@@ -78,8 +78,13 @@ The **kind** of plant — whatever the most specific level is known: a species, 
 - `infraspecific` text (wired up v1.83.0) — variety, subspecies or form, stored **with** the rank abbreviation as written on the tag: `var. erinacea`, `subsp. horrida`, `f. monstruosa`. A bare word with no recognised rank is read as `var.`, which is overwhelmingly the common case; rendering it rankless would read as a second species epithet. `infraspecificParts()` splits rank from epithet so markup can set the rank upright and the epithet italic, per convention.
 - `parentage` text (wired up v1.83.0) — the cross a cultivar came from, e.g. *E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina'. Vendors put the pedigree in the name field; this is where it goes so that recording the real name does not discard it.
 - `working_label` — names an unidentified taxon until it has a real one. Three plants can obviously be the same kind without anyone knowing what that kind is; a null `taxa_id` cannot express that.
-- `description`, `plant_type`, `growth_habit`, `mature_size`, `bloom_season`, `origin`
+- `description`, `plant_type`, `growth_habit`, `mature_size`, `bloom_season`
 - `native_range`, `hardy_to`, `light_conditions`, `water_needs`
+- ~~`origin`~~ — **dropped v2.20.0 (ORIG-1).** Was native / introduced / unknown,
+  meaning native *to this garden's region*, distinct from `native_range`. Removed
+  at Amanda's request: it defaulted to `unknown` and 127 of 143 taxa never moved
+  off it, so it published "Unknown" as though it were a fact. Two `suggest-species`
+  prompt rewrites (v7, v8) had already tried to make it answer usefully.
 - `frost_tender` boolean, default false (v1.78.0) — deliberately **not** derived from `hardy_to`, which is free text and unparseable. Drives the badge on every specimen of the species and the "Frost tender — bring in" report, which lists specimens in location order because on a cold night it is a route, not an index.
 - `primary_photo_id` — any specimen's photo
 
@@ -197,7 +202,7 @@ species page still shows **all** open tasks. On the record itself, "a bloom chec
 is scheduled for June" is context worth having; on the To Do page it is noise.
 
 **Vocabularies that are NOT constrained: everything on `taxa`.** `plant_type`,
-`growth_habit`, `bloom_season`, `origin`, `water_needs` and `light_conditions`
+`growth_habit`, `bloom_season`, `water_needs` and `light_conditions`
 all live on `taxa`, which has no CHECK constraints — so adding a value there is
 a code change only, no SQL. This is the opposite of the `plants` columns above,
 and the distinction is worth keeping straight before writing a migration nobody
@@ -491,7 +496,6 @@ select t.id, t.botanical_name, t.common_name, t.family, t.genus,
        t.working_label, t.description, t.growth_habit, t.mature_size,
        t.bloom_season, t.native_range, t.hardy_to, t.water_needs,
        t.light_conditions, t.frost_tender, t.plant_type,
-       nullif(t.origin, 'unknown') as origin,
        count(p.id) as specimens
 from taxa t
 join plants p on p.taxa_id = t.id and p.status = 'active'
@@ -521,8 +525,18 @@ PostgREST — not a 403.
 - **The join is inner and filters `status = 'active'`**, so a species she no
   longer grows leaves the inventory on its own. It is an inventory, not an
   archive.
-- `origin` is `nullif(...,'unknown')` because the column defaults to `unknown`
-  and would otherwise render "Unknown" as though it were a recorded fact.
+- **`origin` was removed from this view and from the schema (ORIG-1, v2.20.0).**
+  It was published as `nullif(t.origin,'unknown')` because the column defaulted
+  to `unknown` and would otherwise have rendered "Unknown" as a recorded fact —
+  which was the tell that it was carrying no information. Measured before
+  removal: **127 of 143 taxa were still `unknown`.**
+
+  **The view had to be DROPPED and recreated, not `create or replace`d.**
+  Postgres cannot remove a column from a view in place; it raises *"cannot drop
+  columns from view"*. Only appending columns works. Any future column removal
+  here needs the same drop-and-create, and there is a sub-second window with no
+  view — which is why this ran before the app shipped and well before the
+  `DROP COLUMN`.
 
 Measured the day it shipped: 143 species, 230 specimens; `genus` on 142 of 143,
 `family` on 111, and the researched block (`description`, `growth_habit`,

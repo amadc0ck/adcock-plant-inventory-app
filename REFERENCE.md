@@ -133,6 +133,47 @@ For a plant that genuinely cannot be placed to genus, use a **working label**
 and set `family` — the label carries the honest state, the family still carries
 real information, and `taxonMissingNameParts()` no longer nags about it.
 
+### Recording a plant you have not identified — the whole workflow (2026-09-08)
+
+Three ways to record it, and **which one you pick depends only on how far down
+the ranks you can get.** Audited against the six unidentified specimens:
+
+| What is known | How to record it | Queue it belongs to |
+| --- | --- | --- |
+| The genus | taxon with `genus` + `family`, no epithet, no cultivar | identification only |
+| Only the family | taxon with **`working_label`** + `family` | identification only |
+| The species | full taxon | profile |
+
+**`plants.identification_status` is a SEPARATE AXIS.** It says whether Amanda
+considers that individual settled. It describes the specimen, never the taxon —
+a fully named species can hold an unconfirmed specimen, and a genus-rank
+placeholder can hold a confirmed one ("it is definitely an Agave, I cannot get
+to species").
+
+**A genus-rank placeholder can never have a complete PROFILE**, and that is not
+a defect. `description`, `mature_size`, `bloom_season` and `native_range` are
+species-level facts; there is no useful answer to "the mature size of *Agave*".
+Its outstanding work is identification, not research, and it belongs in one
+queue rather than two. v2.22.0 excludes these from the profile queue.
+
+**Working label AND family — the pair, not either.** Setting `family` alone
+leaves a taxon with no name at all: it renders as "Unnamed taxon", and
+`suggest-species` refuses it with *"This species has no name to look it up by"*,
+so no action can ever complete it. Found 2026-09-08: one taxon holding three
+cacti had `family = Cactaceae` and nothing else. `working_label` is editable at
+**Edit species record → Working label**.
+
+**Do not use "Cactus" as a placeholder taxon.** It is not a family (Cactaceae
+is) and not a genus, so it splits into nothing — see the note above.
+
+**Known fragility in the v2.22.0 rule.** It infers "this is a placeholder" from
+every specimen being flagged unidentified. **Confirming one specimen puts the
+placeholder back into the profile queue** with a dozen gaps nothing can fill.
+The robust rule keys off the taxon's own shape — genus set, no epithet, no
+cultivar — which describes the record instead of inferring from its children.
+Not built: it would also block recording genuinely genus-level facts (*Agave*:
+water low, frost tender). Revisit if it bites.
+
 `taxonMissingNameParts()` asks whether a genus can be READ from the name, via
 `parseBotanicalName()`. Before v2.10.1 it only checked whether the parts columns
 were empty, so "unidentified cactus" was queued as a split that had been skipped

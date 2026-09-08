@@ -928,11 +928,21 @@ native like a *Dudleya* is now called native.
   no server — the browser lands on a dead localhost page and you paste the URL
   back.
 
-  **Not chasing the old client.** `Adcock Plant Inventory - Web Client` lives in
-  `adcock-garden-collection`, a project already slated for deletion, and seeing
-  it means switching back to `amdaoh@gmail.com`. A registered localhost redirect
-  is minor hygiene rather than a live risk — exploiting one needs code already
-  running on the machine — and it dies with the project regardless.
+  **It IS still on the OLD client** — `Adcock Plant Inventory - Web Client`, in
+  `adcock-garden-collection` under `amdaoh@gmail.com`. Amanda confirmed
+  2026-09-08.
+
+  **LEAVE IT.** That redirect is how `migrate-drive.mjs` authorizes against the
+  old account, and the old client is the ONLY thing that can ever read the 4,274
+  original files — `drive.file` is granted per `(client_id, user)`, so no other
+  client can be given access to them. If the **1,542 orphans that were never
+  copied** are ever to be rescued in bulk, the route is: old client + this
+  redirect + the tool. Removing it now just means re-adding it then.
+
+  It costs nothing where it is: a localhost redirect is exploitable only by code
+  already running on the machine, and this client is otherwise idle. It becomes
+  moot the day `adcock-garden-collection` is deleted — which belongs AFTER the
+  orphans question is settled, not before.
 - **`tools/.migration/` holds live refresh tokens** for both Google accounts.
   Git-ignored, but delete `token-old.json` and `token-new.json` once you are
   confident no rollback is needed. Keep `migration-map.jsonl` — it is the only

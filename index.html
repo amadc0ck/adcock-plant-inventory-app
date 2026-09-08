@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.21.1";
+const APP_VERSION = "2.22.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2729,9 +2729,38 @@ function taxaIncompleteFiltered() {
     return true;
   });
 }
+/* Amanda, 2026-09-08: "for specimens with the status of unidentified, exclude
+   from profile not completed list" — they already appear under "Plants missing
+   identification" and she does not want the same work counted in two places.
+
+   ALL specimens, not any. A species with four confirmed specimens and one she
+   never got round to confirming is still a species worth researching; dropping
+   it would hide real work behind a flag on one individual.
+
+   **A taxon with NO specimens is deliberately NOT excluded.** `[].every()` is
+   true, so the empty-list guard is load-bearing — without it every orphaned
+   taxon would silently vanish from the queue. Those are a different problem
+   (`ensureTaxonForName()` creates the taxon before linking the specimen, so a
+   failed link orphans one) and they need their own tile, not concealment.
+
+   **This reverses part of an earlier decision the same day, knowingly.** When
+   `species_epithet` was made cultivar-exempt, Amanda chose to KEEP the five
+   bare-genus placeholders counted — "they are true incomplete profiles" —
+   because a bare genus is a plant not yet identified to species. Three of them
+   (Agave, Graptopetalum, Haworthiopsis) have a single unidentified specimen
+   each and so are exactly what this rule removes. Raised at the time and
+   confirmed; the identification tile is where she wants that work to live. */
+function taxonAllSpecimensUnidentified(t) {
+  const specs = specimensOfTaxon(t.id);
+  if (!specs.length) return false;
+  return specs.every((p) => p.identification_status === "unidentified");
+}
+
 function taxaIncompleteProfiles() {
   // Most gaps first: the emptiest records are where one Ask buys the most.
-  return state.taxa.filter((t) => taxonProfileGaps(t).length)
+  return state.taxa
+    .filter((t) => taxonProfileGaps(t).length)
+    .filter((t) => !taxonAllSpecimensUnidentified(t))
     .sort((a, b) => taxonProfileGaps(b).length - taxonProfileGaps(a).length
       || taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
 }
@@ -9114,6 +9143,9 @@ async function askClaudeAboutSpecies(taxaId, opts) {
    be good rather than let a sweep quietly reshape records she has curated. */
 function taxaMissingOnlyLight() {
   return state.taxa.filter((t) => {
+    // Must honour the same exclusions as the list it sits under, or the button
+    // offers to work on records that are not shown and the two counts disagree.
+    if (taxonAllSpecimensUnidentified(t)) return false;
     const gaps = taxonProfileGaps(t);
     return gaps.length === 1 && gaps[0] === "light_conditions";
   });

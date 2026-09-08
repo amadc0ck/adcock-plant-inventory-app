@@ -1035,6 +1035,52 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.22.0 — taxa whose specimens are all unidentified leave the profile queue
+
+Amanda, 2026-09-08: *"for specimens with the status of unidentified, exclude
+from profile not completed list. They already appear in the unidentified tile."*
+The same work was being counted in two places.
+
+`taxonAllSpecimensUnidentified()` filters `taxaIncompleteProfiles()`, so the
+tile, the drill-in list and the light batch all move together.
+
+**ALL specimens, not any.** A species with four confirmed specimens and one
+never got round to is still worth researching; dropping it would hide real work
+behind a flag on one individual.
+
+**A taxon with NO specimens is deliberately not excluded**, and the empty-list
+guard is load-bearing — `[].every()` is `true`, so without it every orphaned
+taxon would silently vanish. Those are a different problem (`ensureTaxonForName()`
+creates the taxon before linking the specimen, so a failed link orphans one) and
+they want their own tile, not concealment. Measured 2026-09-08: zero exist today.
+
+**`taxaMissingOnlyLight()` had to take the same exclusion.** It filters
+`state.taxa` directly rather than going through `taxaIncompleteProfiles()`, so
+the LIGHT-1 button would have offered to work on records the list below it no
+longer showed. Any future filter on this queue has to be added in both places —
+or better, the batch should be rebased onto the list function.
+
+**This knowingly reverses part of a decision taken earlier the same day.** When
+`species_epithet` was made cultivar-exempt (v2.20.0), Amanda chose to KEEP the
+five bare-genus placeholders counted — *"they are true incomplete profiles"* —
+because a bare genus is a plant not yet identified to species. Three of them
+(**Agave, Graptopetalum, Haworthiopsis**) have a single unidentified specimen
+each and are exactly what this rule removes. The conflict was raised with the
+measurement in hand and she confirmed: the identification tile is where that
+work belongs. Recorded so it is not "fixed" back later.
+
+**Tile: 22 → 19.** *Echeveria* and *Opuntia* stay — each has at least one
+identified specimen.
+
+**Still counted and still unfillable: one taxon with no name at all** — no
+`botanical_name`, no `genus`, no `working_label` — carrying 3 specimens, 11
+blank fields, rendering as "Unnamed taxon". `suggest-species` refuses it with
+"This species has no name to look it up by", so nothing can ever complete it.
+Only 2 of its 3 specimens are flagged unidentified, so this rule does not catch
+it. **It needs a working label or its specimens merged and the record deleted**
+— see the "Delete a species" item. Not folded in here: that is a data cleanup,
+not a counting change.
+
 ### v2.21.1 — dropping a column had just broken every existing backup
 
 **Found by asking what the `DROP COLUMN` had made false**, minutes after Amanda

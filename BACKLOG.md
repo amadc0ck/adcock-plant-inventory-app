@@ -24,6 +24,15 @@ Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
 
 **Sequencing chosen by Amanda:** pickers first (done), then the rest.
 
+### OUTSTANDING SQL — one statement, held deliberately
+
+**`alter table taxa drop column origin;`** — the last step of ORIG-1 and the only
+irreversible one. Everything that read the column is already gone: the view was
+rewritten first (verified as anon: 200, 144 rows, no `origin`), the app shipped
+v2.20.0, `suggest-species` v11 is deployed. Nothing depends on it, so there is no
+urgency and an unread column costs nothing. Run it once a few days of real use
+have passed.
+
 ### SQL — the double-link cleanup RAN 2026-09-08, after v2.19.0 deployed
 
 12 rows removed. Verify with the count query in Completed → v2.19.0; it should
@@ -579,103 +588,6 @@ ask, 2026-09-08:
 - **Duplicate detection stays as-is.** She confirmed the existing name+location
   auto-flag needs no change.
 
-### ORIG-1 — remove `origin` everywhere, column included — `ready`
-
-Approved 2026-09-08, including the `DROP COLUMN`. `origin` is on **`taxa`**, not
-`plants` (the document that requested it said `plants`; those columns went in
-v2.6.0). Five code sites plus two things outside `index.html`:
-
-| Where | Detail |
-| --- | --- |
-| Taxon Detail row | `fieldRow("pin", "Origin", ...)` |
-| Edit species form | `et-origin` select + `ORIGIN_LABELS` |
-| Profile completeness | `TAXON_PROFILE_FIELDS` + `TAXON_SENTINELS` |
-| Plants CSV export | header **and** `tv("origin")` value |
-| `suggest-species` | `FIELDS` — **Edge Function deploy**, and its `origin` prompt was rewritten twice (v7, v8) specifically for this field |
-| `public_plant_inventory` | **the view justamanda.net/inventory.html reads live** |
-
-**Sequence, and it matters:** rewrite the view without `origin` and confirm the
-public page still renders → ship the app change and deploy `suggest-species`
-together → `DROP COLUMN` last. Any other order breaks the public page in the gap
-or drops the column before anything is proven.
-
-**Removing it changes PROF-3's number** — every taxon loses one gap, and
-`origin` defaults to `unknown`, so it was blank on nearly all of them. Decide
-PROF-3 and ORIG-1 together or the count moves twice for unrelated reasons.
-
-### PROF-3 — "Species profiles unfinished" is correct and reads as broken — `ready`
-
-Reported 2026-09-08 as a bug: the count does not go down. **It is working as
-designed.** A taxon counts as unfinished if **any** of 14 fields is blank (16 on
-hybrids), and Amanda believed it tracked genus / species / synonym — which is
-**"Names not split up"**, a different tile. Filling genus and species takes a
-record from 14 gaps to 12 and it stays on the list. 135 of ~143 is consistent
-with the 2026-08-28 measurement of 13 complete out of 133.
-
-**The tile can only ever tick down when a record reaches zero**, which is why
-months of real work has not moved it. That is the actual defect: a count that
-does not respond to effort stops being read — the fault NAME-4 and TODO-2 both
-had to correct, and the reason "Could show a specimen" was retired in v2.8.0.
-
-**MEASURED 2026-09-08 against 143 taxa. It is mostly a BUG, not a preference.**
-
-Per-field blanks:
-
-| Field | Blank | Of |
-| --- | --- | --- |
-| `origin` | 127 | 143 |
-| `light_conditions` | 70 | 143 |
-| `parentage` | 35 | 43 hybrids |
-| `species_epithet` | 26 | 143 |
-| `bloom_season` | 15 | 143 |
-| `plant_type` | 11 | 143 |
-| description / mature_size | 5 each | 143 |
-| growth_habit / hardy_to / native_range / water_needs | 4 each | 143 |
-| `genus` | 1 | 143 |
-| `family` / `frost_tender` / `is_hybrid` | **0** | — |
-
-**The research work is essentially DONE.** The whole researched block sits at 3%
-or better. 135 was never "the profiles are empty" — it was three fields, two of
-which cannot be filled at all.
-
-**Three fields are counted where they CANNOT apply. This is NAME-4 a third time.**
-
-1. **`species_epithet` — all 26 blanks are correct.** 20 are cultivars, which
-   have no epithet by definition (REFERENCE: *"A cultivar of hybrid origin has
-   no epithet"*). Five are bare-genus placeholders — *Agave, Echeveria,
-   Graptopetalum, Haworthiopsis, Opuntia* — which REFERENCE v2.10.1 explicitly
-   endorses as real identifications at genus rank. One has no name and needs a
-   **working label**. **Zero genuine gaps.** Found from Amanda's screenshot of
-   *Kalanchoe* 'Roseleaf' reading "1 of 16 blank" — a complete record, stuck
-   forever on an epithet that does not exist.
-   `taxonMissingNameParts()` already gets this right (genus OR epithet OR
-   cultivar); `TAXON_PROFILE_FIELDS` does not. **Two halves of one idea
-   disagreeing.**
-2. **`parentage` — 35 of 43.** Most succulent genera have no cultivar
-   registration authority (AI-4), so frequently no pedigree exists to record.
-3. **`origin`** — leaving via ORIG-1 anyway.
-
-**What each narrowing is worth, measured:**
-
-| Tile reads | Scenario |
-| --- | --- |
-| **135** | today (8 of 143 complete) |
-| **103** | `origin` gone |
-| **92** | + `parentage` |
-| **80** | + `species_epithet` — **i.e. the bug fixed, nothing real hidden** |
-| **23** | + `light_conditions` — **do NOT do this** |
-
-**55 of the 135 are records already finished that cannot say so.**
-
-**KEEP `light_conditions` and fill it.** After the fix, **57 of the remaining 80
-are blocked by it alone** — one field, one batch of Ask Claude. Dropping it
-would be the count becoming decorative, which is the fault being fixed. Check
-first whether the AI-4 array branch in `acceptSuggestion` actually lands (BACKLOG
-lists it as shipped-but-never-verified); 49% blank on a field Claude is asked
-for is consistent with accepted suggestions silently not applying.
-
-**Target: 135 → 80 by fixing the count, → 23 by an afternoon of filling.**
-
 ### Data-quality findings, separate from PROF-3 — `ready`
 
 Visible in the 2026-09-08 epithet audit. All small, one pass:
@@ -1100,6 +1012,88 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.20.0 — origin removed everywhere, the profile count made completable, one Claude button
+
+Shipped and verified live 2026-09-08. `suggest-species` v11 deployed alongside.
+
+**ORIG-1 — `origin` is gone, column and all.** It lived on `taxa`, never on
+`plants` (those went in v2.6.0, which is what the request that started this
+actually named). Removed from: taxon detail, the Edit species form and its save,
+`ORIGIN_LABELS`, `FIELD_LABELS`, the plants CSV header **and** value, the help
+text, `TAXON_PROFILE_FIELDS`, `TAXON_SENTINELS`, and `suggest-species`'s `FIELDS`
+and `SENTINELS`.
+
+**Measured before removal: 127 of 143 taxa were still `unknown`** — the value it
+defaults to. Two prompt rewrites (v7, v8) had already tried to make it answer
+usefully. It was publishing "Unknown" to justamanda.net as though it were a fact.
+
+**Order, and it mattered:** view rewritten first → app + function → `DROP COLUMN`
+held for last. Verified between each step, as anon against the live view: 200,
+144 rows, 227 active specimens, no `origin` column.
+
+**Two things worth keeping:**
+- **`create or replace view` CANNOT remove a column.** Postgres raises "cannot
+  drop columns from view" — only appending works. It needs `drop view` then
+  `create view`, with a sub-second window where the view does not exist.
+- **`inventory.html` needed no change.** `FIELDS.filter(([k]) => filled(t[k]))`
+  means a field the view stops returning simply stops rendering. The page's
+  "render only what a species actually carries" rule made a schema removal a
+  non-event. The dead `["origin","Origin"]` entry is cosmetic and lives in the
+  site repo.
+
+**PROF-3 — the tile counted three fields where they cannot apply.** 135 of 143
+read as unfinished and **55 of those were finished records that could not say
+so.** The NAME-4 / TODO-2 uncompletable-count fault, a third time.
+
+- **`species_epithet` — all 26 blanks were CORRECT.** 20 cultivars (no epithet
+  by definition), five bare-genus placeholders, one needing a working label.
+  Now exempt where a cultivar exists, via `TAXON_CULTIVAR_EXEMPT`.
+  **Found from Amanda's screenshot of *Kalanchoe* 'Roseleaf' reading "1 of 16
+  blank"** on a visibly complete record. `taxonMissingNameParts()` had always
+  had this right — genus OR epithet OR cultivar — and the tile disagreed with it.
+- **`parentage` — dropped.** Blank on 35 of 43 hybrids; AI-4 established most
+  succulent genera have no cultivar registration authority, so often no cross
+  exists to be found.
+
+**The five bare-genus placeholders stay counted, by Amanda's decision.** v2.10.1
+blesses a bare genus as the right way to RECORD an unidentified plant — but the
+plant is still unidentified, and that is real work. *"They are true incomplete
+profiles."* Measured both ways and the number is identical (63 complete either
+way): those six already carry other gaps.
+
+`taxonProfileFieldCount()` took the same exemptions, or the "n of 16" denominator
+would have described a field set the gap test does not use.
+
+**Expected: 135 → 80, and → 23 once `light_conditions` is filled.**
+`light_conditions` was deliberately KEPT despite being the single biggest lever
+(dropping it alone would have moved 51 records). It is the only one of the four
+that is real, fillable and published — and after the fix, **57 of the remaining
+80 are blocked by it alone**, which is one batch of Ask Claude. Dropping it
+would have made the count decorative, which is the fault being fixed.
+
+**One button instead of two.** "Check the name and split it up" and "Ask Claude
+to fill the blanks" are now "Ask Claude about this species". **The two PROMPTS
+stay separate** — the function's own note is that a narrow prompt is cheaper and
+does not divide the model's attention — so it is one button, two sequential
+calls, one merged list. No more expensive than pressing both, which is what she
+did, and they share the cached catalogue prefix.
+
+**The safety the two buttons provided had to move somewhere, and this is the
+part that matters.** The name pass can overwrite a field she filled — the one
+thing the blanks pass promises never to do — and *which button she pressed* was
+the only thing distinguishing them. Merged, a suggestion rendered "Genus:
+Echeveria" whether it filled a blank or overwrote "Echevaria", and **Accept all
+took it either way.** So:
+
+- `suggestionReplacesValue()` / `suggestionCurrentValue()` — a replacement now
+  renders **`Genus: Echevaria → Echeveria`**; blanks render unchanged, since
+  "was → now" on an empty field is noise and most of these are blanks.
+- Accept all says *"3 of them would REPLACE a value you entered."*
+- Sentinel values do not count as replacements.
+
+**Any future merge of two AI actions has to ask the same question:** what was
+the old separation silently telling her, and where does that signal go now?
 
 ### v2.19.0 — one picker everywhere, and photos tagged to a plant stop reading as unfiled
 

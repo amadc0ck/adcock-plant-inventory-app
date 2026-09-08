@@ -916,44 +916,41 @@ returned `introduced` for everything. `suggest-photo` is still v10.
 confirmed that `origin` comes back varied — or that a genuinely Californian
 native like a *Dudleya* is now called native.
 
-### GWS-1 cleanup, outstanding
+### GWS-1 cleanup — the copy is DONE, deletion deferred to ~2026-09-15
 
-- ~~**Remove `http://localhost:8910/callback`** from both OAuth clients.~~
-  **CLOSED 2026-09-08 — not present on the new client.** Amanda checked
-  `Adcock Botanical Garden App` while rotating the secret and it is not there.
+**All 4,274 files are now in the Workspace account.** The 1,542 orphans were
+copied 2026-09-08: **1,542 copied, 0 failed, every one md5-verified on both
+sides**, and `migration-map.jsonl` covers 4,274 of 4,274. Nothing remains in
+`amdaoh@gmail.com` that does not exist in `me@justamanda.net`.
 
-  It was genuinely required during the migration: `tools/migrate-drive.mjs` uses
-  it as `redirect_uri` and **Google validates the redirect before redirecting**,
-  so it had to be registered even though the paste-the-URL flow (5dd371f) runs
-  no server — the browser lands on a dead localhost page and you paste the URL
-  back.
+Amanda deferred the deletions by about a week. **Revisit ~2026-09-15.**
 
-  **It IS still on the OLD client** — `Adcock Plant Inventory - Web Client`, in
-  `adcock-garden-collection` under `amdaoh@gmail.com`. Amanda confirmed
-  2026-09-08.
+**Deletion order, when she is ready:**
+1. The old Drive folder `Plant Inventory Photos (App)` — 30 days in Drive trash.
+2. The old GCP project `adcock-garden-collection` — ~30-day pending deletion.
+3. `tools/.migration/token-old.json` and `token-new.json` — live refresh tokens
+   sitting on disk. **KEEP `migration-map.jsonl`**: it is the only record of
+   which new file corresponds to which old one, and it now covers everything.
 
-  **LEAVE IT.** That redirect is how `migrate-drive.mjs` authorizes against the
-  old account, and the old client is the ONLY thing that can ever read the 4,274
-  original files — `drive.file` is granted per `(client_id, user)`, so no other
-  client can be given access to them. If the **1,542 orphans that were never
-  copied** are ever to be rescued in bulk, the route is: old client + this
-  redirect + the tool. Removing it now just means re-adding it then.
+**The 7-day token expiry no longer constrains anything.** `token-old.json` was
+re-minted 2026-09-08 11:16 and expires 2026-09-15 — the old project is still in
+**Testing** status, so its refresh tokens die weekly. That was the blocker for
+the copy; it is irrelevant to the deletions, which happen in the browser and
+need no OAuth at all. **If the copy had been left another week it would have
+needed a third `auth-old`.**
 
-  It costs nothing where it is: a localhost redirect is exploitable only by code
-  already running on the machine, and this client is otherwise idle. It becomes
-  moot the day `adcock-garden-collection` is deleted — which belongs AFTER the
-  orphans question is settled, not before.
-- **`tools/.migration/` holds live refresh tokens** for both Google accounts.
-  Git-ignored, but delete `token-old.json` and `token-new.json` once you are
-  confident no rollback is needed. Keep `migration-map.jsonl` — it is the only
-  record of which new file corresponds to which old one.
-- **The old Drive folder** (`Plant Inventory Photos (App)`, 4,274 files) stays as
-  a backup. Delete by hand when ready; nothing points at it.
-- **The old GCP project** `adcock-garden-collection` can be deleted eventually.
-  Not yet — it is the rollback path.
-- **1,542 orphans were not copied**, so deleting the old folder makes them
-  unrecoverable. They are files whose photo rows were already deleted, so this
-  is almost certainly fine, but it is a one-way door.
+**DO NOT run `node tools/migrate-drive.mjs sql`.** The tool prints "Next: … sql"
+on completion as boilerplate from the original migration. That step repoints
+`photos.drive_file_id`, it already ran 2026-08-31 for the 2,732 real photos, and
+these 1,542 have no `photos` rows by definition. A no-op at best.
+
+**What the orphans are, so this is not re-litigated:** Drive files with no
+`photos` row — overwhelmingly photos deleted in the app, which never deletes
+from Drive. **They do not appear in the app and copying them did not change
+that.** They were copied so the old account becomes disposable, which was the
+stated goal. `keep-ids.txt` is renamed to `keep-ids.txt.HELD-2026-09-08`; the
+live `photos.drive_file_id` set is the same list, so "which of these are
+orphans" stays computable forever.
 
 ### Deferred / known gaps
 

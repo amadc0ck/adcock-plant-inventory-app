@@ -53,7 +53,44 @@ recorded on that photo via `photos.plant_id`. No information is lost.
   measure the real data before choosing fields, which is right — the query is
   below and the answer belongs in this file once she runs it.
 
-### ⚠️ ROTATE THE GOOGLE OAUTH CLIENT SECRET — outstanding, Amanda's job
+### GOOGLE OAUTH CLIENT SECRET — rotated and verified 2026-09-08
+
+**New secret is live and proven. One step left: delete the old secret in GCP**
+(and strip `http://localhost:8910/callback` from both OAuth clients while there).
+
+Timeline, all 2026-09-08 UTC:
+
+| Time | Event |
+| --- | --- |
+| 16:52:47 | New secret saved in Supabase — `secrets list` digest changed, so the stored value is definitively not the leaked one |
+| 16:53:54 | Token refreshed against Google, 67s later |
+| ~17:0x | `expires_at` forced into the past, photos reloaded in incognito — **refresh path taken and succeeded** |
+
+**How it was proven, because "photos load" is not evidence and twice nearly
+wasn't here.** Two independent caches sit in front of this and each defeats the
+naive test:
+
+1. **The browser.** `get-photo` sets `Cache-Control: private, max-age=3600`, so
+   photos render from cache for an hour after any change. Beaten with incognito.
+2. **The access token — the one that actually matters.**
+   `getValidGoogleAccessToken()` returns the stored token whenever it has more
+   than 5 minutes left, **without reading the client secret at all**. Google
+   tokens last an hour, so the app can run for ~55 minutes on a rotated secret
+   that was never once exercised. Incognito does nothing about this; it is
+   server-side.
+
+The forced test beats both: `update google_auth_tokens set expires_at = now() -
+interval '10 minutes'` makes the refresh branch unavoidable, and a failed
+refresh throws "Google Drive connection expired" — a broken image, not a photo.
+**Photos loading after that is proof; before it, it is proof of nothing.**
+
+**Keep this test.** Any future change to `GOOGLE_OAUTH_CLIENT_ID`,
+`GOOGLE_OAUTH_CLIENT_SECRET` or the refresh token needs exactly it, and the
+delay between a bad change and its symptom is otherwise a full hour.
+
+**Do NOT put the new value in `tools/env.template`** — that file is the blank
+template and filling it in is the whole of what caused the incident. Real values
+belong in `tools/.migration/env`, which is git-ignored.
 
 **Decided 2026-09-08. Not yet done.** A live client secret for
 `adcock-botanical-garden-app` was committed to the Edge Functions repo on

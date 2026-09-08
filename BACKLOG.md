@@ -66,6 +66,23 @@ remote.
 Rotating anyway, because a secret that has lived in a git object store and been
 printed to a terminal is best treated as burned.
 
+**Which project, and under which account — confirmed 2026-09-08:**
+
+| GCP project | Google account | Role | Exposed? |
+| --- | --- | --- | --- |
+| `adcock-botanical-garden-app` | **me@justamanda.net** | live — the app authenticates through this client | **YES** |
+| `adcock-garden-collection` | amdaoh@gmail.com | old, rollback path only | no |
+
+**Only the new project is affected.** Both committed versions of the template
+had `OLD_CLIENT_ID` and `OLD_CLIENT_SECRET` blank — the file was created empty
+(`f11d028`) and later filled in with the NEW client's values only (`e15881d`).
+The old project's credentials were never committed. Nothing to rotate there.
+
+**Sign into `me@justamanda.net` before opening the console.** It shows a
+different project list per account and does not error on the wrong one — the
+project is simply absent. Same silent-wrong-account failure the Drive migration
+hit, where the wrong Gmail returned zero files and read as an empty folder.
+
 **In the GCP console, project `adcock-botanical-garden-app` → APIs & Services →
 Credentials → the `Adcock Botanical Garden App` OAuth client. Order matters:**
 

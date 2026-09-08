@@ -1035,6 +1035,42 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.23.1 — the profile tile and the profile LIST disagreed
+
+Reported with a screenshot on v2.23.0: *Graptopetalum* and *Haworthiopsis* still
+in the incomplete-profile list, after v2.22.0 was supposed to exclude them.
+
+**Not a stale tab.** v2.22.0 added the unidentified exclusion to
+`taxaIncompleteProfiles()`, and **`screenTaxa()` carried a hand-copied version
+of the same test that never got it:**
+
+```js
+if (state.taxaIncompleteOnly) {
+  if (!taxonProfileGaps(t).length) return false;   // its own copy
+```
+
+So the tile counted 19 and the list rendered 22 — and **the list is the half a
+user actually sees.** A count nobody can reconcile with the list under it is
+worse than either number alone.
+
+Fixed by collapsing all three consumers onto one predicate,
+`taxonInProfileQueue()`: the tile, the filtered list, and the LIGHT-1 batch.
+
+**Third duplicated-filter drift in one day**, and the pattern is identical each
+time — a rule added in one place while copies of it live elsewhere:
+
+| Ship | The copies |
+| --- | --- |
+| v2.19.0 | six hand-copied inbox filters → `isInboxPhoto()` |
+| v2.22.0 | `taxaMissingOnlyLight()` bypassing the list function |
+| **v2.23.1** | `screenTaxa()`'s own copy of the incomplete test |
+
+**The lesson worth keeping: a membership rule gets ONE function, and every
+caller asks it.** Adding a condition at a call site is how these drift, and the
+symptom is always the same — two numbers on one screen that cannot both be right.
+
+**Patch:** it fixes something that shipped broken in v2.22.0.
+
 ### v2.23.0 — COVER-1, three tiles for records showing a fallback cover
 
 Amanda asked how many species, plants and locations have no primary photo set,

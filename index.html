@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.23.0";
+const APP_VERSION = "2.23.1";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2757,11 +2757,25 @@ function taxonAllSpecimensUnidentified(t) {
   return specs.every((p) => p.identification_status === "unidentified");
 }
 
+/* THE membership test for the profile queue. Everything that asks "is this
+   taxon outstanding?" must call this — the tile, the filtered list, the batch.
+
+   v2.22.0 added the unidentified exclusion to taxaIncompleteProfiles() only,
+   and screenTaxa() carried a hand-copied version of the same test that never
+   got it. The tile said 19 and the list still showed Graptopetalum and
+   Haworthiopsis, which is the half a user actually sees.
+
+   Third time in one day that a duplicated filter drifted — the photo buckets
+   (v2.19.0), taxaMissingOnlyLight (v2.22.0), and this. **Add a rule here, not
+   at a call site.** */
+function taxonInProfileQueue(t) {
+  return taxonProfileGaps(t).length > 0 && !taxonAllSpecimensUnidentified(t);
+}
+
 function taxaIncompleteProfiles() {
   // Most gaps first: the emptiest records are where one Ask buys the most.
   return state.taxa
-    .filter((t) => taxonProfileGaps(t).length)
-    .filter((t) => !taxonAllSpecimensUnidentified(t))
+    .filter(taxonInProfileQueue)
     .sort((a, b) => taxonProfileGaps(b).length - taxonProfileGaps(a).length
       || taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
 }
@@ -4948,7 +4962,9 @@ function screenTaxa() {
     if (state.taxaNoCoverOnly && !(!t.primary_photo_id
         && specimensOfTaxon(t.id).some((sp) => plantPhotosOrdered(sp.id).length > 0))) return false;
     if (state.taxaIncompleteOnly) {
-      if (!taxonProfileGaps(t).length) return false;
+      // Was a hand-copied duplicate of taxaIncompleteFiltered() and drifted
+      // from it the moment v2.22.0 added an exclusion to one and not the other.
+      if (!taxonInProfileQueue(t)) return false;
       if (state.taxaNeverAskedOnly && taxonWasAsked(t)) return false;
       if (taxonProfileGaps(t).length < (state.taxaMinGaps || 0)) return false;
     }
@@ -9207,7 +9223,7 @@ function taxaMissingOnlyLight() {
   return state.taxa.filter((t) => {
     // Must honour the same exclusions as the list it sits under, or the button
     // offers to work on records that are not shown and the two counts disagree.
-    if (taxonAllSpecimensUnidentified(t)) return false;
+    if (!taxonInProfileQueue(t)) return false;
     const gaps = taxonProfileGaps(t);
     return gaps.length === 1 && gaps[0] === "light_conditions";
   });

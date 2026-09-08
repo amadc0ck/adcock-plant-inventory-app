@@ -793,6 +793,17 @@ Scroll is preserved the same way (v1.52.2), for the page, the modal and the Gall
 - **Icons:** inline SVG strings via `icon(name)`. As of v1.32, 8 icons use **real Tabler Icons source** (plant, map-pin, map-2, clipboard-text, info-circle, progress-check, progress-x, photo-question), copied from tabler.io rather than approximated. Get exact source from Amanda if more Tabler icons are wanted.
 - **Responsive:** mobile-first, breakpoints at 700px (2-column card grids, larger thumbnails) and 1100px (3-column, widest container). `.card-grid` handles this. `.stack` is reserved for form/vertical layouts and deliberately never becomes a grid.
 - **The `@media` blocks must stay last in `<style>` (v1.37.1).** Media queries add **no specificity**. A single-class base rule declared *after* them wins at every width, and the breakpoint silently stops working — no error, no warning, it just never applies. This had already killed `.plant-list-thumb` (base at 92px declared below the block, so the 120/140px breakpoint sizes never applied on any screen) and it killed `.detail-split` the day it was written. Add new base rules **above** the block.
+- **A membership rule gets ONE function, and every caller asks it (v2.23.1).**
+  Three separate drifts in a single day, all the same shape: a condition added
+  in one place while hand-copied versions of the same test lived elsewhere.
+  Six inbox filters (v2.19.0), `taxaMissingOnlyLight()` bypassing the list
+  function (v2.22.0), and `screenTaxa()`'s own copy of the incomplete-profile
+  test (v2.23.1) — the last of which made the tile read 19 while the list under
+  it rendered 22. **The symptom is always two numbers on one screen that cannot
+  both be right, and the visible one is usually the stale one.** Before adding a
+  condition at a call site, check whether the predicate already exists:
+  `isInboxPhoto()`, `photoHasAnyPlant()`, `taxonInProfileQueue()`.
+
 - **"Is this photo filed to a plant?" means `photoHasAnyPlant()`, never `!p.plant_id` (v2.19.0).** The inverse of the rule below, and it went unenforced for nine versions. **Six** counts tested `!p.plant_id` directly — the Inbox grid, its lightbox, the resume-after-filing list, the "File to both" tile, the nav badge and the header total — so a photo tagged to a specimen only through `photo_plants` was counted as unfiled **forever and could not be cleared by any action**: assigning the plant it already had changed nothing. `photoHasAnyPlant()` and `isInboxPhoto()` are now the single definitions; do not hand-copy the filter a seventh time.
 
 - **`photos.plant_id` and a `photo_plants` row for the same plant must never both exist (v2.19.0).** Two ways of saying one thing. `assignPlantToPhoto()` and `makePrimaryPlantForPhoto()` always guarded it; `applyGalleryBatch()` and the Edit photo form did not, and 12 photos were measured in that state on 2026-09-08. **The symptom is not a stray row — it is Unassign doing nothing**, because `unassignPlantFromPhoto()` clears the primary and promotes the next `photo_plants` row, which on a double-linked photo is the same plant. Any new path that writes `photos.plant_id` directly must delete the matching junction row in the same operation.

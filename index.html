@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.23.1";
+const APP_VERSION = "2.23.2";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -9546,7 +9546,7 @@ async function deleteCareNote(noteId) {
 async function mergePlants(keepId, removeId) {
   const keep = state.plants.find((p) => p.id === keepId);
   const remove = state.plants.find((p) => p.id === removeId);
-  if (!confirm(`Merge "${plantDisplayName(remove)}" (${remove.accession_number}) into "${plantDisplayName(keep)}" (${keep.accession_number})? All photos and tags move over, then ${remove.accession_number} is deleted. This can't be undone.`)) return;
+  if (!confirm(`Merge "${plantDisplayName(remove)}" (${remove.accession_number}) into "${plantDisplayName(keep)}" (${keep.accession_number})? Everything on it moves over \u2014 photos, tags, care notes, watering, blooms, move history and any task naming it \u2014 then ${remove.accession_number} is deleted. This can't be undone.`)) return;
   try {
     // Move photos primarily attached to the removed plant
     await restPatch("photos", `plant_id=eq.${removeId}`, { plant_id: keepId });
@@ -9569,6 +9569,51 @@ async function mergePlants(keepId, removeId) {
     // deleted — the observations happened, and the merged record inherits them.
     await restPatch("care_notes", `plant_id=eq.${removeId}`, { plant_id: keepId });
 
+    /* MERGE-1, fixed 2026-09-08. Everything below was MISSING, and both event
+       tables are `on delete cascade` — so every merge silently destroyed the
+       merged plant's entire watering and bloom history. The function was built
+       from REFERENCE §6's cleanup list, which was written before these tables
+       existed and was never updated when they arrived. The code was exactly as
+       complete as the doc.
+
+       Same failure as ADM-2 / ADM-3 and the v2.21.1 restore break: a
+       hand-maintained list of tables that nobody updates when a table is added.
+       **Adding a table means adding it here, to §6, to exportFullBackup() and
+       to the restore.** */
+
+    /* Watering has a UNIQUE index on (plant_id, watered_on), so a blind
+       reassign fails precisely when both plants were watered on the same day —
+       which is the NORMAL case for two duplicates standing in one bucket, and
+       would have aborted the merge midway with photos already moved. Drop the
+       loser's colliding rows first: the surviving row already records that the
+       watering happened. */
+    const keepWaterDays = new Set(
+      state.wateringEvents.filter((w) => w.plant_id === keepId).map((w) => w.watered_on));
+    for (const w of state.wateringEvents.filter((w) => w.plant_id === removeId && keepWaterDays.has(w.watered_on))) {
+      await restDelete("watering_events", `id=eq.${w.id}`);
+    }
+    await restPatch("watering_events", `plant_id=eq.${removeId}`, { plant_id: keepId });
+
+    // No unique constraint here, so a straight reassign. A bloom happened and
+    // the merged record inherits it, exactly like a care note.
+    await restPatch("bloom_events", `plant_id=eq.${removeId}`, { plant_id: keepId });
+
+    /* A task's subject must survive, or "eleven buckets pulled off the wall"
+       quietly loses one of its eleven. Deduped the same way photo_plants is:
+       a task already naming the survivor does not need it twice. */
+    const keepSubjects = new Set(
+      state.taskSubjects.filter((ts) => ts.plant_id === keepId).map((ts) => ts.task_id));
+    for (const ts of state.taskSubjects.filter((ts) => ts.plant_id === removeId)) {
+      if (keepSubjects.has(ts.task_id)) await restDelete("task_subjects", `id=eq.${ts.id}`);
+      else await restPatch("task_subjects", `id=eq.${ts.id}`, { plant_id: keepId });
+    }
+
+    // Pending suggestions proposing the removed plant now propose the survivor.
+    // suggestionLine() already renders a vanished subject as stale, so this is
+    // tidiness rather than a crash — but a live suggestion should stay usable.
+    await restPatch("suggestions", `status=eq.pending&kind=eq.plant_tag&value_id=eq.${removeId}`,
+      { value_id: keepId });
+
     await restDelete("plants", `id=eq.${removeId}`);
     toast(`Merged into ${keep.accession_number}`);
     await loadAll();
@@ -9583,9 +9628,14 @@ async function deletePlant(plantId) {
     await restDelete("photo_plants", `plant_id=eq.${plantId}`);
     await restPatch("plants", `parent_plant_id=eq.${plantId}`, { parent_plant_id: null });
     await restDelete("plant_location_history", `plant_id=eq.${plantId}`);
-    // ON DELETE CASCADE would also handle this; done explicitly so the
-    // cleanup order in REFERENCE §6 stays readable from the code.
+    // ON DELETE CASCADE would also handle these; done explicitly so the
+    // cleanup order in REFERENCE §6 stays readable from the code. MERGE-1 added
+    // the three that were missing — on a DELETE they genuinely go, unlike a
+    // merge, where the surviving record inherits them.
     await restDelete("care_notes", `plant_id=eq.${plantId}`);
+    await restDelete("watering_events", `plant_id=eq.${plantId}`);
+    await restDelete("bloom_events", `plant_id=eq.${plantId}`);
+    await restDelete("task_subjects", `plant_id=eq.${plantId}`);
     await restDelete("plants", `id=eq.${plantId}`);
     toast("Plant deleted");
     goTab("plants");

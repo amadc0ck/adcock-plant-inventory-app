@@ -544,38 +544,6 @@ Contrast with the paths that DO dedupe and were never affected:
 `plantPhotosOrdered()` and `plantsAssignedToPhoto()`. The rule is the same one
 REFERENCE §6 states for counting; these three are the display side of it.
 
-### MERGE-1 — `mergePlants()` silently destroys watering and bloom history — `ready`
-
-**This is the most serious thing in the 2026-09-08 triage and it is already
-shipped code.** `mergePlants()` (`index.html`, ~line 9186) has existed since
-before the merge request was written; the request asked for a feature that is
-half-built and quietly lossy.
-
-It reassigns photos, `photo_plants`, `parent_plant_id`, `plant_location_history`
-and `care_notes` — then deletes the plant. It does **not** touch:
-
-| Table | FK | Consequence of the delete |
-| --- | --- | --- |
-| `watering_events` | `on delete cascade` | **every watering record destroyed** |
-| `bloom_events` | `on delete cascade` | **every bloom record destroyed** |
-| `task_subjects` | plant_id | task loses its subject |
-| `suggestions` | value_id | orphaned |
-
-**REFERENCE §6's "Deletion / merge cleanup order" is stale** — it lists five
-steps and was written before `watering_events`, `bloom_events` and the task
-system existed. It is the checklist this function was built from, so the
-function is exactly as complete as the doc was. **Fix both together**, and fix
-the doc so the next table added lands on the list.
-
-This is the same failure mode as the backup audit (ADM-2 then ADM-3, four
-recurrences): a hand-maintained list of tables that nobody updates when a table
-is added. Consider whether the cleanup list can be derived rather than written.
-
-Only reachable today from the **Duplicate plants** tile, so exposure is limited
-to plants merged from there — 207 plants have watering rows as of 2026-08-31, so
-the blast radius is real but the trigger is rare. **Fix before widening access
-to merge**, which is what MERGE-2 does.
-
 ### MERGE-2 — merge from anywhere, and merge child locations — `ready`
 
 Blocked on MERGE-1: widening access to a lossy merge makes it worse. Amanda's
@@ -1034,6 +1002,51 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.23.2 — MERGE-1, every merge was destroying watering and bloom history
+
+**The most serious thing found in the 2026-09-08 triage, and it was already
+shipped code.** `mergePlants()` has existed since before the merge feature was
+requested — it reassigned photos, tags, propagation children, move history and
+care notes, then deleted the plant. It did **not** touch `watering_events` or
+`bloom_events`, and both are **`on delete cascade`**. Every merge silently threw
+away the merged plant's entire watering and flowering record.
+
+**The cause is documentary, not a coding slip.** The function was written from
+REFERENCE §6's "deletion / merge cleanup order", a five-step list written before
+`watering_events`, `bloom_events` and the task system existed and never updated
+when they arrived. **The code was exactly as complete as the doc.**
+
+Five steps added — watering, blooms, task subjects, suggestions, and the
+delete-side equivalents — and §6 rewritten to nine.
+
+**The trap inside the fix.** `watering_events` is UNIQUE on
+`(plant_id, watered_on)`, so a blind reassign fails **precisely when both plants
+were watered on the same day** — the normal case for two duplicates standing in
+one bucket, and exactly the situation the Duplicate plants tile surfaces. It
+would have aborted mid-merge with the photos already moved and the plant not yet
+deleted. The loser's colliding rows are deleted first; the survivor's row already
+records that the watering happened.
+
+`task_subjects` is deduped by `task_id` for the same reason `photo_plants` is —
+otherwise "eleven buckets pulled off the wall" quietly loses one of its eleven.
+
+**`deletePlant()` got the same three tables explicitly.** Cascade would handle
+them, but §6 exists to be readable from the code.
+
+**Exposure was limited but real.** Merge is reachable only from the Duplicate
+plants tile, and 207 plants carry watering rows. Anything merged since
+`watering_events` shipped (2026-08-30) lost its history, unrecoverably.
+
+**Fourth occurrence of one root cause.** ADM-2 (a table missing from the
+backup), ADM-3 (five more), v2.21.1 (a column present in a backup and gone from
+the schema), and now this. **A hand-maintained list of tables that nobody
+updates when a table is added.** §6 now says it in bold: adding a table means
+adding it to the cleanup order, `exportFullBackup()` and the restore, in the
+same commit as the migration.
+
+The confirm dialog said "All photos and tags move over", which had been true and
+was now an understatement; it names everything that moves.
 
 ### v2.23.1 — the profile tile and the profile LIST disagreed
 

@@ -651,31 +651,19 @@ Plants, locations, and photos all support many-to-many **on top of** a fast-path
 
 **Deleting a photo** must clear four references first, all hard FKs that block the delete: `plants.primary_photo_id`, `locations.primary_photo_id`, `taxa.primary_photo_id`, plus rows in `photo_plants` and `photo_locations`. `deletePhotosByIds()` is the single path for this — before v1.52.0 the delete cleared only plants and `photo_plants`, so removing a location's hero or a species' cover photo failed outright. `taxa.primary_photo_id` arrived with the species split and was never added until that bug was found.
 
-**Deletion / merge cleanup order** — any function deleting or merging a plant must handle, in order:
-1. `photos.plant_id` — unassign, do not delete the photo
-2. `photo_plants`
-3. `plants.parent_plant_id` — reparent children
-4. **`plant_location_history`** — reassign history rows to the surviving plant
-5. **`care_notes`** — on merge, **reassign** to the surviving plant; the observations happened and the merged record inherits them. On delete, remove. The FK is `on delete cascade`, but both functions handle it explicitly so this list stays readable from the code.
+**Deletion / merge cleanup order** — any function deleting or merging a plant must handle, in order. **Corrected 2026-09-08 (MERGE-1): five of these were missing and `mergePlants()` was built from the short list, so every merge silently destroyed the merged plant's watering and bloom history.**
 
-Step 4 was missed on first implementation and caused an FK violation (`plant_location_history_plant_id_fkey`) during a merge. (It was step 5 until `plant_locations` was dropped.)
+1. `photos.plant_id` — unassign on delete, reassign on merge. Do not delete the photo.
+2. `photo_plants` — on merge, reassign but SKIP any that would duplicate an existing tag.
+3. `plants.parent_plant_id` — reparent children.
+4. `plant_location_history` — reassign on merge. Missed on first implementation and caused an FK violation (`plant_location_history_plant_id_fkey`).
+5. `care_notes` — on merge **reassign**; the observations happened and the merged record inherits them. On delete, remove.
+6. **`watering_events`** — `on delete cascade`, so a merge that does not reassign DESTROYS them. **UNIQUE on `(plant_id, watered_on)`**, so a blind reassign fails exactly when both plants were watered the same day — the normal case for two duplicates in one bucket, and it would abort the merge with photos already moved. Delete the loser's colliding rows first; the survivor's row already records that watering.
+7. **`bloom_events`** — `on delete cascade`, same destruction. No unique constraint, so a straight reassign.
+8. **`task_subjects`** — reassign, deduped by `task_id`; otherwise "eleven buckets pulled off the wall" quietly loses one of its eleven.
+9. **`suggestions`** — repoint pending `plant_tag` rows at the survivor. `suggestionLine()` already renders a vanished subject as stale, so this is tidiness, not a crash.
 
-> **⚠️ THIS LIST IS INCOMPLETE AND `mergePlants()` IS LOSSY TODAY (found 2026-09-08, MERGE-1, not yet fixed).**
-> It was written before `watering_events`, `bloom_events` and the task system
-> existed, and `mergePlants()` was built from it — so the function is exactly as
-> complete as this list was. Missing, and all of them silently destroyed when the
-> merged plant is deleted:
->
-> | Table | FK | What the delete does |
-> | --- | --- | --- |
-> | `watering_events` | `on delete cascade` | **every watering record destroyed** |
-> | `bloom_events` | `on delete cascade` | **every bloom record destroyed** |
-> | `task_subjects` | `plant_id` | task loses its subject |
-> | `suggestions` | `value_id` | orphaned |
->
-> This is the ADM-2 / ADM-3 failure a third time: a hand-maintained list of
-> tables that nobody updates when a table is added. **Adding a table means
-> adding it here, to `exportFullBackup()`, and to the restore.**
+> **This is the same failure as ADM-2, ADM-3 and the v2.21.1 restore break: a hand-maintained list of tables that nobody updates when a table is added.** Four occurrences now. **Adding a table means adding it HERE, to `exportFullBackup()`, and to the restore — in the same commit as the migration.**
 
 **Direct-only vs. rolled-up reads (v1.34.5).** The many-to-many design means a location has two legitimate readings, and picking the wrong one is a recurring bug class:
 

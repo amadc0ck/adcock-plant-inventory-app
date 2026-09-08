@@ -24,21 +24,27 @@ Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
 
 **Sequencing chosen by Amanda:** pickers first (done), then the rest.
 
-### OUTSTANDING SQL — one block, not yet run
+### SQL — the double-link cleanup RAN 2026-09-08, after v2.19.0 deployed
 
-**Run only after v2.19.0 is deployed**, or the guards are not in place and it
-refills. Removes the 12 double links Amanda measured 2026-09-08. Safe, complete,
-idempotent, one statement:
+12 rows removed. Verify with the count query in Completed → v2.19.0; it should
+return 0.
 
-```sql
-delete from photo_plants pp
-using photos p
-where pp.photo_id = p.id
-  and pp.plant_id = p.plant_id;
-```
+**What the 12 turned out to be, and it corrects an assumption.** Read before
+deleting: three human-paced clusters (25–26 Aug, rows 4–5 seconds apart, three
+consecutive burst photos of one plant each) plus a scatter through 3 Sep.
 
-Every row it deletes is redundant by definition: the same plant is already
-recorded on that photo via `photos.plant_id`. No information is lost.
+**The spacing rules out `applyGalleryBatch`** — it writes its junction rows in
+one tight loop, so they would share a timestamp. These came through the
+**Edit photo form**, the write site listed second and treated as the lesser of
+the two. It was the only producer. A slow drip over ten days, still going the
+week of the fix.
+
+**What could NOT be determined:** when each double link actually formed.
+`pp.created_at` is when the TAG was made; the primary could have been pointed at
+that same plant much later. **`photos` has no `updated_at`** — the column does
+not exist and none of the app's 30 photo PATCH sites stamps one — so there is no
+record of when `photos.plant_id` last changed. Worth adding if photo history
+ever matters.
 
 ### Decisions taken 2026-09-08 — do not re-litigate
 
@@ -503,6 +509,28 @@ order by location_count desc;
 ---
 
 ## Open — verified 2026-08-28, end of session
+
+### DEDUPE-1 — three renders combine `plant_id` + `photo_plants` without deduping — `ready`
+
+Found 2026-09-08 while answering "how does the double link show in the app?" —
+the honest answer was three places, having first assumed none. All three
+concatenate the primary with the tagged plants and render the join:
+
+| Line | Screen | Renders |
+| --- | --- | --- |
+| `5416` | Plant Detail | `Also shows: <the plant whose page you are on>` — it does not exclude the current plant |
+| `5815` | Location Detail, containers | `Identified: X, X` |
+| `5775` | Location Detail, Areas/Archives | `Shows X, X` |
+
+The 12 rows that made this visible are deleted and the v2.19.0 guards close both
+write sites, so nothing can currently produce it. **This is hardening, not a
+live bug.** ~6 lines: dedupe by id, and on Plant Detail exclude `pl.id` from
+`taggedPlants` — a plant listing itself as "also shows" is wrong even with clean
+data, since the only way to see that line is on that plant's own page.
+
+Contrast with the paths that DO dedupe and were never affected:
+`plantPhotosOrdered()` and `plantsAssignedToPhoto()`. The rule is the same one
+REFERENCE §6 states for counting; these three are the display side of it.
 
 ### MERGE-1 — `mergePlants()` silently destroys watering and bloom history — `ready`
 

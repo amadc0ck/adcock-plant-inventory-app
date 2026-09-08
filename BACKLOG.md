@@ -617,9 +617,82 @@ months of real work has not moved it. That is the actual defect: a count that
 does not respond to effort stops being read — the fault NAME-4 and TODO-2 both
 had to correct, and the reason "Could show a specimen" was retired in v2.8.0.
 
-Amanda chose **narrow what counts**, then asked to measure first rather than
-pick fields blind. Correct instinct; the measuring query is in "Picking this up
-cold". **The decision is hers and is not yet made.**
+**MEASURED 2026-09-08 against 143 taxa. It is mostly a BUG, not a preference.**
+
+Per-field blanks:
+
+| Field | Blank | Of |
+| --- | --- | --- |
+| `origin` | 127 | 143 |
+| `light_conditions` | 70 | 143 |
+| `parentage` | 35 | 43 hybrids |
+| `species_epithet` | 26 | 143 |
+| `bloom_season` | 15 | 143 |
+| `plant_type` | 11 | 143 |
+| description / mature_size | 5 each | 143 |
+| growth_habit / hardy_to / native_range / water_needs | 4 each | 143 |
+| `genus` | 1 | 143 |
+| `family` / `frost_tender` / `is_hybrid` | **0** | — |
+
+**The research work is essentially DONE.** The whole researched block sits at 3%
+or better. 135 was never "the profiles are empty" — it was three fields, two of
+which cannot be filled at all.
+
+**Three fields are counted where they CANNOT apply. This is NAME-4 a third time.**
+
+1. **`species_epithet` — all 26 blanks are correct.** 20 are cultivars, which
+   have no epithet by definition (REFERENCE: *"A cultivar of hybrid origin has
+   no epithet"*). Five are bare-genus placeholders — *Agave, Echeveria,
+   Graptopetalum, Haworthiopsis, Opuntia* — which REFERENCE v2.10.1 explicitly
+   endorses as real identifications at genus rank. One has no name and needs a
+   **working label**. **Zero genuine gaps.** Found from Amanda's screenshot of
+   *Kalanchoe* 'Roseleaf' reading "1 of 16 blank" — a complete record, stuck
+   forever on an epithet that does not exist.
+   `taxonMissingNameParts()` already gets this right (genus OR epithet OR
+   cultivar); `TAXON_PROFILE_FIELDS` does not. **Two halves of one idea
+   disagreeing.**
+2. **`parentage` — 35 of 43.** Most succulent genera have no cultivar
+   registration authority (AI-4), so frequently no pedigree exists to record.
+3. **`origin`** — leaving via ORIG-1 anyway.
+
+**What each narrowing is worth, measured:**
+
+| Tile reads | Scenario |
+| --- | --- |
+| **135** | today (8 of 143 complete) |
+| **103** | `origin` gone |
+| **92** | + `parentage` |
+| **80** | + `species_epithet` — **i.e. the bug fixed, nothing real hidden** |
+| **23** | + `light_conditions` — **do NOT do this** |
+
+**55 of the 135 are records already finished that cannot say so.**
+
+**KEEP `light_conditions` and fill it.** After the fix, **57 of the remaining 80
+are blocked by it alone** — one field, one batch of Ask Claude. Dropping it
+would be the count becoming decorative, which is the fault being fixed. Check
+first whether the AI-4 array branch in `acceptSuggestion` actually lands (BACKLOG
+lists it as shipped-but-never-verified); 49% blank on a field Claude is asked
+for is consistent with accepted suggestions silently not applying.
+
+**Target: 135 → 80 by fixing the count, → 23 by an afternoon of filling.**
+
+### Data-quality findings, separate from PROF-3 — `ready`
+
+Visible in the 2026-09-08 epithet audit. All small, one pass:
+
+- **`is_hybrid = false` on records that state a cross.** *Echeveria* 'Lola',
+  ‘Perle von Nurnberg’, *Graptosedum* ‘Francesco Baldi’ all carry parentage
+  naming two parents. Does not affect counting (`taxonLooksHybrid()` triggers on
+  the cultivar alone) but REFERENCE says **`is_hybrid` carries the `×`** in
+  composed names, so all three display without it.
+- **`xPachyveria` has the hybrid sign inside `genus`.** Compare
+  `×Graptosedum 'California Sunset'`, correctly stored as genus `Graptosedum`
+  with `is_hybrid = true`. `xPachyveria` will not group with `Pachyveria`.
+- **Cultivars stored with quotes baked in** — `'Lola'`, `'Orange Glow'`, curly
+  quotes on `‘Perle von Nurnberg’`. REFERENCE: *"Cultivar is stored bare,
+  without quotes; the display layer adds them."* These render double-quoted.
+- **`Echeveria cv. 'Raindrops'`** uses the deprecated `cv.` notation in
+  `botanical_name`.
 
 **Whatever is chosen must be mirrored in `suggest-species`.** `TAXON_PROFILE_FIELDS`,
 `TAXON_SENTINELS` and `TAXON_HYBRID_ONLY` in `index.html` are a deliberate port

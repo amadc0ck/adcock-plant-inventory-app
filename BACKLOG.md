@@ -53,7 +53,46 @@ recorded on that photo via `photos.plant_id`. No information is lost.
   measure the real data before choosing fields, which is right — the query is
   below and the answer belongs in this file once she runs it.
 
-### The Edge Functions repo — Amanda is creating it 2026-09-08
+### ⚠️ ROTATE THE GOOGLE OAUTH CLIENT SECRET — outstanding, Amanda's job
+
+**Decided 2026-09-08. Not yet done.** A live client secret for
+`adcock-botanical-garden-app` was committed to the Edge Functions repo on
+2026-08-31 in `tools/env.template` and sat at HEAD for eight days. It never left
+the disk — the repo had never been pushed or fetched — and all 25 commits were
+rewritten before the first push, so **nothing containing it ever reached
+GitHub**. Verified: zero blobs, reachable or not, contain it, locally or on the
+remote.
+
+Rotating anyway, because a secret that has lived in a git object store and been
+printed to a terminal is best treated as burned.
+
+**In the GCP console, project `adcock-botanical-garden-app` → APIs & Services →
+Credentials → the `Adcock Botanical Garden App` OAuth client. Order matters:**
+
+1. **Add** a new client secret. Do **not** delete the old one yet.
+2. Update the Supabase secret: `supabase secrets set GOOGLE_OAUTH_CLIENT_SECRET=<new>`
+   (Deno reads it via `Deno.env.get`, so no code change and no redeploy needed —
+   but confirm a photo loads before step 3).
+3. **Then** delete the old secret in the console.
+
+Doing 3 before 2 breaks every photo in the app until 2 lands. **The client id
+does not change**, so no redirect URI or app config is touched.
+
+**Do NOT put the new value in `tools/env.template`.** That file is the template;
+real values belong in `tools/.migration/env`, which is git-ignored. The whole
+incident was someone filling in the template.
+
+### The Edge Functions repo — ✅ PUSHED 2026-09-08
+
+Private `amadc0ck/adcock-plant-inventory`, 25 commits, history scrubbed first.
+`CLAUDE.md`'s "Known risk" section is replaced with what closed it and why the
+old all-clear was wrong.
+
+**The lesson worth keeping:** that section read "no credential is embedded in
+any tracked file", verified **2026-08-27** — four days before the offending file
+was created. It was true when written and false ever after. **A dated all-clear
+describes a moment, not the repo.** Re-scan before any first push rather than
+trusting the note; the command is in `CLAUDE.md`.
 
 She has been asked to create a **private** `amadc0ck/adcock-plant-inventory` with
 no README and no .gitignore (the local folder already has commits). Then: add

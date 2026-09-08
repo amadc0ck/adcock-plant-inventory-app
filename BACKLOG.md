@@ -26,12 +26,15 @@ Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
 
 ### OUTSTANDING SQL — one statement, held deliberately
 
-**`alter table taxa drop column origin;`** — the last step of ORIG-1 and the only
-irreversible one. Everything that read the column is already gone: the view was
-rewritten first (verified as anon: 200, 144 rows, no `origin`), the app shipped
-v2.20.0, `suggest-species` v11 is deployed. Nothing depends on it, so there is no
-urgency and an unread column costs nothing. Run it once a few days of real use
-have passed.
+**NOTHING OUTSTANDING.** `alter table taxa drop column origin;` **ran
+2026-09-08** — ORIG-1 is complete end to end: view rewritten, app shipped,
+`suggest-species` v11 deployed, column dropped.
+
+**It immediately broke every existing backup**, fixed the same hour in v2.21.1 —
+see Completed. Worth remembering as the general shape: **a schema change is not
+finished when the app stops reading the column.** Ask what else held a copy of
+it. Here it was the restore path, which reads files written against older
+schemas by definition.
 
 ### SQL — the double-link cleanup RAN 2026-09-08, after v2.19.0 deployed
 
@@ -1012,6 +1015,39 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.21.1 — dropping a column had just broken every existing backup
+
+**Found by asking what the `DROP COLUMN` had made false**, minutes after Amanda
+ran it, not by anything failing.
+
+`handleImportBackup` spreads whole rows into the upsert — `{...t}` — so every
+backup JSON written before 2026-09-08 carries `"origin": "unknown"` on all 143
+taxa. With the column gone, PostgREST rejects the batch:
+
+```
+PGRST204  Column 'origin' of relation 'taxa' does not exist
+```
+
+The restore dies at the **taxa** step, before plants or photos. **Every backup
+she held was un-restorable and nothing said so** — it would only have surfaced
+on the day she needed one.
+
+`restoreUpsert()` strips the column PostgREST names and retries, bounded at 12,
+so a restore survives this drop and every future one. It logs what it ignored.
+
+**Confined to the restore path deliberately.** All 19 call sites inside
+`handleImportBackup` use it; the three live-app `restUpsert` calls do not.
+Silently discarding a column on a normal write would hide a real bug — but a
+restore reads a file written against an OLDER schema, and the schema having
+moved is that function's normal condition, not an error.
+
+**This is the ADM-2 / ADM-3 failure in a third form.** Both earlier ones were
+tables MISSING from a hand-maintained backup list. This is the inverse — a
+column PRESENT in the backup and gone from the schema — and the same root cause:
+backup and restore are hand-written and drift from the schema in silence.
+
+**Patch, not minor:** it fixes something that shipped broken, three ships ago.
 
 ### v2.21.0 — LIGHT-1, the light-conditions batch
 

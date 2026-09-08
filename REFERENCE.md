@@ -413,6 +413,17 @@ TASK-1 + RPT-3 (v1.84.0). A task is something Amanda wants to do; a subject is w
 
 **Tasks render as rows, not as counted tiles**, which is the one place the work queue's vocabulary is deliberately broken. A tile answers "how many"; a task's value is its text, and hiding "bucket 11, centre is rotted" behind a count would make her click to remember what she meant.
 
+> **A DROPPED COLUMN breaks every existing backup (v2.21.1).** `handleImportBackup`
+> spreads whole rows (`{...t}`), so the moment ORIG-1 dropped `taxa.origin`,
+> every backup written before 2026-09-08 became un-restorable — PostgREST
+> rejects the batch with `PGRST204 Column 'origin' of relation 'taxa' does not
+> exist` and the restore dies at the taxa step, before plants or photos.
+> `restoreUpsert()` now strips the column PostgREST names and retries, so a
+> restore survives any future drop. It is confined to the restore path on
+> purpose: silently discarding a column on a live write would hide a real bug.
+> **A restore reads a file written against an older schema — that is its whole
+> job, and the schema moving is normal, not exceptional.**
+>
 > **Adding a table means adding it to the backup.** `exportFullBackup()` and the
 > restore beside it are not derived from the schema — they are hand-maintained
 > lists, and a table missing from them is lost silently on restore with no error.

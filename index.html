@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.21.0";
+const APP_VERSION = "2.21.1";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1080,6 +1080,50 @@ async function restUpsert(table, rows, conflictCol = "id") {
   if (!res.ok) throw new Error(`${table}: ${await res.text()}`);
 }
 
+/* A RESTORE reads a file written against an older schema, so a column dropped
+   since is not an error in the backup — it is an error in the assumption that
+   the schema never moves. `restoreBackup` spreads whole rows (`{...t}`), so the
+   moment ORIG-1 dropped `taxa.origin` every backup taken before 2026-09-08
+   became un-restorable: PostgREST rejects the whole batch with
+
+     PGRST204  Column 'origin' of relation 'taxa' does not exist
+
+   and the restore dies at the taxa step, before plants or photos.
+
+   Found the same day the column was dropped, by asking what the drop had just
+   made false. This is the ADM-2 / ADM-3 failure in its third form — backup and
+   restore are hand-maintained lists that drift from the schema in silence.
+
+   So: strip the column PostgREST names and retry, until it stops complaining.
+   Self-healing for every FUTURE drop as well, which is the point — the next one
+   will not come with someone remembering to look. Bounded, so a genuinely
+   broken request cannot loop; deliberately confined to the restore path, since
+   silently discarding a column anywhere else would hide a real bug. */
+async function restoreUpsert(table, rows, conflictCol = "id") {
+  if (!rows || rows.length === 0) return;
+  let working = rows;
+  const dropped = [];
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try {
+      await restUpsert(table, working, conflictCol);
+      if (dropped.length) {
+        console.warn(`restore: ${table} — ignored ${dropped.length} column(s) no longer in the schema: ${dropped.join(", ")}`);
+      }
+      return dropped;
+    } catch (e) {
+      // PostgREST names the offending column in single quotes; Postgres 42703
+      // uses double. Accept either, and only retry when a name was actually
+      // found — otherwise this would swallow unrelated failures.
+      const m = /column ['"]([^'"]+)['"] of relation|column ['"]([^'"]+)['"] does not exist/i.exec(String(e.message || ""));
+      const col = m && (m[1] || m[2]);
+      if (!col || dropped.includes(col)) throw e;
+      dropped.push(col);
+      working = working.map((r) => { const c = { ...r }; delete c[col]; return c; });
+    }
+  }
+  throw new Error(`${table}: too many unknown columns to strip`);
+}
+
 function downloadFile(filename, content, mimeType) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -1207,53 +1251,53 @@ async function handleImportBackup() {
     // Locations: two passes to satisfy self-referencing parent_location_id
     // (a child can't be inserted before its parent exists yet).
     if (data.locations?.length) {
-      await restUpsert("locations", data.locations.map((l) => ({ ...l, parent_location_id: null })));
-      await restUpsert("locations", data.locations);
+      await restoreUpsert("locations", data.locations.map((l) => ({ ...l, parent_location_id: null })));
+      await restoreUpsert("locations", data.locations);
     }
     // Taxa before plants: plants.taxa_id is a hard FK. Same two-pass trick as
     // plants, because taxa.primary_photo_id points at a photo that does not
     // exist yet either.
     if (data.taxa?.length) {
-      await restUpsert("taxa", data.taxa.map((t) => ({ ...t, primary_photo_id: null })));
+      await restoreUpsert("taxa", data.taxa.map((t) => ({ ...t, primary_photo_id: null })));
     }
     // Plants: strip primary_photo_id first since photos don't exist yet
     if (data.plants?.length) {
-      await restUpsert("plants", data.plants.map((p) => ({ ...p, primary_photo_id: null })));
+      await restoreUpsert("plants", data.plants.map((p) => ({ ...p, primary_photo_id: null })));
     }
     if (data.photos?.length) {
-      await restUpsert("photos", data.photos);
+      await restoreUpsert("photos", data.photos);
     }
     // Pass 2 for both: photos exist now, so the cover images can be restored
     if (data.taxa?.length) {
-      await restUpsert("taxa", data.taxa);
+      await restoreUpsert("taxa", data.taxa);
     }
     if (data.plants?.length) {
-      await restUpsert("plants", data.plants);
+      await restoreUpsert("plants", data.plants);
     }
-    if (data.identifications?.length) await restUpsert("identifications", data.identifications);
-    if (data.photo_plants?.length) await restUpsert("photo_plants", data.photo_plants);
+    if (data.identifications?.length) await restoreUpsert("identifications", data.identifications);
+    if (data.photo_plants?.length) await restoreUpsert("photo_plants", data.photo_plants);
     // plant_locations was dropped once SPECIES-2 was complete. A backup taken
     // before that still contains it, and restoring those rows would recreate a
     // table the app no longer has. Skipped, deliberately and loudly.
     if (data.plant_locations?.length) console.warn(`[ABG] backup contains ${data.plant_locations.length} plant_locations rows — skipped, that table was retired with SPECIES-2`);
-    if (data.photo_locations?.length) await restUpsert("photo_locations", data.photo_locations);
-    if (data.accession_counters?.length) await restUpsert("accession_counters", data.accession_counters, "year");
+    if (data.photo_locations?.length) await restoreUpsert("photo_locations", data.photo_locations);
+    if (data.accession_counters?.length) await restoreUpsert("accession_counters", data.accession_counters, "year");
     // After plants — care_notes.plant_id is a hard FK.
-    if (data.care_notes?.length) await restUpsert("care_notes", data.care_notes);
+    if (data.care_notes?.length) await restoreUpsert("care_notes", data.care_notes);
     // After plants and locations — both are hard FKs on this table.
-    if (data.plant_location_history?.length) await restUpsert("plant_location_history", data.plant_location_history);
+    if (data.plant_location_history?.length) await restoreUpsert("plant_location_history", data.plant_location_history);
     // No FKs; order does not matter.
-    if (data.list_options?.length) await restUpsert("list_options", data.list_options);
+    if (data.list_options?.length) await restoreUpsert("list_options", data.list_options);
     /* ADM-3, restore side. Order matters: all five reference plants or taxa,
        which are already in by this point. app_settings is keyed on `key`, and
        watering_events on (plant_id, watered_on) — the same conflict target the
        app upserts with, so a restore merges with anything already there rather
        than colliding with the unique index. */
-    if (data.bloom_events?.length) await restUpsert("bloom_events", data.bloom_events);
-    if (data.tasks?.length) await restUpsert("tasks", data.tasks);
-    if (data.task_subjects?.length) await restUpsert("task_subjects", data.task_subjects);
-    if (data.app_settings?.length) await restUpsert("app_settings", data.app_settings, "key");
-    if (data.watering_events?.length) await restUpsert("watering_events", data.watering_events, "plant_id,watered_on");
+    if (data.bloom_events?.length) await restoreUpsert("bloom_events", data.bloom_events);
+    if (data.tasks?.length) await restoreUpsert("tasks", data.tasks);
+    if (data.task_subjects?.length) await restoreUpsert("task_subjects", data.task_subjects);
+    if (data.app_settings?.length) await restoreUpsert("app_settings", data.app_settings, "key");
+    if (data.watering_events?.length) await restoreUpsert("watering_events", data.watering_events, "plant_id,watered_on");
 
     toast("Backup imported successfully");
     fileInput.value = "";

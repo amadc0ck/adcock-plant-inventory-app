@@ -55,8 +55,24 @@ recorded on that photo via `photos.plant_id`. No information is lost.
 
 ### GOOGLE OAUTH CLIENT SECRET — rotated and verified 2026-09-08
 
-**New secret is live and proven. One step left: delete the old secret in GCP**
-(and strip `http://localhost:8910/callback` from both OAuth clients while there).
+**New secret is live and proven. The old secret is DISABLED, not deleted**
+(Amanda, 2026-09-08) — which is Google's recommended path and better than
+deleting: a disabled secret cannot authenticate, so the leaked value is dead,
+while re-enabling is a one-click rollback if anything turns out to depend on it.
+
+Still outstanding, neither urgent:
+- **Delete the disabled secret** once a few days of normal use have passed.
+- **Strip `http://localhost:8910/callback`** from the redirect URIs on BOTH
+  OAuth clients — the old `Adcock Plant Inventory - Web Client` and the new
+  `Adcock Botanical Garden App`. Migration-script scaffolding. Leave the
+  Supabase redirect alone.
+
+**Disabling is also what made the verification conclusive.** While both secrets
+were live, a successful refresh was consistent with either one. With the old
+one disabled there is nothing else it could have succeeded on, so the forced
+refresh run after disabling is the test that actually isolates the new secret.
+Sequence any future rotation the same way: add → verify → disable → verify
+again → delete.
 
 Timeline, all 2026-09-08 UTC:
 

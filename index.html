@@ -776,8 +776,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.18.0";
-const APP_UPDATED = "2026-09-03";
+const APP_VERSION = "2.19.0";
+const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -793,7 +793,6 @@ const state = {
   driveToken: null,
   loading: false,
   modal: null,
-  attachSearch: "",
   tasks: [],
   taskSubjects: [],
   plantLocationHistory: [],
@@ -2382,15 +2381,35 @@ function photoLocationExpectsPlants(p) {
   if (!p || !p.location_id) return false;
   return locationHoldsPlants(locationById(p.location_id));
 }
+/* "Filed to a plant" means EITHER mechanism, never photos.plant_id alone —
+   REFERENCE §6 has said so since v1.70.0 and every count here ignored it.
+   photo_plants is the second way a photo names a plant, and a photo can have
+   only that kind: the assign modal writes a tag whenever the primary is
+   already taken. So a photo tagged to a specimen and nothing else was counted
+   as unfiled forever and could not be cleared by any action — assigning the
+   plant it already had changed nothing. Same class of bug as "Plants missing
+   photos" had before v1.70.0. */
+function photoHasAnyPlant(p) {
+  if (!p) return false;
+  if (p.plant_id) return true;
+  return state.photoPlants.some((pp) => pp.photo_id === p.id);
+}
+/* The Inbox set, in one place. The grid, its lightbox, the resume-after-filing
+   list, the "File to both" tile and the nav badge are all the same photos and
+   have to stay so — they were SIX hand-copied filters, which is why fixing the
+   junction test in one of them would have made them disagree. */
+function isInboxPhoto(p) {
+  return !photoHasAnyPlant(p) && !p.location_id;
+}
 function photoAwaitsPlant(p) {
   // The location test alone was not enough. A wide shot of the whole wall taken
   // while standing at one bucket gets filed to that bucket — a container, which
   // does expect plants — so it was flagged as a gap forever. The type says what
   // the photo IS, and travels with it wherever it is filed.
-  return !!(p.location_id && !p.plant_id && !isPlacePhoto(p) && !isHistoricalPhoto(p) && photoLocationExpectsPlants(p));
+  return !!(p.location_id && !photoHasAnyPlant(p) && !isPlacePhoto(p) && !isHistoricalPhoto(p) && photoLocationExpectsPlants(p));
 }
 function photoIsUntaggedArchiveOrArea(p) {
-  return !!(p.location_id && !p.plant_id && !isPlacePhoto(p) && !photoLocationExpectsPlants(p));
+  return !!(p.location_id && !photoHasAnyPlant(p) && !isPlacePhoto(p) && !photoLocationExpectsPlants(p));
 }
 
 function locationTypeLabel(t) {
@@ -4260,6 +4279,20 @@ async function applyGalleryBatch() {
     for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
       await restPatch("photos", `id=in.(${ids.slice(i, i + DELETE_CHUNK).join(",")})`, body);
     }
+    /* photos.plant_id and photo_plants are two ways of saying the same thing,
+       and writing the first without clearing the second records one plant
+       TWICE on one photo. The symptom is not a stray row — it is Unassign
+       doing nothing: unassignPlantFromPhoto clears the primary and promotes
+       the next photo_plants row, which is the same plant again. Measured
+       2026-09-08: 12 photos were already in this state.
+
+       assignPlantToPhoto and makePrimaryPlantForPhoto have always handled it.
+       This path and the Edit photo form never did. */
+    if (plant && plant !== "__clear__") {
+      for (let i = 0; i < ids.length; i += DELETE_CHUNK) {
+        await restDelete("photo_plants", `plant_id=eq.${plant}&photo_id=in.(${ids.slice(i, i + DELETE_CHUNK).join(",")})`);
+      }
+    }
     if (plant && plant !== "__clear__") notePlantUse(plant);
     toast(`Updated ${countLabel(ids.length, "photo", "photos")}`);
     state.gallerySelectMode = false;
@@ -4315,7 +4348,7 @@ function prepareLightboxResume() {
 function maybeResumeLightbox() {
   if (!state.lightboxResumePending) return;
   state.lightboxResumePending = false;
-  const freshList = state.photos.filter((p) => !p.plant_id && !p.location_id).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+  const freshList = state.photos.filter(isInboxPhoto).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
   if (freshList.length > 0) {
     const idx = Math.min(state.lightboxResumeIndex, freshList.length - 1);
     const next = freshList[idx];
@@ -4330,7 +4363,7 @@ function closeLightbox() {
 }
 function lightboxPhotoList() {
   if (state.lightbox.mode === "inbox") {
-    return state.photos.filter((p) => !p.plant_id && !p.location_id).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+    return state.photos.filter(isInboxPhoto).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
   }
   if (state.lightbox.mode === "gallery") {
     return filteredGalleryPhotos();
@@ -4417,7 +4450,7 @@ function setInboxView(v) { state.inboxView = v; saveInboxPrefs(); render(); }
 // date is exactly what groups an archive era together.
 function inboxPhotos() {
   const q = (state.inboxSearch || "").toLowerCase();
-  let list = state.photos.filter((p) => !p.plant_id && !p.location_id);
+  let list = state.photos.filter(isInboxPhoto);
   if (state.inboxYear) list = list.filter((p) => String(photoDate(p) || "").slice(0, 4) === state.inboxYear);
   if (q) list = list.filter((p) => (p.notes || "").toLowerCase().includes(q));
   const dir = state.inboxSort === "oldest" ? -1 : 1;
@@ -4457,7 +4490,7 @@ function screenInbox() {
   if (state.reportView) return workQueueDetail();
   const pageSize = state.inboxPageSize || 20;
   const unassigned = inboxPhotos();
-  const total = state.photos.filter((p) => !p.plant_id && !p.location_id).length;
+  const total = state.photos.filter(isInboxPhoto).length;
   const limit = state.inboxLimit || pageSize;
   const visible = unassigned.slice(0, limit);
   const remaining = unassigned.length - visible.length;
@@ -6034,9 +6067,9 @@ function workQueue() {
     { title: "File to a plant", sub: "Photo at a container or bed, not filed to a specimen", needs: "no_plant",
       count: state.photos.filter(photoAwaitsPlant).length },
     { title: "File to a location", sub: "Photo attached to a plant, nowhere on the map", needs: "no_location",
-      count: state.photos.filter((p) => p.plant_id && !p.location_id).length },
+      count: state.photos.filter((p) => photoHasAnyPlant(p) && !p.location_id).length },
     { title: "File to both", sub: "Photo with no plant and no location", needs: "neither",
-      count: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
+      count: state.photos.filter(isInboxPhoto).length },
     // Not a gap — an opportunity. These are the archive and whole-area shots
     // that CAN be tagged to a specimen to extend its history, but are not
     // wrong for lacking one.
@@ -7701,20 +7734,22 @@ function modalContent() {
   }
 
   if (type === "linkPlantToLocation") {
-    const existingIds = plantsAtLocation(data.locationId).map((p) => p.id);
-    const q = (state.attachSearch || "").toLowerCase();
-    const candidates = state.plants.filter((p) => !existingIds.includes(p.id) && (!q || plantSearchText(p).includes(q)));
+    /* The last hand-rolled plant list in the app. Its own search box, its own
+       flat text buttons, no thumbnail, no species or location filter, no
+       recents — it predates plantPicker() and never got swapped, which is why
+       exactly one screen felt a generation older than the six around it.
+
+       The copy was also describing behaviour SPECIES-2 removed. It promised
+       "either as its main location or as an additional one"; there is no
+       additional any more. linkPlantToLocation() sets location_id and the
+       trigger records a move, so linking a plant that lives elsewhere IS
+       moving it. Say that, because it is what happens. */
+    const here = plantsAtLocation(data.locationId);
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Link existing plant</h3>
-      <p class="subtle" style="margin:0 0 14px;">Adds this location to the plant — either as its main location (if it doesn't have one) or as an additional one.</p>
-      <input placeholder="Search accession #, name…" value="${escapeHtml(state.attachSearch || "")}" id="search-attach" oninput="state.attachSearch=this.value;scheduleRender()" style="margin-bottom:14px;" />
-      <div class="stack" style="max-height:44vh;overflow-y:auto;">
-        ${candidates.length === 0 ? `<p class="subtle">No plants match.</p>` : candidates.map((p) => `
-          <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;" onclick="linkPlantToLocation('${p.id}','${data.locationId}')">
-            <span class="mono" style="opacity:0.6;margin-right:6px;">${p.accession_number}</span>${escapeHtml(plantDisplayName(p))}
-          </button>`).join("")}
-      </div>
+      <p class="subtle" style="margin:0 0 14px;">Sets this as the plant's location. A plant that lives somewhere else is <strong>moved</strong> here, and the move is recorded in its history.</p>
+      ${plantPicker(`linkPlantToLocation('{id}','${data.locationId}')`, { excludeIds: here.map((p) => p.id) })}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
   }
 
@@ -9783,9 +9818,20 @@ async function unassignPlantFromPhoto(photoId, plantId) {
     if (ph.plant_id === plantId) {
       // Unassigning the primary promotes the next assigned plant rather than
       // dropping the photo back to the Inbox while other plants are still on it.
-      const next = state.photoPlants.find((pp) => pp.photo_id === photoId);
+      //
+      // The candidate must EXCLUDE the plant being unassigned. Where a double
+      // link exists, the next row named that same plant, so the promotion put
+      // it straight back and Unassign appeared to do nothing at all. The
+      // guards above stop new ones; this makes the action correct even on a
+      // photo that already carries one.
+      const next = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id !== plantId);
       await restPatch("photos", `id=eq.${photoId}`, { plant_id: next ? next.plant_id : null });
       if (next) await restDelete("photo_plants", `id=eq.${next.id}`);
+      // And drop any leftover tag for the plant just unassigned, or the next
+      // promotion resurrects it.
+      for (const stale of state.photoPlants.filter((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
+        await restDelete("photo_plants", `id=eq.${stale.id}`);
+      }
     } else {
       const row = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id === plantId);
       if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
@@ -9827,6 +9873,21 @@ async function attachPhotoToLocation(photoId, locationId) {
     toast("Photo attached to container");
     closeModal();
     await loadAll();
+    /* Filing a photo to a bucket and naming the plant in it are one job, and
+       the second half used to mean reopening the photo and finding the picker
+       yourself — with the plants standing in that very bucket nowhere in
+       sight. openModal() already narrows the picker to data.locationId (see
+       the note beside it), so chaining straight in shows what lives here.
+
+       Only where there is something to answer: a location that holds plants,
+       and a photo that does not name one yet. Anywhere else this is a modal
+       you would have to dismiss. */
+    const loc = locationById(locationId);
+    const photo = state.photos.find((p) => p.id === photoId);
+    if (loc && locationHoldsPlants(loc) && photo && !photoHasAnyPlant(photo)) {
+      openModal("assignPlants", { photoId, locationId });
+      return;
+    }
     maybeResumeLightbox();
   } catch (e) { toast(e.message, true); }
 }
@@ -10790,7 +10851,7 @@ function navBtn(t) {
 }
 function navBar() {
   const leftTabs = [
-    { id: "inbox", label: "To Do", icon: "clipboard", badge: state.photos.filter((p) => !p.plant_id && !p.location_id).length },
+    { id: "inbox", label: "To Do", icon: "clipboard", badge: state.photos.filter(isInboxPhoto).length },
     { id: "plants", label: "Plants", icon: "leaf" },
   ];
   const rightTabs = [
@@ -11388,6 +11449,10 @@ function wireModalForms() {
           plant_id: state.editPhotoPlant || null,
           notes: document.getElementById("eph-notes").value || null,
         });
+        // Same double-link guard as applyGalleryBatch — see the note there.
+        if (state.editPhotoPlant) {
+          await restDelete("photo_plants", `photo_id=eq.${state.modal.data.photoId}&plant_id=eq.${state.editPhotoPlant}`);
+        }
         if (state.editPhotoPlant) notePlantUse(state.editPhotoPlant);
         toast("Photo updated");
         closeModal();

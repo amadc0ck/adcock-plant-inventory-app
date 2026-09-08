@@ -7,6 +7,66 @@ Item IDs are permanent. Never renumber.
 
 ---
 
+## Picking this up cold — state as of 2026-09-08
+
+### Amanda's issue list, 2026-09-08 — triaged, one ship done
+
+Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
+**Four of the five were not what the document described.** Triage:
+
+| Her # | What it said | What was actually true |
+| --- | --- | --- |
+| 1 | Drop `origin` from `plants` | **No `origin` on `plants`** — dropped in v2.6.0 with the rest of SPECIES-1. It is `taxa.origin`, in 5 code places **and published on justamanda.net**. See ORIG-1. |
+| 2 | Pickers inconsistent | Real. Shipped as **v2.19.0**. |
+| 3 | Unfinished counter not decreasing | **Not a bug** — see PROF-3. |
+| 4 | Build merge for plants + locations | **`mergePlants()` already exists** and destroys data. See MERGE-1. |
+| 5 | Orphaned photo detection | Mostly already built, but hiding a real bug — fixed in v2.19.0 (D). |
+
+**Sequencing chosen by Amanda:** pickers first (done), then the rest.
+
+### OUTSTANDING SQL — one block, not yet run
+
+**Run only after v2.19.0 is deployed**, or the guards are not in place and it
+refills. Removes the 12 double links Amanda measured 2026-09-08. Safe, complete,
+idempotent, one statement:
+
+```sql
+delete from photo_plants pp
+using photos p
+where pp.photo_id = p.id
+  and pp.plant_id = p.plant_id;
+```
+
+Every row it deletes is redundant by definition: the same plant is already
+recorded on that photo via `photos.plant_id`. No information is lost.
+
+### Decisions taken 2026-09-08 — do not re-litigate
+
+- **`origin` is being removed everywhere, column included.** Amanda: *"I am
+  fully committed to blowing away the origin column wherever it exists."*
+  Sequencing is view → app + function → `DROP COLUMN` last, so the public page
+  never breaks and the irreversible step comes after everything is proven.
+- **"Plants ever assigned here" was CUT.** Scoped as v2.19.0's item C, reading
+  `plant_location_history` in the assign-plants modal. Amanda: *"get rid of C -
+  i dont actually want that behavior."* Do not helpfully re-add it.
+- **The profile-count narrowing (PROF-3) is not decided.** Amanda asked to
+  measure the real data before choosing fields, which is right — the query is
+  below and the answer belongs in this file once she runs it.
+
+### The Edge Functions repo — Amanda is creating it 2026-09-08
+
+She has been asked to create a **private** `amadc0ck/adcock-plant-inventory` with
+no README and no .gitignore (the local folder already has commits). Then: add
+the remote, re-verify the history is clean, push, and delete the "Known risk"
+section from `CLAUDE.md`. **This is the last unbacked-up thing in the project.**
+
+Confirmed 2026-09-08: all three repos are personal — remotes under `amadc0ck`,
+identity `Amanda Adcock <amandamarienash@gmail.com>` global and per-repo, no
+`includeIf` conditional config, credentials via osxkeychain. **Her work account
+is not configured anywhere on this machine** and cannot be pushed to by accident.
+
+---
+
 ## Picking this up cold — state as of 2026-08-31
 
 ### GWS-1 — Google Workspace migration — ✅ COMPLETE 2026-08-31
@@ -334,6 +394,101 @@ order by location_count desc;
 ---
 
 ## Open — verified 2026-08-28, end of session
+
+### MERGE-1 — `mergePlants()` silently destroys watering and bloom history — `ready`
+
+**This is the most serious thing in the 2026-09-08 triage and it is already
+shipped code.** `mergePlants()` (`index.html`, ~line 9186) has existed since
+before the merge request was written; the request asked for a feature that is
+half-built and quietly lossy.
+
+It reassigns photos, `photo_plants`, `parent_plant_id`, `plant_location_history`
+and `care_notes` — then deletes the plant. It does **not** touch:
+
+| Table | FK | Consequence of the delete |
+| --- | --- | --- |
+| `watering_events` | `on delete cascade` | **every watering record destroyed** |
+| `bloom_events` | `on delete cascade` | **every bloom record destroyed** |
+| `task_subjects` | plant_id | task loses its subject |
+| `suggestions` | value_id | orphaned |
+
+**REFERENCE §6's "Deletion / merge cleanup order" is stale** — it lists five
+steps and was written before `watering_events`, `bloom_events` and the task
+system existed. It is the checklist this function was built from, so the
+function is exactly as complete as the doc was. **Fix both together**, and fix
+the doc so the next table added lands on the list.
+
+This is the same failure mode as the backup audit (ADM-2 then ADM-3, four
+recurrences): a hand-maintained list of tables that nobody updates when a table
+is added. Consider whether the cleanup list can be derived rather than written.
+
+Only reachable today from the **Duplicate plants** tile, so exposure is limited
+to plants merged from there — 207 plants have watering rows as of 2026-08-31, so
+the blast radius is real but the trigger is rare. **Fix before widening access
+to merge**, which is what MERGE-2 does.
+
+### MERGE-2 — merge from anywhere, and merge child locations — `ready`
+
+Blocked on MERGE-1: widening access to a lossy merge makes it worse. Amanda's
+ask, 2026-09-08:
+
+- **Plants.** Pick any plant, choose another to merge into it. Surviving plant
+  wins on metadata; she chooses which location survives; photos, tags, notes and
+  events all combine. Today merge is reachable only from Duplicate plants.
+- **Locations (child only).** Viewing a location, merge another child into it:
+  move every plant up, then delete the merged-away location. **No merge code
+  exists for locations at all** — `deleteLocation()` is the nearest thing and it
+  *unassigns* plants rather than moving them.
+- **Duplicate detection stays as-is.** She confirmed the existing name+location
+  auto-flag needs no change.
+
+### ORIG-1 — remove `origin` everywhere, column included — `ready`
+
+Approved 2026-09-08, including the `DROP COLUMN`. `origin` is on **`taxa`**, not
+`plants` (the document that requested it said `plants`; those columns went in
+v2.6.0). Five code sites plus two things outside `index.html`:
+
+| Where | Detail |
+| --- | --- |
+| Taxon Detail row | `fieldRow("pin", "Origin", ...)` |
+| Edit species form | `et-origin` select + `ORIGIN_LABELS` |
+| Profile completeness | `TAXON_PROFILE_FIELDS` + `TAXON_SENTINELS` |
+| Plants CSV export | header **and** `tv("origin")` value |
+| `suggest-species` | `FIELDS` — **Edge Function deploy**, and its `origin` prompt was rewritten twice (v7, v8) specifically for this field |
+| `public_plant_inventory` | **the view justamanda.net/inventory.html reads live** |
+
+**Sequence, and it matters:** rewrite the view without `origin` and confirm the
+public page still renders → ship the app change and deploy `suggest-species`
+together → `DROP COLUMN` last. Any other order breaks the public page in the gap
+or drops the column before anything is proven.
+
+**Removing it changes PROF-3's number** — every taxon loses one gap, and
+`origin` defaults to `unknown`, so it was blank on nearly all of them. Decide
+PROF-3 and ORIG-1 together or the count moves twice for unrelated reasons.
+
+### PROF-3 — "Species profiles unfinished" is correct and reads as broken — `ready`
+
+Reported 2026-09-08 as a bug: the count does not go down. **It is working as
+designed.** A taxon counts as unfinished if **any** of 14 fields is blank (16 on
+hybrids), and Amanda believed it tracked genus / species / synonym — which is
+**"Names not split up"**, a different tile. Filling genus and species takes a
+record from 14 gaps to 12 and it stays on the list. 135 of ~143 is consistent
+with the 2026-08-28 measurement of 13 complete out of 133.
+
+**The tile can only ever tick down when a record reaches zero**, which is why
+months of real work has not moved it. That is the actual defect: a count that
+does not respond to effort stops being read — the fault NAME-4 and TODO-2 both
+had to correct, and the reason "Could show a specimen" was retired in v2.8.0.
+
+Amanda chose **narrow what counts**, then asked to measure first rather than
+pick fields blind. Correct instinct; the measuring query is in "Picking this up
+cold". **The decision is hers and is not yet made.**
+
+**Whatever is chosen must be mirrored in `suggest-species`.** `TAXON_PROFILE_FIELDS`,
+`TAXON_SENTINELS` and `TAXON_HYBRID_ONLY` in `index.html` are a deliberate port
+of `FIELDS`, `SENTINELS` and `HYBRID_ONLY` in the Edge Function — counting a
+field Claude is never asked for puts a permanent floor under the number, which
+is the whole reason PROF-1 was built as a port. **Two halves of one rule.**
 
 ### AI-4 — cite San Marcos Growers when researching a species — `ready`
 
@@ -735,6 +890,71 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.19.0 — one picker everywhere, and photos tagged to a plant stop reading as unfiled
+
+From Amanda's 2026-09-08 issue list, items #2 and #5. Four changes, two of them
+correctness fixes she had not asked for and one of them measurable.
+
+**A. `linkPlantToLocation` was the last hand-rolled plant list in the app.**
+Its own search box, flat text buttons, no thumbnail, no species or location
+filter, no recents — it predates `plantPicker()` and was never swapped, which is
+why exactly one screen felt a generation older than the six around it. This is
+the "old text list of plants" in the report; it is reached from **Link existing
+plant**, which is why "+ New specimen here" beside it still looked modern.
+
+**Its copy was also describing behaviour SPECIES-2 removed.** It promised
+"either as its main location or as an additional one" — there is no additional
+any more. `linkPlantToLocation()` sets `location_id` and the trigger records a
+move, so linking a plant that lives elsewhere IS moving it. The modal now says
+so. **A stale sentence in a modal outlives the code it described**; this one had
+been wrong since v1.65.0.
+
+**B. Attaching a location to a photo now chains into the plants standing in it.**
+`attachPhotoToLocation` set `location_id` and closed, so naming the plant meant
+reopening the photo and finding the picker yourself — with the plants in that
+very bucket nowhere in sight. It now opens `assignPlants` narrowed to that
+location, but **only where there is something to answer**: a location that holds
+plants, and a photo that does not name one yet. The narrowing machinery already
+existed (`openModal` sets `state.pickerLocation` from `data.locationId`) and was
+simply never reached from this path.
+
+**C. Was going to be "plants ever assigned here, current + historical", read
+from `plant_location_history`. Amanda cut it — she does not want that
+behaviour.** Recorded so it is not helpfully re-added: the history table is
+still read by MOVE-1 only, and that is deliberate.
+
+**D. Every photo count ignored `photo_plants`.** REFERENCE §6 has said since
+v1.70.0 that "photos of a plant" means both mechanisms, never `photos.plant_id`
+alone — and six counts tested `!p.plant_id` directly. A photo tagged to a
+specimen and nothing else was counted as unfiled **forever, and could not be
+cleared by any action**: assigning the plant it already had changed nothing.
+
+Two helpers now own it — `photoHasAnyPlant()` and `isInboxPhoto()` — and the
+**six hand-copied inbox filters** (the grid, its lightbox, the resume-after-
+filing list, the "File to both" tile, the nav badge, the total) are one
+definition. They were six copies of one predicate, which is why fixing the
+junction test in any one of them would have made them disagree.
+
+**Expect the To Do counts to drop on first load. That is the fix working.**
+
+**E. Two write sites created a double link, and 12 photos already carry one.**
+`applyGalleryBatch` and the Edit photo form both wrote `photos.plant_id`
+without clearing a matching `photo_plants` row, recording one plant twice on one
+photo. `assignPlantToPhoto` and `makePrimaryPlantForPhoto` have always handled
+it; these two never did.
+
+**The symptom was not a stray row — it was Unassign doing nothing.**
+`unassignPlantFromPhoto` clears the primary and promotes the next `photo_plants`
+row, which on a double-linked photo is *the same plant*, so it went straight
+back and the toast said "Plant unassigned". Guards added at both write sites,
+and the promotion now skips the plant being removed, so the action is correct
+even on a photo that already carries one.
+
+**Measured by Amanda 2026-09-08: 12 rows.** Cleanup SQL is outstanding — see
+"Picking this up cold".
+
+Also removed: `state.attachSearch`, dead once its only consumer went.
 
 ### v2.18.0 — a location's photos read down the columns, not across
 

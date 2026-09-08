@@ -586,6 +586,23 @@ Plants, locations, and photos all support many-to-many **on top of** a fast-path
 
 Step 4 was missed on first implementation and caused an FK violation (`plant_location_history_plant_id_fkey`) during a merge. (It was step 5 until `plant_locations` was dropped.)
 
+> **⚠️ THIS LIST IS INCOMPLETE AND `mergePlants()` IS LOSSY TODAY (found 2026-09-08, MERGE-1, not yet fixed).**
+> It was written before `watering_events`, `bloom_events` and the task system
+> existed, and `mergePlants()` was built from it — so the function is exactly as
+> complete as this list was. Missing, and all of them silently destroyed when the
+> merged plant is deleted:
+>
+> | Table | FK | What the delete does |
+> | --- | --- | --- |
+> | `watering_events` | `on delete cascade` | **every watering record destroyed** |
+> | `bloom_events` | `on delete cascade` | **every bloom record destroyed** |
+> | `task_subjects` | `plant_id` | task loses its subject |
+> | `suggestions` | `value_id` | orphaned |
+>
+> This is the ADM-2 / ADM-3 failure a third time: a hand-maintained list of
+> tables that nobody updates when a table is added. **Adding a table means
+> adding it here, to `exportFullBackup()`, and to the restore.**
+
 **Direct-only vs. rolled-up reads (v1.34.5).** The many-to-many design means a location has two legitimate readings, and picking the wrong one is a recurring bug class:
 
 - `photosAtLocation()` / `plantsAtLocation()` — **direct only.** Correct on Location Detail, where you are looking at one container.
@@ -702,6 +719,10 @@ Scroll is preserved the same way (v1.52.2), for the page, the modal and the Gall
 - **Icons:** inline SVG strings via `icon(name)`. As of v1.32, 8 icons use **real Tabler Icons source** (plant, map-pin, map-2, clipboard-text, info-circle, progress-check, progress-x, photo-question), copied from tabler.io rather than approximated. Get exact source from Amanda if more Tabler icons are wanted.
 - **Responsive:** mobile-first, breakpoints at 700px (2-column card grids, larger thumbnails) and 1100px (3-column, widest container). `.card-grid` handles this. `.stack` is reserved for form/vertical layouts and deliberately never becomes a grid.
 - **The `@media` blocks must stay last in `<style>` (v1.37.1).** Media queries add **no specificity**. A single-class base rule declared *after* them wins at every width, and the breakpoint silently stops working — no error, no warning, it just never applies. This had already killed `.plant-list-thumb` (base at 92px declared below the block, so the 120/140px breakpoint sizes never applied on any screen) and it killed `.detail-split` the day it was written. Add new base rules **above** the block.
+- **"Is this photo filed to a plant?" means `photoHasAnyPlant()`, never `!p.plant_id` (v2.19.0).** The inverse of the rule below, and it went unenforced for nine versions. **Six** counts tested `!p.plant_id` directly — the Inbox grid, its lightbox, the resume-after-filing list, the "File to both" tile, the nav badge and the header total — so a photo tagged to a specimen only through `photo_plants` was counted as unfiled **forever and could not be cleared by any action**: assigning the plant it already had changed nothing. `photoHasAnyPlant()` and `isInboxPhoto()` are now the single definitions; do not hand-copy the filter a seventh time.
+
+- **`photos.plant_id` and a `photo_plants` row for the same plant must never both exist (v2.19.0).** Two ways of saying one thing. `assignPlantToPhoto()` and `makePrimaryPlantForPhoto()` always guarded it; `applyGalleryBatch()` and the Edit photo form did not, and 12 photos were measured in that state on 2026-09-08. **The symptom is not a stray row — it is Unassign doing nothing**, because `unassignPlantFromPhoto()` clears the primary and promotes the next `photo_plants` row, which on a double-linked photo is the same plant. Any new path that writes `photos.plant_id` directly must delete the matching junction row in the same operation.
+
 - **"Photos of a plant" means `plantPhotosOrdered()`, never `photos.plant_id` alone (v1.70.0).** The direct attachment is one of two ways a photo shows a plant; `photo_plants` tags are the other, and a plant can have only the second kind. Any count, report or empty state that tests `p.plant_id === pl.id` directly will contradict the thumbnail beside it, which is exactly what "Plants missing photos" did.
 - **The Location page has two photo layouts (v1.68.0), chosen by `locationHoldsPlants()`.** A container gets action cards — its photos are records to file. An Area or Archive gets `.photo-feed`: one column, whole frame uncropped, icon actions, caption below. Identify, Ask Claude and "other containers" are dropped there, because all three presuppose a plant or a container that a whole-area view does not have.
 - **"No plant" is a gap only where plants are expected (v1.66.0).** `locationHoldsPlants()` decides, and `photoAwaitsPlant()` is the single predicate the Location banner, the Reports bucket and the Gallery filter all read. An Area photographs the whole wall and an Archive is a former home; neither names a specimen, so flagging them nags about correct data. Archive photos remain fully taggable — that is the Santa Rita workflow (§10) — and get their own non-accusing bucket, "Could show a specimen", which is excluded from the unfiled headline count. Any new report over photos must use the predicate rather than testing `!p.plant_id` directly, or the buckets stop being mutually exclusive.

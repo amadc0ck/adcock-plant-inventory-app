@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.22.0";
+const APP_VERSION = "2.23.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -866,6 +866,7 @@ const state = {
   currentTaxonId: null,
   taxaSearch: "",
   taxaOnlySuggestions: false,
+  taxaNoCoverOnly: false,     // COVER-1 filter on the Plants tab
   taxaOnlyMissingParts: false,
   settingsOpen: {},       // which Settings sections are expanded
   navStack: [],           // NAV-1: where you came from, with the filter intact
@@ -4037,7 +4038,7 @@ function navBackLabel(fallback) {
 function goTab(tab) {
   // A tab is a fresh start, so the trail from the previous one is not a path
   // back to anywhere she would recognise.
-  state.navStack = []; state.tab = tab; state.modal = null; state.reportView = null; state.taxaOnlySuggestions = false; state.taxaOnlyMissingParts = false; render(); }
+  state.navStack = []; state.tab = tab; state.modal = null; state.reportView = null; state.taxaOnlySuggestions = false; state.taxaOnlyMissingParts = false; state.taxaNoCoverOnly = false; render(); }
 function toggleInboxSelectMode() {
   state.inboxSelectMode = !state.inboxSelectMode;
   state.inboxSelected = new Set();
@@ -4302,14 +4303,26 @@ function showGalleryInBloom() {
 function showTaxaMissingParts() {
   state.tab = "plants";
   state.taxaOnlyMissingParts = true;
+  state.taxaNoCoverOnly = false;
   state.taxaOnlySuggestions = false;
   state.taxaIncompleteOnly = false;
   state.taxaSearch = "";
   render();
 }
+function showTaxaNoCover() {
+  state.tab = "plants";
+  state.taxaNoCoverOnly = true;
+  state.taxaIncompleteOnly = false;
+  state.taxaOnlyMissingParts = false;
+  state.taxaOnlySuggestions = false;
+  state.taxaSearch = "";
+  render();
+}
+
 function showTaxaIncomplete() {
   state.tab = "plants";
   state.taxaIncompleteOnly = true;
+  state.taxaNoCoverOnly = false;
   state.taxaOnlyMissingParts = false;
   state.taxaOnlySuggestions = false;
   state.taxaSearch = "";
@@ -4418,6 +4431,35 @@ function plantPhotosOrdered(plantId) {
     .filter((p) => p.plant_id === plantId || taggedPhotoIds.has(p.id))
     .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
 }
+/* COVER-1, 2026-09-08. A record with no `primary_photo_id` is NOT missing a
+   photo — `plantCoverPhoto`, `locationCoverPhoto` and the taxon equivalent all
+   fall back to the newest, so the card renders either way. Measured the day
+   this shipped: 115 species and 216 plants had no primary set and **every one
+   of them had photos**; exactly ONE location in the whole collection had no
+   photo anywhere beneath it.
+
+   So this is a CHOOSING queue, not a missing one: the fallback picks the most
+   recent shot, which for a plant photographed while it was struggling is a poor
+   portrait. The tiles say "choose", not "missing", because the difference is
+   the whole point.
+
+   Records with NO photos are excluded deliberately. There is nothing to choose
+   from, so counting them would be a number no action could clear — the NAME-4 /
+   TODO-2 fault this file has now had to correct three times. */
+function plantsWithoutChosenCover() {
+  return state.plants.filter((pl) => !pl.primary_photo_id && plantPhotosOrdered(pl.id).length > 0);
+}
+function locationsWithoutChosenCover() {
+  // locationCoverPhoto() is the rolled-up read: own primary, own newest, then
+  // anything nested beneath. Direct-only would report every top-level area as
+  // coverless, which is the recurring bug class REFERENCE names.
+  return state.locations.filter((l) => !l.archived && !l.primary_photo_id && locationCoverPhoto(l));
+}
+function taxaWithoutChosenCover() {
+  return state.taxa.filter((t) => !t.primary_photo_id
+    && specimensOfTaxon(t.id).some((sp) => plantPhotosOrdered(sp.id).length > 0));
+}
+
 function plantCoverPhoto(pl) {
   const photos = plantPhotosOrdered(pl.id);
   if (pl.primary_photo_id) {
@@ -4903,6 +4945,8 @@ function screenTaxa() {
   const list = state.taxa.filter((t) => {
     if (state.taxaOnlySuggestions && !suggestionsForTaxon(t.id).length) return false;
     if (state.taxaOnlyMissingParts && !taxonMissingNameParts(t)) return false;
+    if (state.taxaNoCoverOnly && !(!t.primary_photo_id
+        && specimensOfTaxon(t.id).some((sp) => plantPhotosOrdered(sp.id).length > 0))) return false;
     if (state.taxaIncompleteOnly) {
       if (!taxonProfileGaps(t).length) return false;
       if (state.taxaNeverAskedOnly && taxonWasAsked(t)) return false;
@@ -4931,6 +4975,14 @@ function screenTaxa() {
             <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaOnlyMissingParts=false;render()">Show all</button>
           </div>
           <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">No genus, epithet or cultivar recorded, so these cannot group with their relatives and the name cannot be styled per part. Open one and use <strong>Ask Claude about this species</strong>.</p>
+        </div>` : ""}
+      ${state.taxaNoCoverOnly ? `
+        <div class="filter-note" style="margin-bottom:14px;">
+          <div class="row">
+            <span class="filter-note-head">Species with no chosen cover</span>
+            <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaNoCoverOnly=false;render()">Show all</button>
+          </div>
+          <p class="subtle" style="margin:6px 0 0;font-size:12.5px;">These render the newest photo of any specimen. Open one and use <strong>Set species photo</strong> to pin a better portrait. Species with no photos at all are not listed &mdash; there is nothing to choose from.</p>
         </div>` : ""}
       ${state.taxaIncompleteOnly ? (() => {
         const all = taxaIncompleteProfiles();
@@ -6017,6 +6069,10 @@ function reportSections() {
       kind: "location" },
     { key: "plantsNoPhotos", title: "Plants missing photos", sub: "At least one photo needed",
       items: state.plants.filter((pl) => plantPhotosOrdered(pl.id).length === 0), kind: "plant" },
+    { key: "plantsNoCover", title: "Plants with no chosen cover", sub: "Showing the newest photo — pick a better one",
+      items: plantsWithoutChosenCover(), kind: "plant" },
+    { key: "locationsNoCover", title: "Locations with no chosen cover", sub: "Showing the newest photo — pick a better one",
+      items: locationsWithoutChosenCover(), kind: "location" },
     { key: "plantsUnidentified", title: "Plants missing identification", sub: "Needs a name or confirmation",
       items: state.plants.filter((pl) => pl.identification_status === "unidentified"), kind: "plant" },
     { key: "frostTender", title: "Frost tender — bring in", sub: "Species marked not frost hardy",
@@ -6273,6 +6329,12 @@ function workQueue() {
     ${group("Records to finish", null, [
       tile(missingParts, "Names not split up", "Free text only — cannot group with relatives", "showTaxaMissingParts()"),
       tile(incompleteProfiles, "Species profiles unfinished", "Blank fields Claude can fill", "showTaxaIncomplete()"),
+      /* COVER-1. Grouped together so the three read as one job at three levels
+         rather than three unrelated chores. None is a MISSING photo — see the
+         note on plantsWithoutChosenCover(). */
+      tile(taxaWithoutChosenCover().length, "Species with no chosen cover", "Showing the newest photo — pick a better one", "showTaxaNoCover()"),
+      sect("plantsNoCover"),
+      sect("locationsNoCover"),
       sect("plantsNoPhotos"),
       sect("plantsUnidentified"),
       sect("plantsNoTaxon"),

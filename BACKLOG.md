@@ -1035,6 +1035,55 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.23.0 — COVER-1, three tiles for records showing a fallback cover
+
+Amanda asked how many species, plants and locations have no primary photo set,
+then asked for a tile. Measured 2026-09-08 first, and the measurement changed
+what the tile should SAY:
+
+| | no primary set | of those, have photos | **truly blank** |
+| --- | --- | --- | --- |
+| Species | 115 of 145 | 115 | **0** |
+| Plants | 216 of 231 | 216 | **0** |
+| Locations | 147 of 172 | 146 | **1** |
+
+**Nothing is missing a photo.** `plantCoverPhoto()`, `locationCoverPhoto()` and
+the taxon equivalent all fall back to the newest photo, so every one of those
+cards already renders. Exactly ONE location in the whole collection has no photo
+anywhere beneath it.
+
+**So the tiles say "no chosen cover", not "missing photo".** The fallback picks
+the most recent shot, which for a plant photographed while it was struggling is
+a poor portrait. This is a CHOOSING queue and the wording has to say so, or it
+reads as 478 broken records.
+
+**Records with no photos are excluded.** Nothing to choose from means no action
+can clear them — the NAME-4 / TODO-2 uncompletable-count fault, which this file
+has now had to correct three times in one day.
+
+Three tiles, grouped together in *Records to finish* so they read as one job at
+three levels: `taxaWithoutChosenCover()` (Plants-tab filter, mirroring
+`showTaxaIncomplete`), plus `plantsNoCover` and `locationsNoCover` as ordinary
+`reportSections()` buckets, since `sect()` renders only `plant` and `location`
+kinds and species have always used the tab-filter path instead.
+
+`locationsWithoutChosenCover()` uses `locationCoverPhoto()`, the ROLLED-UP read
+— own primary, own newest, then anything nested beneath. A direct-only test
+would report every top-level area as coverless, the recurring bug class
+REFERENCE names.
+
+**Two findings that fell out of the measurement:**
+
+- **231 of 231 plants are `status = 'active'`.** Nothing has ever been recorded
+  as dead, given away or deaccessioned — because **no action in the app sets
+  status away from active**; it is reachable only through Edit full record's
+  dropdown. That is GRAVE-1's premise confirmed by data rather than argued, and
+  it means `plantsAtLocation()` still counts plants that are gone.
+- **Everything reconciles:** 145 taxa, 231 plants, 231 specimens in the public
+  view, 0 plants without a species, and "Plants missing photos" correctly shows
+  nothing — it uses `plantPhotosOrdered()`, the same junction-aware definition
+  the audit used.
+
 ### v2.22.0 — taxa whose specimens are all unidentified leave the profile queue
 
 Amanda, 2026-09-08: *"for specimens with the status of unidentified, exclude

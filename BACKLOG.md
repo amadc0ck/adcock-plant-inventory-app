@@ -1003,6 +1003,23 @@ outstanding work. This is what got "In bloom now" retired in v2.6.0.
 **`wishlist` was added to `exportFullBackup()` and the restore in this commit**,
 which is the rule REFERENCE states in bold after four occurrences of forgetting.
 
+**VERIFICATION STATE, 2026-09-08.** The wish list half is confirmed working by
+Amanda in the running app. **The GRAVE-1 half is not**, and it is the half that
+writes:
+
+- **"No longer have this plant"** — the `status` + `collection_category` +
+  `date_removed` patch, the care note it writes, and the wish-list checkbox.
+  Nothing has exercised it against a real plant. **231 of 231 plants are still
+  `active`, so the Graveyard renders empty and the whole path is untested.**
+- **"Back in the collection"** — the reverse, likewise untouched.
+- **The `plantsAtLocation()` status filter** — no plant is non-active yet, so
+  the behaviour change has had no observable effect. The first plant recorded as
+  gone is what proves both the bucket count dropping AND
+  `plantsEverAtLocation()` keeping it out of "Empty locations".
+
+**One plant tested end to end would clear all three**, and "Back in the
+collection" undoes it.
+
 ### v2.23.2 — MERGE-1, every merge was destroying watering and bloom history
 
 **The most serious thing found in the 2026-09-08 triage, and it was already

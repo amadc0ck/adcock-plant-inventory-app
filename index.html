@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.24.0";
+const APP_VERSION = "2.25.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3976,6 +3976,11 @@ function icon(name) {
     note: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 20l7 -7" /><path d="M13 20v-6a1 1 0 0 1 1 -1h6v-7a2 2 0 0 0 -2 -2h-12a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7" /></svg>`,
     chevronRight: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6" /></svg>`,
     photoStar: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 8h.01" /><path d="M11 21h-5a3 3 0 0 1 -3 -3v-12a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v5.5" /><path d="M3 16l5 -5c.928 -.893 2.072 -.893 3 0l2 2" /><path d="M17.8 20.817l-2.172 1.138a.392 .392 0 0 1 -.568 -.41l.415 -2.411l-1.757 -1.707a.389 .389 0 0 1 .217 -.665l2.428 -.352l1.086 -2.193a.392 .392 0 0 1 .702 0l1.086 2.193l2.428 .352a.39 .39 0 0 1 .217 .665l-1.757 1.707l.414 2.41a.39 .39 0 0 1 -.567 .411l-2.172 -1.138" /></svg>`,
+    // GRAVE-1 (v2.25.0). Amanda's pick, and it frees `shovel` for the Soil
+    // field the note below reserved it for. Used by both the "No longer have
+    // this plant" action and the In memoriam view it leads to — the action and
+    // its destination sharing an icon is the point.
+    coffin: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M7 3l-2 6l2 12h6l2 -12l-2 -6l-6 0" /><path d="M10 7v5" /><path d="M8 9h4" /><path d="M13 21h4l2 -12l-2 -6h-4" /></svg>`,
     // Not yet wired to a screen. shovel/bowlSpoon await Soil and Feeding fields;
     // heartStar is GAL-1 favorites; plant2 is BLOOM-1 / GAL-5 in-bloom.
     shovel: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 4l3 3" /><path d="M18.5 5.5l-8 8" /><path d="M8.276 11.284l4.44 4.44a.968 .968 0 0 1 0 1.369l-2.704 2.704a4.108 4.108 0 0 1 -5.809 -5.81l2.704 -2.703a.968 .968 0 0 1 1.37 0l-.001 0" /></svg>`,
@@ -5069,18 +5074,21 @@ function screenTaxa() {
                went live, so ~65 records were never asked about it. They are one
                field from done and the field is one Claude answers well. */""}
           ${(() => {
-            const oneAway = taxaMissingOnlyLight().length;
-            const waiting = pendingLightSuggestions().length;
-            if (!oneAway && !waiting) return "";
+            const away = oneAwayFields();
+            const waiting = TAXON_PROFILE_FIELDS
+              .map((f) => ({ field: f, rows: pendingSuggestionsForField(f) }))
+              .filter((x) => x.rows.length);
+            if (!away.length && !waiting.length) return "";
+            const nm = (f) => (FIELD_LABELS[f] || f).toLowerCase();
             return `
             <div class="wrap-gap" style="margin-top:10px;gap:8px;">
-              ${oneAway ? `<button class="btn btn-accent btn-sm" onclick="runTaxaLightBatch()">
-                Ask Claude for light on ${oneAway} ${oneAway === 1 ? "species" : "species"}</button>` : ""}
-              ${waiting ? `<button class="btn btn-secondary btn-sm" onclick="acceptAllLightSuggestions()">
-                Accept ${waiting} light ${waiting === 1 ? "answer" : "answers"}</button>` : ""}
+              ${away.map((x) => `<button class="btn btn-accent btn-sm" onclick="runTaxaFieldBatch('${x.field}')">
+                Ask Claude for ${nm(x.field)} on ${x.taxa.length}</button>`).join("")}
+              ${waiting.map((x) => `<button class="btn btn-secondary btn-sm" onclick="acceptAllSuggestionsForField('${x.field}')">
+                Accept ${x.rows.length} ${nm(x.field)} ${x.rows.length === 1 ? "answer" : "answers"}</button>`).join("")}
             </div>
-            <p class="subtle" style="margin:6px 0 0;font-size:11.5px;">${oneAway
-              ? `${oneAway === 1 ? "One species is" : `These ${oneAway} are`} a single light value from complete. One call each, nothing written until you accept.`
+            <p class="subtle" style="margin:6px 0 0;font-size:11.5px;">${away.length
+              ? `Each button is a set of species that are a single value from complete. One call per species, nothing written until you accept.`
               : `Claude has answered — review them on each species, or accept them all at once.`}</p>`;
           })()}
         </div>`;
@@ -5440,7 +5448,7 @@ function screenPlantDetail() {
                  so. Delete is not that answer: the plant existed, and its
                  photos and history are worth keeping. */""}
             ${pl.status === "active"
-              ? `<button class="action-row" onclick="openModal('noLongerHave',{plantId:'${pl.id}'})">${icon("shovel")}<span class="action-label">No longer have this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>`
+              ? `<button class="action-row" onclick="openModal('noLongerHave',{plantId:'${pl.id}'})">${icon("coffin")}<span class="action-label">No longer have this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>`
               : `<button class="action-row" onclick="restorePlantToCollection('${pl.id}')">${icon("seedling")}<span class="action-label">Back in the collection</span><span class="action-chevron">${icon("chevronRight")}</span></button>`}
             <button class="action-row action-danger" onclick="deletePlant('${pl.id}')">${icon("trash")}<span class="action-label">Delete plant</span></button>
           </div>
@@ -6459,7 +6467,7 @@ function wishGroup() {
       })()}
       ${gone.length ? `
         <button class="attn-row" style="margin-top:12px;" onclick="state.reportView='graveyard';render()">
-          ${icon("heartStar")}
+          ${icon("coffin")}
           <div style="flex:1;min-width:0;">
             <div class="attn-title">In memoriam</div>
             <div class="attn-sub">${countLabel(gone.length, "plant that has", "plants that have")} left the collection</div>
@@ -9447,20 +9455,40 @@ async function askClaudeAboutSpecies(taxaId, opts) {
    better trade on cost — but this batch is unattended across dozens of records,
    and Amanda chose to keep it to the one field whose answer is already known to
    be good rather than let a sweep quietly reshape records she has curated. */
-function taxaMissingOnlyLight() {
+/* Generalised from taxaMissingOnlyLight() in v2.25.0. LIGHT-1 was built for one
+   field because one field had the problem; the problem is not specific to it.
+   **Any field added to the profile is blank on every existing record the day it
+   lands** — light_conditions was blank on 65 for exactly that reason, three days
+   after Ask Claude went live.
+
+   So the batch is now per-field, and adding a field costs one run rather than a
+   queue explosion. Still strictly "missing ONLY this": a record with other gaps
+   would have them filled in the same call for the same price, but an unattended
+   sweep should not quietly reshape records she has curated (Amanda, LIGHT-1). */
+function taxaMissingOnly(field) {
   return state.taxa.filter((t) => {
     // Must honour the same exclusions as the list it sits under, or the button
     // offers to work on records that are not shown and the two counts disagree.
     if (!taxonInProfileQueue(t)) return false;
     const gaps = taxonProfileGaps(t);
-    return gaps.length === 1 && gaps[0] === "light_conditions";
+    return gaps.length === 1 && gaps[0] === field;
   });
 }
 
-async function runTaxaLightBatch() {
-  const ids = taxaMissingOnlyLight().map((t) => t.id);
-  if (!ids.length) { toast("Nothing is one light value from done", true); return; }
-  if (!confirm(`Ask Claude for the light conditions of ${ids.length} species?\n\n`
+// Every field that has a one-away cohort, biggest first. This is what turns
+// "135 unfinished" into a short list of one-call jobs.
+function oneAwayFields() {
+  return TAXON_PROFILE_FIELDS
+    .map((f) => ({ field: f, taxa: taxaMissingOnly(f) }))
+    .filter((x) => x.taxa.length)
+    .sort((a, b) => b.taxa.length - a.taxa.length);
+}
+
+async function runTaxaFieldBatch(field) {
+  const label = (FIELD_LABELS[field] || field).toLowerCase();
+  const ids = taxaMissingOnly(field).map((t) => t.id);
+  if (!ids.length) { toast(`Nothing is one ${label} value from done`, true); return; }
+  if (!confirm(`Ask Claude for the ${label} of ${ids.length} species?\n\n`
     + `One call each. Nothing is written — every answer arrives as a suggestion to accept or dismiss.`)) return;
   state.suggestBatch = { done: 0, total: ids.length, failed: 0 };
   render();
@@ -9487,20 +9515,21 @@ async function runTaxaLightBatch() {
   await loadAll();
 }
 
-// Every pending light suggestion, across all species. The batch produces one
-// per record and reviewing them one record at a time is the tapping the batch
+// Every pending suggestion for one field, across all species. The batch produces
+// one per record and reviewing them a record at a time is the tapping the batch
 // was supposed to remove.
-function pendingLightSuggestions() {
-  return state.suggestions.filter((x) => x.kind === "species_field" && x.field === "light_conditions" && x.taxa_id);
+function pendingSuggestionsForField(field) {
+  return state.suggestions.filter((x) => x.kind === "species_field" && x.field === field && x.taxa_id);
 }
 
-async function acceptAllLightSuggestions() {
-  const rows = pendingLightSuggestions();
-  if (!rows.length) { toast("No light suggestions waiting", true); return; }
-  if (!confirm(`Accept the light conditions Claude proposed for ${countLabel(rows.length, "species", "species")}?`)) return;
+async function acceptAllSuggestionsForField(field) {
+  const label = (FIELD_LABELS[field] || field).toLowerCase();
+  const rows = pendingSuggestionsForField(field);
+  if (!rows.length) { toast(`No ${label} suggestions waiting`, true); return; }
+  if (!confirm(`Accept the ${label} Claude proposed for ${countLabel(rows.length, "species", "species")}?`)) return;
   for (const r of rows) await acceptSuggestion(r.id, { deferReload: true });
   await loadAll();
-  toast(`Accepted light for ${countLabel(rows.length, "species", "species")}`);
+  toast(`Accepted ${label} for ${countLabel(rows.length, "species", "species")}`);
 }
 
 /* The name pass can propose a value for a field she has already filled — that

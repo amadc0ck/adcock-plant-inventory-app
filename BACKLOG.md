@@ -945,6 +945,35 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.25.0 — the one-away batch works on any field, not just light
+
+LIGHT-1 built a batch for `light_conditions` because that field had the problem.
+**The problem is not specific to it.** Any field added to the profile is blank on
+every existing record the day it lands — `light_conditions` was blank on 65 for
+exactly that reason, having joined `suggest-species`'s prompt three days after
+Ask Claude went live.
+
+So `taxaMissingOnlyLight()` becomes `taxaMissingOnly(field)`, `runTaxaLightBatch()`
+becomes `runTaxaFieldBatch(field)`, and the accept-all is per field.
+`oneAwayFields()` returns every field with a one-away cohort, biggest first —
+which is what turns a single unfinished count into a short list of one-call jobs.
+
+**Built ahead of need, deliberately.** Amanda asked for three new species fields
+(container suitability, soil, feeding). Adding a counted field would have taken
+the profile queue from 19 straight back to ~157 — the whole of today's main win,
+undone. With this, adding a field costs one batch run. She chose this sequencing
+over both alternatives (not counting the new fields, or accepting the jump).
+
+Still strictly "missing ONLY this field". A record with other gaps would have
+them filled in the same call for the same price, but an unattended sweep should
+not quietly reshape records she has curated — LIGHT-1's reasoning, unchanged.
+
+**Icons.** Amanda supplied a Tabler coffin for dead plants; it now serves both
+the "No longer have this plant" action and the In memoriam view it leads to.
+That frees `shovel` for the Soil field, which is what a comment in the icon set
+reserved it for before either existed — *"shovel/bowlSpoon await Soil and
+Feeding fields"*. v2.24.0 had borrowed it. `heartStar` returns to GAL-1.
+
 ### v2.24.0 — GRAVE-1 + WISH-1, the collection in past and future tense
 
 Scoped 2026-08-29, approved, unbuilt for ten days. Built 2026-09-08 after an

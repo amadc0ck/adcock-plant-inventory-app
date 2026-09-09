@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.26.0";
+const APP_VERSION = "2.26.1";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5090,7 +5090,7 @@ function screenTaxa() {
                went live, so ~65 records were never asked about it. They are one
                field from done and the field is one Claude answers well. */""}
           ${(() => {
-            const away = oneAwayFields();
+            const away = gapCohorts();
             const waiting = TAXON_PROFILE_FIELDS
               .map((f) => ({ field: f, rows: pendingSuggestionsForField(f) }))
               .filter((x) => x.rows.length);
@@ -5098,13 +5098,13 @@ function screenTaxa() {
             const nm = (f) => (FIELD_LABELS[f] || f).toLowerCase();
             return `
             <div class="wrap-gap" style="margin-top:10px;gap:8px;">
-              ${away.map((x) => `<button class="btn btn-accent btn-sm" onclick="runTaxaFieldBatch('${x.field}')">
-                Ask Claude for ${nm(x.field)} on ${x.taxa.length}</button>`).join("")}
+              ${away.map((x) => `<button class="btn btn-accent btn-sm" title="${escapeHtml(x.fields.map((f) => FIELD_LABELS[f] || f).join(", "))}" onclick="runTaxaGapBatch('${x.key}')">
+                Ask Claude for ${gapCohortLabel(x.fields)} on ${x.taxa.length}</button>`).join("")}
               ${waiting.map((x) => `<button class="btn btn-secondary btn-sm" onclick="acceptAllSuggestionsForField('${x.field}')">
                 Accept ${x.rows.length} ${nm(x.field)} ${x.rows.length === 1 ? "answer" : "answers"}</button>`).join("")}
             </div>
             <p class="subtle" style="margin:6px 0 0;font-size:11.5px;">${away.length
-              ? `Each button is a set of species that are a single value from complete. One call per species, nothing written until you accept.`
+              ? `Each button is a set of species missing the same few fields. One call per species fills all of them; nothing is written until you accept.`
               : `Claude has answered — review them on each species, or accept them all at once.`}</p>`;
           })()}
         </div>`;
@@ -9488,41 +9488,45 @@ async function askClaudeAboutSpecies(taxaId, opts) {
    better trade on cost — but this batch is unattended across dozens of records,
    and Amanda chose to keep it to the one field whose answer is already known to
    be good rather than let a sweep quietly reshape records she has curated. */
-/* Generalised from taxaMissingOnlyLight() in v2.25.0. LIGHT-1 was built for one
-   field because one field had the problem; the problem is not specific to it.
-   **Any field added to the profile is blank on every existing record the day it
-   lands** — light_conditions was blank on 65 for exactly that reason, three days
-   after Ask Claude went live.
+/* v2.26.1. `oneAwayFields()` counted species missing EXACTLY ONE field, which
+   worked for LIGHT-1 because exactly one field had been added. PLANT-1 added
+   three at once, so every previously-complete species jumped to three gaps and
+   **every button vanished** — the batch was unreachable at the precise moment
+   it was needed most.
 
-   So the batch is now per-field, and adding a field costs one run rather than a
-   queue explosion. Still strictly "missing ONLY this": a record with other gaps
-   would have them filled in the same call for the same price, but an unattended
-   sweep should not quietly reshape records she has curated (Amanda, LIGHT-1). */
-function taxaMissingOnly(field) {
-  return state.taxa.filter((t) => {
-    // Must honour the same exclusions as the list it sits under, or the button
-    // offers to work on records that are not shown and the two counts disagree.
-    if (!taxonInProfileQueue(t)) return false;
-    const gaps = taxonProfileGaps(t);
-    return gaps.length === 1 && gaps[0] === field;
+   The fix is to group by the SET of missing fields rather than by a single
+   field. One blanks-pass call fills every blank on a record, so a species
+   missing container + soil + feeding needs one call, not three — grouping this
+   way is both correct and cheaper than the version it replaces.
+
+   `maxFields` keeps the intent LIGHT-1 set: these are records a short hop from
+   done, not a sweep across half-empty ones she is still curating. */
+function gapCohorts(maxFields = 3) {
+  const byKey = new Map();
+  state.taxa.forEach((t) => {
+    if (!taxonInProfileQueue(t)) return;
+    const gaps = taxonProfileGaps(t).slice().sort();
+    if (!gaps.length || gaps.length > maxFields) return;
+    const key = gaps.join("|");
+    if (!byKey.has(key)) byKey.set(key, { key, fields: gaps, taxa: [] });
+    byKey.get(key).taxa.push(t);
   });
+  return [...byKey.values()].sort((a, b) => b.taxa.length - a.taxa.length);
+}
+function gapCohortLabel(fields) {
+  const nm = (f) => (FIELD_LABELS[f] || f).toLowerCase();
+  return fields.length <= 2 ? fields.map(nm).join(" and ") : `${fields.length} fields`;
 }
 
-// Every field that has a one-away cohort, biggest first. This is what turns
-// "135 unfinished" into a short list of one-call jobs.
-function oneAwayFields() {
-  return TAXON_PROFILE_FIELDS
-    .map((f) => ({ field: f, taxa: taxaMissingOnly(f) }))
-    .filter((x) => x.taxa.length)
-    .sort((a, b) => b.taxa.length - a.taxa.length);
-}
-
-async function runTaxaFieldBatch(field) {
-  const label = (FIELD_LABELS[field] || field).toLowerCase();
-  const ids = taxaMissingOnly(field).map((t) => t.id);
-  if (!ids.length) { toast(`Nothing is one ${label} value from done`, true); return; }
-  if (!confirm(`Ask Claude for the ${label} of ${ids.length} species?\n\n`
-    + `One call each. Nothing is written — every answer arrives as a suggestion to accept or dismiss.`)) return;
+async function runTaxaGapBatch(key) {
+  const cohort = gapCohorts().find((c) => c.key === key);
+  if (!cohort) { toast("That group has changed — reopen the list", true); return; }
+  const label = gapCohortLabel(cohort.fields);
+  const ids = cohort.taxa.map((t) => t.id);
+  if (!ids.length) { toast("Nothing left in that group", true); return; }
+  if (!confirm(`Ask Claude for ${label} on ${ids.length} species?\n\n`
+    + `${cohort.fields.map((f) => FIELD_LABELS[f] || f).join(", ")}\n\n`
+    + `One call each — a single call fills every blank on a record. Nothing is written; every answer arrives as a suggestion to accept or dismiss.`)) return;
   state.suggestBatch = { done: 0, total: ids.length, failed: 0 };
   render();
   let firstError = null;

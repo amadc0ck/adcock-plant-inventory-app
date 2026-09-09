@@ -945,6 +945,35 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.26.1 — the batch buttons vanished the moment they were needed
+
+Amanda, immediately after v2.26.0: *"where are the banners to run the batches?"*
+They were not there.
+
+`oneAwayFields()` counted species missing **exactly one** field. That was right
+for LIGHT-1, where exactly one field had been added. **PLANT-1 added three at
+once**, so every previously-complete species went from 0 gaps to 3 and no species
+was one-away from anything. **Every button disappeared at the precise moment the
+feature existed to be used.**
+
+The generalisation in v2.25.0 was one step short: it generalised the FIELD but
+kept the assumption that a cohort is defined by a single missing field.
+
+`gapCohorts()` groups by the **set** of missing fields instead. A species missing
+container + soil + feeding is one cohort of 138, one button, and — because the
+blanks pass fills every blank on a record — **one call per species, not three.**
+Cheaper than the design it replaces, as well as reachable.
+
+`maxFields` (default 3) keeps LIGHT-1's intent: these are records a short hop
+from done, not a sweep across half-empty ones she is still curating.
+
+**The lesson: a feature built for one instance of a problem encodes the shape of
+that instance.** The batch was built when one field was missing and quietly
+assumed one field would always be missing. It was not wrong when written; it was
+wrong the first time the world differed.
+
+`taxaMissingOnly()` was removed rather than left as dead code.
+
 ### v2.26.0 — PLANT-1, container or ground, soil, and feeding
 
 Amanda: *"will it do well in a container? soil preferences? or will it do better

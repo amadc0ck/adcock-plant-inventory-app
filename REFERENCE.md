@@ -335,6 +335,7 @@ One row per individual accessioned specimen.
 - `light_conditions` **text[]**, default `{}` — multi-select: direct, indirect, partial, full, shade, morning, afternoon, all_day
 - `water_needs` text, nullable — low / moderate / high
 - `description` text, nullable — **species-level** prose: what this kind of plant looks like. Not observations of this specimen, which belong in `care_notes`. Prime candidate for Claude to fill under AI-2.
+- `date_removed` date, nullable (v2.24.0, GRAVE-1) — when the plant left the collection. **`location_id` is deliberately NOT cleared alongside it**, so the Graveyard can still say "died in Bucket 40"; `plantsAtLocation()` filters on `status` instead, which is what makes the bucket read empty while the fact survives.
 - `notes` text, nullable — **legacy as of v1.38.0.** Migrated into `care_notes` and no longer displayed on Plant Detail. The column is retained and not cleared, so the migration stays reversible. `identification_notes` and `acquisition_notes` were deliberately **not** migrated — they stay in the Identification and Provenance sections.
 - `created_at` / `updated_at` timestamptz
 
@@ -473,6 +474,21 @@ TASK-1 + RPT-3 (v1.84.0). A task is something Amanda wants to do; a subject is w
 > `watering_events` (all fixed by ADM-3, v2.16.0, found by auditing a real
 > export rather than by anything failing). **Change both sides in the same
 > commit as the migration.**
+
+### `wishlist`
+WISH-1 (v2.24.0). Plants Amanda is looking for but does not own.
+
+- `id` uuid PK · `name` text **not null** — free text, used only when `taxa_id` is null
+- `taxa_id` uuid FK → taxa.id, `on delete set null` — **the drift mitigation.** A wishlist is a second place plant names live and can diverge from `taxa`; an entry WITH a taxon renders the taxon's name, so only genuinely unowned plants rely on the free text. Amanda chose a table over a `taxa.wanted` flag knowing this tradeoff (2026-08-29).
+- `photo_id` uuid FK → photos.id, `on delete set null`
+- `converted_to_plant_id` uuid FK → plants.id, `on delete set null` — the specimen created when it was acquired
+- `source` · `price_notes` · `notes` text
+- `acquired_at` date — **the closure marker.** There is deliberately no `acquired` boolean: one field decides open vs closed, so no two fields can disagree.
+- `created_at` / `updated_at`
+
+**Marking one acquired creates a real specimen** and closes the entry rather than deleting it — `acquireWishlistEntry()` inherits `taxa_id` so the species is not retyped from free text, and carries `source` into `acquisition_source_name`. The entry stays as the record that this was wanted and when it arrived.
+
+All three FKs are `on delete set null`, so a wishlist row never blocks deleting a plant, photo or taxon.
 
 ### `app_settings`
 Key/value, one row per setting, RLS on (v1.84.0). Holds `check_in_interval_days`

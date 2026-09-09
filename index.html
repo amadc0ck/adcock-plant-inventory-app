@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.23.2";
+const APP_VERSION = "2.24.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -814,7 +814,8 @@ const state = {
   taxaAskedIds: new Set(),// PROF-2 — taxa Claude has been asked about, ANY status
   taxaMinGaps: 5,         // PROF-2 — hide nearly-complete records
   taxaNeverAskedOnly: true,
-  wateringEvents: [],     // WATER-1
+  wateringEvents: [],
+  wishlist: [],               // WISH-1     // WATER-1
   waterDraft: null,       // {ids:[], label, date, notes, locationId} while the modal is open
   lastWaterBatch: null,   // {batchId, count, label} — powers Undo on To Do
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
@@ -867,6 +868,8 @@ const state = {
   taxaSearch: "",
   taxaOnlySuggestions: false,
   taxaNoCoverOnly: false,     // COVER-1 filter on the Plants tab
+  wishTaxon: "",              // WISH-1: optional species link on a new entry
+  wishSearch: "",
   taxaOnlyMissingParts: false,
   settingsOpen: {},       // which Settings sections are expanded
   navStack: [],           // NAV-1: where you came from, with the filter intact
@@ -1150,7 +1153,7 @@ async function exportFullBackup() {
   try {
     toast("Preparing backup…");
     const [locations, plants, photos, identifications, photoPlants, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions, suggestionsAll,
-           bloomEvents, tasks, taskSubjects, appSettings, wateringEvents] = await Promise.all([
+           bloomEvents, tasks, taskSubjects, appSettings, wateringEvents, wishlistRows] = await Promise.all([
       restGetAll("locations", "?select=*"),
       restGetAll("plants", "?select=*"),
       restGetAll("photos", "?select=*"),
@@ -1178,6 +1181,9 @@ async function exportFullBackup() {
       restGetAll("task_subjects", "?select=*").catch(() => []),
       restGetAll("app_settings", "?select=*", "key").catch(() => []),
       restGetAll("watering_events", "?select=*").catch(() => []),
+      // WISH-1. Added here in the same commit as the migration, which is the
+      // rule REFERENCE states in bold after four occurrences of forgetting.
+      restGetAll("wishlist", "?select=*").catch(() => []),
     ]);
     const backup = {
       exported_at: new Date().toISOString(),
@@ -1195,6 +1201,7 @@ async function exportFullBackup() {
       tasks, task_subjects: taskSubjects,
       app_settings: appSettings,
       watering_events: wateringEvents,
+      wishlist: wishlistRows,
     };
     downloadFile(
       `adcock-botanical-garden-backup-${new Date().toISOString().slice(0, 10)}.json`,
@@ -1299,6 +1306,8 @@ async function handleImportBackup() {
     if (data.task_subjects?.length) await restoreUpsert("task_subjects", data.task_subjects);
     if (data.app_settings?.length) await restoreUpsert("app_settings", data.app_settings, "key");
     if (data.watering_events?.length) await restoreUpsert("watering_events", data.watering_events, "plant_id,watered_on");
+    // After plants and taxa: wishlist.taxa_id / converted_to_plant_id are FKs.
+    if (data.wishlist?.length) await restoreUpsert("wishlist", data.wishlist);
 
     toast("Backup imported successfully");
     fileInput.value = "";
@@ -1660,7 +1669,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory, wateringEvents, askedTaxa] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory, wateringEvents, wishlist, askedTaxa] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -1695,6 +1704,9 @@ async function loadAll() {
       // WATER-1. Resilient like every table added after the app existed: it
       // loads before the migration and simply has no watering history.
       optional("watering_events", restGetAll("watering_events", "?select=*&order=watered_on.desc")),
+      // WISH-1. Resilient like every table added after the app existed: it
+      // loads before the migration and simply has no wishlist to show.
+      optional("wishlist", restGetAll("wishlist", "?select=*&order=created_at.desc")),
       /* PROF-2. `suggestions` above is fetched pending-only, which is right for
          rendering but cannot answer "has Claude ever been asked about this
          species" — an accepted or dismissed row means it HAS. One column, every
@@ -1718,6 +1730,7 @@ async function loadAll() {
     state.appSettings = Object.fromEntries((appSettings || []).map((r) => [r.key, r.value]));
     state.plantLocationHistory = locHistory || [];
     state.wateringEvents = wateringEvents || [];
+    state.wishlist = wishlist || [];
     state.taxaAskedIds = new Set((askedTaxa || []).map((r) => r.taxa_id).filter(Boolean));
   } catch (e) {
     toast(e.message, true);
@@ -2001,8 +2014,24 @@ function photoRunsByLocation(photosList, oldestFirst) {
   return runs;
 }
 
-// Every plant present at a location, whether as primary or additional
+/* GRAVE-1. ACTIVE plants only. Before this, a dead plant still occupied its
+   bucket — Bucket 40 reported one plant after that plant died — because
+   `status` was ignored here entirely.
+
+   **`location_id` is NOT cleared when a plant leaves the collection**, so the
+   Graveyard can still say "died in Bucket 40". Filtering here is what makes the
+   bucket read empty while the history survives; clearing the column would have
+   read the same on this screen and lost the fact.
+
+   Use plantsEverAtLocation() for anything that DELETES a location: a bucket
+   holding only a dead plant is not empty, and deleting it would null the
+   location_id that records where the plant died. */
 function plantsAtLocation(locationId) {
+  return state.plants.filter((p) => p.location_id === locationId && p.status === "active");
+}
+// Every plant whose location_id points here, alive or not. The deletion-safety
+// read — see the note above.
+function plantsEverAtLocation(locationId) {
   return state.plants.filter((p) => p.location_id === locationId);
 }
 function directChildLocations(locationId) {
@@ -2022,7 +2051,9 @@ function descendantLocationIds(locationId) {
 // Plant count including everything nested underneath this location
 function aggregatePlantCount(locationId) {
   const idSet = new Set([locationId, ...descendantLocationIds(locationId)]);
-  return state.plants.filter((p) => idSet.has(p.location_id)).length;
+  // Active only, matching plantsAtLocation() — a rolled-up count that disagreed
+  // with the list beneath it is the drift this file keeps having to fix.
+  return state.plants.filter((p) => idSet.has(p.location_id) && p.status === "active").length;
 }
 // Deduped by photo id: one photo tagged onto both a parent and a child, or
 // onto two sibling containers, is still one photo in the rolled-up count.
@@ -4167,6 +4198,7 @@ function openModal(type, data = {}) {
     state.locField.ep = _pl ? (_pl.location_id || "") : "";
   }
   if (type === "newSpecimen") state.locField.ns = "";
+  if (type === "newWishlistEntry") { state.wishTaxon = ""; state.wishSearch = ""; }
   if (type === "propagatePlant") {
     const _wa = state.locations.find((l) => l.name === "Propagation / Work Area" && !l.parent_location_id);
     state.locField.pp = _wa ? _wa.id : "";
@@ -5401,6 +5433,15 @@ function screenPlantDetail() {
             <button class="action-row" onclick="openModal('movePlant',{plantId:'${pl.id}'})">${icon("pin")}<span class="action-label">Move to another location</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="moveToHospital('${pl.id}')">${icon("ambulance")}<span class="action-label">Move to Plant Hospital</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">${icon("seedling")}<span class="action-label">Propagate from this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            ${/* GRAVE-1. Status was reachable ONLY through Edit full record's
+                 dropdown, buried in a long form — which is why the 2026-09-08
+                 audit found 231 of 231 plants still reading "active". Plants
+                 have obviously left this collection; there was no way to say
+                 so. Delete is not that answer: the plant existed, and its
+                 photos and history are worth keeping. */""}
+            ${pl.status === "active"
+              ? `<button class="action-row" onclick="openModal('noLongerHave',{plantId:'${pl.id}'})">${icon("shovel")}<span class="action-label">No longer have this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>`
+              : `<button class="action-row" onclick="restorePlantToCollection('${pl.id}')">${icon("seedling")}<span class="action-label">Back in the collection</span><span class="action-chevron">${icon("chevronRight")}</span></button>`}
             <button class="action-row action-danger" onclick="deletePlant('${pl.id}')">${icon("trash")}<span class="action-label">Delete plant</span></button>
           </div>
         </div>
@@ -6081,7 +6122,10 @@ function reportSections() {
   // A tagged photo does show the plant; that is the whole point of tagging.
   return [
     { key: "emptyLocations", title: "Empty locations", sub: "No plants, no photos, nothing below",
-      items: state.locations.filter((l) => directChildLocations(l.id).length === 0 && photosAtLocation(l.id).length === 0 && plantsAtLocation(l.id).length === 0),
+      // plantsEverAtLocation, not plantsAtLocation: a bucket holding only a
+      // plant that died is not empty, and offering it for deletion would null
+      // the location_id that records where the plant died.
+      items: state.locations.filter((l) => directChildLocations(l.id).length === 0 && photosAtLocation(l.id).length === 0 && plantsEverAtLocation(l.id).length === 0),
       kind: "location" },
     { key: "plantsNoPhotos", title: "Plants missing photos", sub: "At least one photo needed",
       items: state.plants.filter((pl) => plantPhotosOrdered(pl.id).length === 0), kind: "plant" },
@@ -6378,7 +6422,69 @@ function workQueue() {
             <div>Every photo is filed, every record is complete, and nothing needs a look.</div>
           </div>` : queue}
       </div>
-      <div class="todo-tasks">${taskGroup()}</div>
+      <div class="todo-tasks">${taskGroup()}${wishGroup()}</div>
+    </div>`;
+}
+
+/* WISH-1 / GRAVE-1 on the To Do screen, by Amanda's choice.
+
+   RENDERED AS ROWS, NOT COUNTED TILES — the same exception tasks get, and for
+   the same reason. A tile answers "how many"; a wish list's value is its text,
+   and hiding "Echeveria 'Cubic Frost', ~$18 at the spring sale" behind a count
+   would make her tap to remember what she meant. This is the mismatch that got
+   "In bloom now" retired in v2.6.0: a number you can look at but not act on
+   stops being read.
+
+   The Graveyard is a LINK, not a tile, for the sharper version of the same
+   rule: it is not work at all. Nothing about a plant that has died is
+   outstanding. It sits here because this is where she starts, not because it
+   needs doing. */
+function wishGroup() {
+  const open = wishlistOpen();
+  const gone = graveyardPlants();
+  return `
+    <div class="queue-group" style="margin-top:18px;">
+      <div class="queue-head">
+        <h3>Wish list</h3>
+        <button class="btn btn-secondary btn-sm" onclick="openModal('newWishlistEntry')">+ Add</button>
+      </div>
+      ${open.length ? `<div class="stack">${open.map(wishRow).join("")}</div>` : `
+        <p class="subtle" style="font-size:12.5px;margin:2px 0 0;">Nothing on it. Add a plant you are looking for and it is here next time you are at a nursery.</p>`}
+      ${(() => {
+        // Closed entries stay — an acquired wish is a record that the list did
+        // its job, and the specimen it created links back through
+        // converted_to_plant_id. Shown as a line, not a list: it is history.
+        const got = wishlistAcquired();
+        return got.length ? `<p class="subtle" style="font-size:11.5px;margin:8px 0 0;">${countLabel(got.length, "wish", "wishes")} granted &mdash; ${escapeHtml(got.slice(0, 3).map(wishlistName).join(", "))}${got.length > 3 ? ` and ${got.length - 3} more` : ""}.</p>` : "";
+      })()}
+      ${gone.length ? `
+        <button class="attn-row" style="margin-top:12px;" onclick="state.reportView='graveyard';render()">
+          ${icon("heartStar")}
+          <div style="flex:1;min-width:0;">
+            <div class="attn-title">In memoriam</div>
+            <div class="attn-sub">${countLabel(gone.length, "plant that has", "plants that have")} left the collection</div>
+          </div>
+          <span class="action-chevron">${icon("chevronRight")}</span>
+        </button>` : ""}
+    </div>`;
+}
+
+function wishRow(w) {
+  const t = w.taxa_id ? taxonById(w.taxa_id) : null;
+  const meta = [w.source, w.price_notes].filter(Boolean).join(" &middot; ");
+  return `
+    <div class="tag-card" style="padding:10px 12px;">
+      <div class="row" style="align-items:flex-start;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13.5px;">${t ? taxonDisplayHtml(t) : escapeHtml(w.name)}</div>
+          ${meta ? `<div class="subtle" style="font-size:11.5px;margin-top:2px;">${escapeHtml(w.source || "")}${w.source && w.price_notes ? " &middot; " : ""}${escapeHtml(w.price_notes || "")}</div>` : ""}
+          ${w.notes ? `<div class="subtle" style="font-size:11.5px;margin-top:2px;">${escapeHtml(w.notes)}</div>` : ""}
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+          <button class="btn-ghost" style="padding:0;font-size:11.5px;color:var(--blue);" onclick="acquireWishlistEntry('${w.id}')">Got it</button>
+          <button class="btn-ghost icon-btn" style="padding:0;font-size:11.5px;color:var(--terracotta);" title="Remove" onclick="deleteWishlistEntry('${w.id}')">${icon("close")}</button>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -6392,6 +6498,51 @@ function workQueueDetail() {
   };
   // The full task list is its own view: tasks render as rows, not as the
   // photo-thumbnail record cards every other queue view uses.
+  /* GRAVE-1. Grouped by the YEAR it left, because that is how she will look for
+     it — "the one that died the winter before last" — not by species or bed.
+     Every record keeps its photos, notes and move history; this is a view, not
+     a second store. */
+  if (state.reportView === "graveyard") {
+    const gone = graveyardPlants();
+    const years = [...new Set(gone.map((p) => String(p.date_removed || "").slice(0, 4) || "Undated"))];
+    const REASON = { dead: "Died", given_away: "Given away", deaccessioned: "Deaccessioned", dormant: "Dormant" };
+    return `
+      <div class="screen">
+        <div class="container">
+          <button class="back-link" onclick="state.reportView=null;render()">${icon("back")}<span class="back-label">To Do</span></button>
+          <h2 class="display" style="font-size:22px;font-weight:600;margin:0 0 2px;">In memoriam</h2>
+          <p class="subtle" style="margin:0 0 18px;">${countLabel(gone.length, "plant", "plants")} no longer in the collection. Nothing has been deleted &mdash; every photo, note and move is still here.</p>
+          ${gone.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>Nothing has left the collection.</div></div>` : years.map((y) => {
+            const inYear = gone.filter((p) => (String(p.date_removed || "").slice(0, 4) || "Undated") === y);
+            return `
+            <div class="section-label" style="margin-top:18px;">${escapeHtml(y)} &middot; ${countLabel(inYear.length, "plant", "plants")}</div>
+            <div class="card-grid">
+              ${inYear.map((p) => {
+                const cover = plantCoverPhoto(p);
+                const loc = p.location_id ? locationById(p.location_id) : null;
+                const held = p.date_acquired && p.date_removed ? heldFor(p.date_acquired, p.date_removed) : null;
+                const why = state.careNotes.find((c) => c.plant_id === p.id && c.noted_on === p.date_removed);
+                return `
+                <div class="tag-card plant-list-card" onclick="openPlant('${p.id}')">
+                  <div class="plant-list-thumb">
+                    ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+                  </div>
+                  <div style="flex:1;min-width:0;">
+                    <div class="mono tag-id">${p.accession_number} &middot; ${REASON[p.status] || p.status}${p.date_removed ? ` &middot; ${fmtDate(p.date_removed)}` : ""}</div>
+                    <div style="font-size:13.5px;margin-top:1px;">${plantDisplayHtml(p)}</div>
+                    <div class="subtle" style="font-size:11.5px;margin-top:2px;">
+                      ${held ? `Held ${escapeHtml(held)}` : ""}${held && loc ? " &middot; " : ""}${loc ? escapeHtml(loc.name) : ""}
+                    </div>
+                    ${why ? `<div class="subtle" style="font-size:11.5px;margin-top:2px;">${escapeHtml(why.body)}</div>` : ""}
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>`;
+          }).join("")}
+        </div>
+      </div>`;
+  }
+
   if (state.reportView === "tasks") {
     const f = state.taskFilter || "open";
     const list = sortTasks(
@@ -8270,7 +8421,7 @@ function modalContent() {
     const l = locationById(data.locationId);
     if (!l) return `<p>Not found.</p>`;
     const kids = directChildLocations(l.id);
-    const plants = plantsAtLocation(l.id);
+    const plants = plantsEverAtLocation(l.id);
     const photos = photosAtLocation(l.id);
     const history = 0; // counted server-side on delete; surfaced in the confirm
     return `
@@ -8489,6 +8640,83 @@ function modalContent() {
           }).join("")}
         </div>` : ""}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "newWishlistEntry") {
+    const q = (state.wishSearch || "").trim().toLowerCase();
+    const chosen = state.wishTaxon ? taxonById(state.wishTaxon) : null;
+    const matches = q && !chosen
+      ? state.taxa.filter((t) => [taxonDisplayName(t), t.common_name, t.genus, t.family]
+          .filter(Boolean).join(" ").toLowerCase().includes(q)).slice(0, 6)
+      : [];
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Add to your wish list</h3>
+      <p class="subtle" style="margin:0 0 14px;">A plant you are looking for. Nothing here is a specimen yet &mdash; mark it acquired when you have it and the record is created for you.</p>
+      <form id="wishlist-form">
+        <label>Species or plant name</label>
+        <input id="wl-name" placeholder="Echeveria 'Cubic Frost'" value="${escapeHtml(chosen ? taxonDisplayName(chosen) : "")}" />
+
+        ${/* WISH-1's mitigation, made visible: linking to a species you already
+             grow means the entry renders the taxon's name and cannot drift from
+             it. Optional, because most wishes are for plants not yet owned. */""}
+        ${chosen ? `
+          <div class="filter-note" style="margin-top:8px;">
+            Linked to <strong>${escapeHtml(taxonDisplayName(chosen))}</strong> &mdash; a species already in the collection.
+            <button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--blue);" onclick="state.wishTaxon='';state.wishSearch='';render()">Unlink</button>
+          </div>` : `
+          <input placeholder="Optional: link to a species you already grow" value="${escapeHtml(state.wishSearch || "")}"
+                 oninput="state.wishSearch=this.value;scheduleRender()" style="margin-top:8px;" />
+          ${matches.length ? `<div class="stack" style="margin-top:6px;">${matches.map((t) => `
+            <button type="button" class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;"
+                    onclick="state.wishTaxon='${t.id}';state.wishSearch='';render()">${escapeHtml(taxonDisplayName(t))}</button>`).join("")}</div>` : ""}`}
+
+        <label style="margin-top:12px;">Source <span class="subtle" style="font-weight:400;">(optional)</span></label>
+        <input id="wl-source" placeholder="Where or who you are sourcing from" />
+
+        <label>Price notes <span class="subtle" style="font-weight:400;">(optional)</span></label>
+        <input id="wl-price" placeholder="~$18 at the spring sale" />
+
+        <label>Notes <span class="subtle" style="font-weight:400;">(optional)</span></label>
+        <textarea id="wl-notes" rows="2" placeholder="Anything else worth remembering"></textarea>
+
+        <button class="btn btn-accent btn-block" type="submit" style="margin-top:16px;">Add it</button>
+      </form>
+      <button class="btn-ghost" style="margin-top:12px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "noLongerHave") {
+    const pl = state.plants.find((x) => x.id === data.plantId);
+    if (!pl) return `<p>Not found.</p>`;
+    const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+    const loc = pl.location_id ? locationById(pl.location_id) : null;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">No longer have this plant</h3>
+      <p class="subtle" style="margin:0 0 14px;">${escapeHtml(plantDisplayName(pl))} &middot; ${pl.accession_number}${loc ? ` &middot; ${escapeHtml(loc.name)}` : ""}. Nothing is deleted &mdash; its photos, notes and history stay, and it moves to the Graveyard.</p>
+      <form id="no-longer-have-form">
+        <label>What happened</label>
+        <select id="nlh-status">
+          <option value="dead">It died</option>
+          <option value="given_away">I gave it away</option>
+          <option value="deaccessioned">Deaccessioned &mdash; removed from the collection</option>
+        </select>
+
+        <label>When</label>
+        <input type="date" id="nlh-date" value="${todayLocalISO()}" max="${todayLocalISO()}" />
+
+        <label>Note <span class="subtle" style="font-weight:400;">(optional)</span></label>
+        <textarea id="nlh-note" rows="2" placeholder="Rot after the wet spell; gave it to Jen"></textarea>
+
+        ${t ? `
+        <div class="checkbox-row" style="margin-top:12px;">
+          <input type="checkbox" id="nlh-wish" />
+          <label for="nlh-wish">Add ${escapeHtml(taxonDisplayName(t))} to my wish list</label>
+        </div>` : ""}
+
+        <button class="btn btn-accent btn-block" type="submit" style="margin-top:16px;">Record it</button>
+      </form>
+      <button class="btn-ghost" style="margin-top:12px;" onclick="closeModal()">Cancel</button>`;
   }
 
   if (type === "propagatePlant") {
@@ -9620,6 +9848,164 @@ async function mergePlants(keepId, removeId) {
   } catch (e) { toast(e.message, true); }
 }
 
+/* ---------- GRAVE-1 / WISH-1 ---------- */
+
+/* Nothing is destroyed. `status` and `collection_category` change, a date is
+   stamped, and a care note records what happened in the plant's own timeline —
+   which is where she will look for it later, not in a status field.
+
+   **`location_id` is deliberately KEPT.** Clearing it would tidy the bucket and
+   lose where the plant died, and the Graveyard's whole job is to say "died in
+   Bucket 40". plantsAtLocation() filters by status instead, so the bucket reads
+   empty while the history stays intact. */
+async function saveNoLongerHave(plantId) {
+  const pl = state.plants.find((p) => p.id === plantId);
+  if (!pl) return;
+  const status = document.getElementById("nlh-status").value;
+  const when = document.getElementById("nlh-date").value || todayLocalISO();
+  const note = (document.getElementById("nlh-note").value || "").trim();
+  const wish = document.getElementById("nlh-wish");
+  const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+  const REASON = { dead: "Died", given_away: "Given away", deaccessioned: "Deaccessioned" };
+  try {
+    await restPatch("plants", `id=eq.${plantId}`, {
+      status,
+      collection_category: "historical",
+      date_removed: when,
+      updated_at: new Date().toISOString(),
+    });
+    // The care note is the durable record. A status enum says "dead"; the note
+    // says why, and reads back in the timeline beside the photos.
+    await restPost("care_notes", {
+      plant_id: plantId,
+      noted_on: when,
+      body: `${REASON[status] || status}${note ? ` — ${note}` : ""}`,
+    });
+    if (wish && wish.checked && t) {
+      await restPost("wishlist", {
+        name: taxonDisplayName(t),
+        taxa_id: t.id,
+        notes: `Had ${pl.accession_number}${note ? ` — ${note}` : ""}`,
+      });
+    }
+    toast(wish && wish.checked && t ? "Recorded, and added to your wish list" : "Recorded");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function restorePlantToCollection(plantId) {
+  const pl = state.plants.find((p) => p.id === plantId);
+  if (!pl) return;
+  if (!confirm(`Put ${pl.accession_number} back in the collection as active?`)) return;
+  try {
+    await restPatch("plants", `id=eq.${plantId}`, {
+      status: "active",
+      collection_category: "current",
+      date_removed: null,
+      updated_at: new Date().toISOString(),
+    });
+    toast("Back in the collection");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// Every plant that has left the collection, newest departure first.
+// "2 years", "7 months" — how long it was held. Precision past that is false:
+// date_acquired is often the day it was RECORDED, not the day it arrived.
+function heldFor(from, to) {
+  const a = new Date(from), b = new Date(to);
+  if (isNaN(a) || isNaN(b) || b < a) return null;
+  const months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  if (months < 1) return "under a month";
+  if (months < 24) return countLabel(months, "month", "months");
+  return countLabel(Math.floor(months / 12), "year", "years");
+}
+
+function graveyardPlants() {
+  return state.plants
+    .filter((p) => p.status !== "active")
+    .sort((a, b) => String(b.date_removed || "").localeCompare(String(a.date_removed || ""))
+      || (a.accession_number || "").localeCompare(b.accession_number || ""));
+}
+
+/* WISH-1. An entry WITH a taxa_id renders the taxon's name, so only genuinely
+   unowned plants rely on free text — the mitigation agreed when Amanda chose a
+   table over a `taxa.wanted` flag, knowing a wishlist is a second place plant
+   names live and can drift from `taxa`. */
+function wishlistName(w) {
+  const t = w.taxa_id ? taxonById(w.taxa_id) : null;
+  return t ? taxonDisplayName(t) : (w.name || "Unnamed");
+}
+function wishlistOpen() {
+  return state.wishlist.filter((w) => !w.acquired_at);
+}
+function wishlistAcquired() {
+  return state.wishlist.filter((w) => w.acquired_at);
+}
+
+async function addWishlistEntry() {
+  const name = (document.getElementById("wl-name").value || "").trim();
+  if (!name) { toast("Give it a name first", true); return; }
+  try {
+    await restPost("wishlist", {
+      name,
+      taxa_id: state.wishTaxon || null,
+      source: (document.getElementById("wl-source").value || "").trim() || null,
+      price_notes: (document.getElementById("wl-price").value || "").trim() || null,
+      notes: (document.getElementById("wl-notes").value || "").trim() || null,
+    });
+    state.wishTaxon = "";
+    toast("Added to your wish list");
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deleteWishlistEntry(id) {
+  const w = state.wishlist.find((x) => x.id === id);
+  if (!w) return;
+  if (!confirm(`Remove "${wishlistName(w)}" from the wish list?`)) return;
+  try {
+    await restDelete("wishlist", `id=eq.${id}`);
+    toast("Removed");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* Marking one acquired creates a REAL specimen and closes the entry, which is
+   the whole point of keeping `taxa_id`: the new plant inherits the species
+   rather than being typed again from the wishlist's free text. The entry is
+   kept, not deleted — it records that this was wanted and when it arrived. */
+async function acquireWishlistEntry(id) {
+  const w = state.wishlist.find((x) => x.id === id);
+  if (!w) return;
+  if (!confirm(`Create a specimen for "${wishlistName(w)}" and close this wish list entry?`)) return;
+  try {
+    const taxaId = w.taxa_id || await ensureTaxonForName(w.name, null, {});
+    const [created] = await restPost("plants", {
+      taxa_id: taxaId,
+      identification_status: "confirmed",
+      collection_category: "current",
+      status: "active",
+      health_status: "healthy",
+      date_acquired: todayLocalISO(),
+      acquisition_source_name: w.source || null,
+      acquisition_notes: [w.price_notes, w.notes].filter(Boolean).join(" · ") || null,
+    });
+    if (!created) throw new Error("Could not create the specimen");
+    await restPatch("wishlist", `id=eq.${id}`, {
+      acquired_at: todayLocalISO(),
+      converted_to_plant_id: created.id,
+      taxa_id: taxaId,
+      updated_at: new Date().toISOString(),
+    });
+    toast(`Created ${created.accession_number} — set its location next`);
+    await loadAll();
+    openPlant(created.id);
+  } catch (e) { toast(e.message, true); }
+}
+
 async function deletePlant(plantId) {
   const pl = state.plants.find((p) => p.id === plantId);
   if (!confirm(`Delete ${pl.accession_number} — ${plantDisplayName(pl)}? Its photos are unassigned, not deleted. This can't be undone.`)) return;
@@ -10113,7 +10499,8 @@ async function deleteLocation(locationId) {
     const rows = await restGet("plant_location_history", `?select=id&location_id=eq.${locationId}`);
     historyCount = rows.length;
   } catch (e) { /* counting is best-effort; the warning still stands */ }
-  const plants = plantsAtLocation(locationId).length;
+  // Counts the dead too — they are what the delete would unassign.
+  const plants = plantsEverAtLocation(locationId).length;
   const photos = photosAtLocation(locationId).length;
   const consequences = [
     plants ? `${plants} plant${plants === 1 ? "" : "s"} unassigned` : "",
@@ -11808,6 +12195,16 @@ function wireModalForms() {
         maybeResumeLightbox();
       } catch (e) { toast(e.message, true); }
     };
+  }
+
+  const noLongerHaveForm = document.getElementById("no-longer-have-form");
+  if (noLongerHaveForm) {
+    noLongerHaveForm.onsubmit = (e) => { e.preventDefault(); saveNoLongerHave(state.modal.data.plantId); };
+  }
+
+  const wishForm = document.getElementById("wishlist-form");
+  if (wishForm) {
+    wishForm.onsubmit = (e) => { e.preventDefault(); addWishlistEntry(); };
   }
 
   const editPhotoForm = document.getElementById("edit-photo-form");

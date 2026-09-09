@@ -733,64 +733,6 @@ integrate there regardless. A Gemini identification call stays possible — new
 Edge Function, Google AI Studio key, per-call cost — but the links solved the
 actual problem. **Do not build without asking.**
 
-### GRAVE-1 / WISH-1 — scoped 2026-08-29, approved shape, NOT built
-
-Amanda asked for a wish list and a Graveyard / In Memoriam, then chose to stop
-before building. **The design below was agreed; do not re-litigate it, build it.**
-
-**Three connected pieces, one migration.**
-
-1. **"No longer have this"** — an action on the plant record. Asks died / gave
-   away / deaccessioned, a date, and a note; sets `status`,
-   `collection_category = 'historical'`, stamps `date_removed`, writes a care
-   note, and offers "add this species to my wish list" in the same step.
-   Today status is only reachable through Edit full record's dropdown — there is
-   no action for it, unlike Move to Plant Hospital.
-
-2. **Graveyard / In Memoriam** — a view of every non-active plant, grouped by
-   year: photo, name, how long it was held (`date_acquired` → `date_removed`),
-   where it was, why it went. Nothing is deleted; photos and history stay.
-
-3. **Wish list** — a standalone table. **Amanda chose this over a `taxa.wanted`
-   flag** after being told the tradeoff: a second place plant names live, which
-   can drift from `taxa`. Mitigation agreed — an entry WITH a `taxa_id` renders
-   the taxon's name, so only genuinely unowned entries rely on free text.
-   Marking one acquired creates a real specimen and closes the entry.
-
-**Behaviour change this requires.** `plantsAtLocation()` ignores `status`, so a
-dead plant still occupies its bucket — Bucket 40 reports 1 plant after that
-plant dies. Filter those counts to active but **KEEP `location_id`**: the bucket
-then reads empty while the Graveyard can still say "died in Bucket 40". Clearing
-it would lose where the plant died.
-
-**Migration — not yet run.** Write the code with feature detection first, verify
-it behaves before AND after, then hand the SQL over (same discipline as
-`photos.historical`).
-
-```sql
-alter table plants add column date_removed date;
-
-create table wishlist (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  taxa_id uuid references taxa(id) on delete set null,
-  photo_id uuid references photos(id) on delete set null,
-  source text, notes text,
-  acquired boolean not null default false,
-  acquired_at date,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz
-);
-alter table wishlist enable row level security;
-create policy wishlist_all on wishlist for all to authenticated using (true) with check (true);
-```
-
-The RLS policy matches every other table's. Without it the table reads back
-empty — it is not optional.
-
-**Placement:** two toggles on the Plants tab, not new nav tabs. Still the
-collection, in past and future tense.
-
 ### Found 2026-08-31, not yet built
 
 Raised in session and recorded so they survive it. None is blocking.
@@ -1002,6 +944,64 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.24.0 — GRAVE-1 + WISH-1, the collection in past and future tense
+
+Scoped 2026-08-29, approved, unbuilt for ten days. Built 2026-09-08 after an
+audit gave it a reason: **231 of 231 plants read `status = 'active'`**, because
+no action in the app ever set it otherwise — status was reachable only through
+Edit full record's dropdown, buried in a long form. Plants have obviously left
+this collection; there was no way to say so.
+
+**Three pieces, one migration.**
+
+1. **"No longer have this plant"** — an action on the record. Died / gave away /
+   deaccessioned, a date, a note, and *"add this species to my wish list"* in
+   the same step. Sets `status` and `collection_category`, stamps
+   `date_removed`, and writes a **care note** — because a status enum says
+   "dead" and the note says why, in the plant's own timeline beside its photos.
+   Reversible: **"Back in the collection"** appears on any non-active plant.
+2. **In memoriam** — every departed plant grouped by the YEAR it left, which is
+   how she will look for it ("the one that died the winter before last"), not by
+   species or bed. Photo, how long it was held, where it was, why it went.
+3. **Wish list** — new table on the To Do screen.
+
+**The behaviour change that made this worth building.** `plantsAtLocation()`
+ignored `status`, so a dead plant still occupied its bucket — Bucket 40 reported
+one plant after that plant died. It now filters to active, and
+`aggregatePlantCount()` with it.
+
+**`location_id` is deliberately NOT cleared.** Clearing it would read the same
+on the Locations screen and lose where the plant died, which is exactly what the
+Graveyard exists to say.
+
+**The trap that created, and the fix.** A bucket holding only a dead plant would
+now look EMPTY — and "Empty locations" offers those for deletion, which nulls
+`location_id` and destroys the fact. `plantsEverAtLocation()` is the
+deletion-safety read: the empty-locations tile, the Remove-location modal and
+`deleteLocation()`'s warning all count the dead too. **A status filter added for
+display silently changed the meaning of a delete.**
+
+**Wish list design.** `taxa_id` is the drift mitigation Amanda accepted in 2026-08-29
+when choosing a table over a `taxa.wanted` flag: an entry WITH a taxon renders
+the taxon's name, so only genuinely unowned plants rely on free text. Marking one
+acquired **creates a real specimen** inheriting that `taxa_id` — so the species
+is not retyped — and closes the entry rather than deleting it.
+
+**Merged from both specs.** Her `converted_to_plant_id`, `price_notes` and
+acquisition date; `taxa_id` and `photo_id` from the approved design. **The old
+`acquired` boolean was dropped:** `acquired_at` alone decides open vs closed, so
+no two fields can disagree about the same thing.
+
+**Placement: the To Do screen, as rows, not counted tiles.** The exception tasks
+already get. A tile answers "how many"; a wish list's value is its text, and
+hiding *"Echeveria 'Cubic Frost', ~$18 at the spring sale"* behind a count would
+make her tap to remember what she meant. In memoriam is a **link**, not a tile,
+for the sharper version of the same rule — nothing about a plant that has died is
+outstanding work. This is what got "In bloom now" retired in v2.6.0.
+
+**`wishlist` was added to `exportFullBackup()` and the restore in this commit**,
+which is the rule REFERENCE states in bold after four occurrences of forgetting.
 
 ### v2.23.2 — MERGE-1, every merge was destroying watering and bloom history
 

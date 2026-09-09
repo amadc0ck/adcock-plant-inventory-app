@@ -982,6 +982,23 @@ LIGHT-1's lesson was worth generalising rather than just fixing.
 Icons: `shovel` for Soil and `bowlSpoon` for Feeding, finally used for what a
 comment in the icon set reserved them for before either field existed.
 
+**OUTSTANDING, in the SITE repo not this one:** `inventory.html` renders only the
+columns in its own `FIELDS` array, so the view now returns
+`container_suitability`, `soil_needs` and `feeding_needs` and the page ignores
+them. Add them there to publish them:
+
+```js
+["container_suitability", "Container or ground"],
+["soil_needs",           "Soil"],
+["feeding_needs",        "Feeding"],
+```
+
+Its `filled()` filter means a species without them simply omits the row, so this
+is safe to add before the fields are populated. **The same asymmetry as ORIG-1 in
+reverse:** removing a column needed no page change because the page skips what it
+does not get; adding one needs an edit, because the page renders only what it
+knows to ask for.
+
 ### v2.25.0 — the one-away batch works on any field, not just light
 
 LIGHT-1 built a batch for `light_conditions` because that field had the problem.

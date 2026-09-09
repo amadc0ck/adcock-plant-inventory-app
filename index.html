@@ -776,7 +776,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.25.0";
+const APP_VERSION = "2.26.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1220,7 +1220,7 @@ function exportPlantsCsv() {
     "native_range", "hardy_to", "light_requirements", "water_needs", "notes",
     // Appended, not inserted — an existing spreadsheet keeps every column
     // position it had.
-    "infraspecific", "parentage"];
+    "infraspecific", "parentage", "container_suitability", "soil_needs", "feeding_needs"];
   const rows = state.plants.map((pl) => {
     const loc = locationById(pl.location_id);
     // Species columns come off the taxon. The headers are unchanged so an
@@ -1236,6 +1236,7 @@ function exportPlantsCsv() {
       loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
       tv("native_range"), tv("hardy_to"), (t && t.light_conditions || []).join("; "), tv("water_needs"), pl.notes,
       tv("infraspecific"), tv("parentage"),
+      tv("container_suitability"), tv("soil_needs"), tv("feeding_needs"),
     ].map(csvEscape).join(",");
   });
   const csv = [headers.join(","), ...rows].join("\r\n");
@@ -2349,6 +2350,7 @@ const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Speci
   botanical_name: "Botanical name", common_name: "Common name", cultivar: "Cultivar",
   is_hybrid: "Hybrid", working_label: "Working label",
   plant_type: "Type", growth_habit: "Growth habit", mature_size: "Mature size", bloom_season: "Bloom season",
+  container_suitability: "Container or ground", soil_needs: "Soil", feeding_needs: "Feeding",
   native_range: "Native range", hardy_to: "Hardy to", water_needs: "Water needs",
   frost_tender: "Frost tender" };
 // `overview` and `progress` are photos OF A PLACE, not of a plant: a wide shot
@@ -2684,6 +2686,7 @@ const TAXON_PROFILE_FIELDS = [
   "family", "genus", "species_epithet", "description", "plant_type",
   "growth_habit", "mature_size", "bloom_season", "native_range",
   "hardy_to", "water_needs", "frost_tender", "light_conditions",
+  "container_suitability", "soil_needs", "feeding_needs",
   "is_hybrid",
 ];
 const TAXON_SENTINELS = { bloom_season: ["not_observed"] };
@@ -3263,6 +3266,18 @@ const PLANT_TYPE_LABELS = { cactus: "Cactus", aeonium: "Aeonium", agave: "Agave"
 const GROWTH_HABIT_LABELS = { columnar: "Columnar", globular: "Globular / barrel", rosette: "Rosette", clumping: "Clumping / offsetting", caudiciform: "Caudiciform", trailing: "Trailing / sprawling", mounding: "Mounding", upright: "Upright", climbing: "Climbing", groundcover: "Groundcover", solitary: "Solitary" };
 // `bloom_season` is the plant's expected trait. Observed blooming is BLOOM-1's
 // bloom_events table — RPT-4 reads that, not this.
+/* PLANT-1 (v2.26.0). "Will it do well in a container, or better in the ground?"
+   — the question Amanda actually asks when acquiring a plant, and the one this
+   collection is shaped around: a wall of buckets plus some in-ground beds.
+
+   Three values, matching water_needs' three. Unconstrained in the database like
+   every other taxa vocabulary, so adding a value later stays a code change
+   rather than a migration (REFERENCE §on vocabularies). */
+const CONTAINER_SUITABILITY_LABELS = {
+  container: "Does well in a container",
+  either: "Happy either way",
+  ground: "Better in the ground",
+};
 const BLOOM_SEASON_LABELS = { spring: "Spring", early_summer: "Early summer", summer: "Summer", late_summer: "Late summer", fall: "Fall", winter: "Winter", intermittent: "Intermittent / year-round", monocarpic: "Monocarpic — blooms once, then dies", not_observed: "Not yet observed" };
 // Native or introduced relative to the garden's own region. Distinct from
 // `native_range`, which holds where the plant is from ("Central Mexico").
@@ -3275,6 +3290,7 @@ const BUILTIN_LISTS = {
   plant_type: PLANT_TYPE_LABELS,
   growth_habit: GROWTH_HABIT_LABELS,
   bloom_season: BLOOM_SEASON_LABELS,
+  container_suitability: CONTAINER_SUITABILITY_LABELS,
   water_needs: WATER_NEEDS_LABELS,
   light_conditions: LIGHT_CONDITION_LABELS,
 };
@@ -5251,6 +5267,12 @@ function screenTaxonDetail() {
             (t.light_conditions && t.light_conditions.length)
               ? `<span class="wrap-gap" style="justify-content:flex-end;">${t.light_conditions.map((c) => `<span class="pill">${escapeHtml(c.replace(/_/g, " "))}</span>`).join("")}</span>`
               : null)}
+        </div>
+        <div class="section-card">
+          <h4>Planting</h4>
+          ${fieldRow("shovel", "Container or ground", listOptionsFor("container_suitability")[t.container_suitability] || t.container_suitability)}
+          ${fieldRow("map", "Soil", t.soil_needs)}
+          ${fieldRow("bowlSpoon", "Feeding", t.feeding_needs)}
         </div>
         ${taskSectionFor("taxa", t.id)}
       </div>
@@ -8396,6 +8418,17 @@ function modalContent() {
           <option value="">— Not recorded —</option>
           ${Object.entries(listChoicesFor("bloom_season", t.bloom_season)).map(([k, v]) => `<option value="${k}" ${t.bloom_season === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
+        <div class="section-label">Planting</div>
+        <label>Container or ground</label>
+        <select id="et-container">
+          <option value="">&mdash; Not recorded &mdash;</option>
+          ${Object.entries(listOptionsFor("container_suitability")).map(([k, v]) => `<option value="${k}" ${t.container_suitability === k ? "selected" : ""}>${v}</option>`).join("")}
+        </select>
+        <label>Soil</label>
+        <input id="et-soil" value="${escapeHtml(t.soil_needs || "")}" placeholder="Fast-draining cactus mix; tolerates poor sandy soil" />
+        <label>Feeding</label>
+        <input id="et-feeding" value="${escapeHtml(t.feeding_needs || "")}" placeholder="Dilute balanced feed monthly in growth; none in winter" />
+
         <div class="section-label">Care</div>
         <label>Native range</label>
         <input id="et-native" placeholder="e.g. Central Mexico" value="${escapeHtml(t.native_range || "")}" />
@@ -12271,6 +12304,9 @@ function wireModalForms() {
           botanical_name: document.getElementById("et-botanical").value.trim() || null,
           common_name: document.getElementById("et-common").value.trim() || null,
           working_label: document.getElementById("et-working").value.trim() || null,
+          container_suitability: document.getElementById("et-container").value || null,
+          soil_needs: document.getElementById("et-soil").value.trim() || null,
+          feeding_needs: document.getElementById("et-feeding").value.trim() || null,
           family: document.getElementById("et-family").value.trim() || null,
           genus: document.getElementById("et-genus").value.trim() || null,
           species_epithet: document.getElementById("et-species").value.trim() || null,

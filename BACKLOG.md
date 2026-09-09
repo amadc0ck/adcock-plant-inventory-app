@@ -945,6 +945,43 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.26.0 — PLANT-1, container or ground, soil, and feeding
+
+Amanda: *"will it do well in a container? soil preferences? or will it do better
+in the ground?"* — the question she actually asks when acquiring a plant, and
+the one this collection is shaped around: a wall of buckets plus in-ground beds.
+
+- **`container_suitability`** — `container` / `either` / `ground`, three values
+  matching `water_needs`. The prompt tells Claude to answer from mature size,
+  root depth and resentment of disturbance, and says explicitly that this is
+  **where it grows best, not frost protection** — that is `frost_tender`, and
+  conflating them would make both useless.
+- **`soil_needs`** / **`feeding_needs`** — free text like `hardy_to` and
+  `mature_size`. "Fast-draining cactus mix; tolerates poor sandy soil" carries
+  more than any vocabulary token.
+
+**No CHECK constraints**, matching every other `taxa` vocabulary — which is why
+v2.8.0 added five `plant_type` values with no SQL at all.
+
+**All three counted, and added to `suggest-species` in the same ship**, per
+PROF-1's rule that the tile is a port of that function's blank test. Function
+deployed alongside.
+
+**The public view gained them by APPENDING** — `create or replace view` can add
+columns, but only at the end. That is the exception to the ORIG-1 lesson: a
+removal needs drop-and-create, an addition does not, so this went in with no gap
+in service.
+
+**The queue jump was planned for, not absorbed.** Three counted fields blank on
+~157 species would have taken the profile tile from 19 to ~157 — today's main
+win, undone. v2.25.0 generalised the one-away batch precisely so the answer is
+three batch runs instead. **This is the first field addition since
+`light_conditions` that did not create a permanent-looking gap**, and the reason
+LIGHT-1's lesson was worth generalising rather than just fixing.
+
+Icons: `shovel` for Soil and `bowlSpoon` for Feeding, finally used for what a
+comment in the icon set reserved them for before either field existed.
+
 ### v2.25.0 — the one-away batch works on any field, not just light
 
 LIGHT-1 built a batch for `light_conditions` because that field had the problem.

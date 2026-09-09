@@ -80,6 +80,8 @@ The **kind** of plant — whatever the most specific level is known: a species, 
 - `working_label` — names an unidentified taxon until it has a real one. Three plants can obviously be the same kind without anyone knowing what that kind is; a null `taxa_id` cannot express that.
 - `description`, `plant_type`, `growth_habit`, `mature_size`, `bloom_season`
 - `native_range`, `hardy_to`, `light_conditions`, `water_needs`
+- `container_suitability` text, nullable (v2.26.0, PLANT-1) — `container` / `either` / `ground`. **Where it grows best, not whether it survives winter** — that is `frost_tender`. Unconstrained like every other taxa vocabulary, so adding a value stays a code change.
+- `soil_needs` / `feeding_needs` text, nullable (v2.26.0) — free text like `hardy_to` and `mature_size`, because "fast-draining cactus mix; tolerates poor sandy soil" carries more than any token would.
 - ~~`origin`~~ — **dropped v2.20.0 (ORIG-1).** Was native / introduced / unknown,
   meaning native *to this garden's region*, distinct from `native_range`. Removed
   at Amanda's request: it defaulted to `unknown` and 127 of 143 taxa never moved
@@ -564,7 +566,8 @@ select t.id, t.botanical_name, t.common_name, t.family, t.genus,
        t.working_label, t.description, t.growth_habit, t.mature_size,
        t.bloom_season, t.native_range, t.hardy_to, t.water_needs,
        t.light_conditions, t.frost_tender, t.plant_type,
-       count(p.id) as specimens
+       count(p.id) as specimens,
+       t.container_suitability, t.soil_needs, t.feeding_needs
 from taxa t
 join plants p on p.taxa_id = t.id and p.status = 'active'
 group by t.id;
@@ -606,6 +609,8 @@ PostgREST — not a 403.
   to `unknown` and would otherwise have rendered "Unknown" as a recorded fact —
   which was the tell that it was carrying no information. Measured before
   removal: **127 of 143 taxa were still `unknown`.**
+
+  **Appending is the exception: `create or replace view` CAN add columns, but only at the END.** That is how PLANT-1's three planting columns went in (v2.26.0) with no drop and no gap in service. Removing or reordering still needs the drop.
 
   **The view had to be DROPPED and recreated, not `create or replace`d.**
   Postgres cannot remove a column from a view in place; it raises *"cannot drop

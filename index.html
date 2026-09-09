@@ -581,6 +581,16 @@
   .action-row{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;border-bottom:1px solid rgba(37,41,37,0.18);padding:13px 14px;font-size:13.5px;font-family:inherit;color:var(--ink);text-align:left;cursor:pointer;}
   .action-row:last-child{border-bottom:none;}
   .action-row:active{background:rgba(36,62,54,0.06);}
+  /* The action card was built for the hero's parchment panel: no background of
+     its own, --ink text, and hairlines tuned for cream. v2.27.0 moved it into
+     the dark rail, where all three inverted into dark-on-dark — the washed-out
+     menu in Amanda's screenshot. This variant gives it the same surface as the
+     .section-card beside it. The specimen page's copy stays on parchment and
+     keeps the original. */
+  .action-card.on-dark{background:var(--bg-raised);border-color:var(--line);}
+  .action-card.on-dark .action-row{color:var(--cream);border-bottom-color:var(--line);}
+  .action-card.on-dark .action-row svg{color:var(--moss-dim);}
+  .action-card.on-dark .action-row:active{background:rgba(245,239,227,0.07);}
   .action-row svg{width:19px;height:19px;flex-shrink:0;color:var(--moss-dim);}
   .action-row .action-label{flex:1;min-width:0;}
   .action-row .action-chevron{width:15px;height:15px;opacity:0.4;}
@@ -817,7 +827,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.27.2";
+const APP_VERSION = "2.27.3";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5263,7 +5273,20 @@ function screenTaxonDetail() {
                  else**, so it moves here rather than justifying a six-row card
                  in which half the rows were em-dashes and the rest restated the
                  two lines above them. */""}
-            ${t.parentage ? `<div style="margin-top:8px;font-size:13px;color:var(--ink-soft);">${icon("seedling")} ${escapeHtml(t.parentage)}</div>` : ""}
+            ${t.parentage ? `<div style="margin-top:8px;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:6px;">${icon("seedling")} ${escapeHtml(t.parentage)}</div>` : ""}
+            ${/* TAXON-1c. The Record card is gone. Its counts were duplicated by
+                 the Specimens and Photos headings further down, and what it
+                 uniquely held was two facts, not a card's worth. They belong
+                 with the name they describe.
+
+                 The specimen count returns here after v2.27.1 removed it — that
+                 was to de-duplicate it against Record, and Record is what left. */""}
+            <div style="margin-top:12px;font-size:12.5px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span>${countLabel(all.length, "specimen", "specimens")}${locs.length ? ` in ${countLabel(locs.length, "location", "locations")}` : ""}</span>
+              ${taxonPhotos(t.id).length ? `<span>&middot;</span><span>${countLabel(taxonPhotos(t.id).length, "photo", "photos")}</span>` : ""}
+              ${t.updated_at ? `<span>&middot;</span><span>updated ${fmtDate(t.updated_at)}</span>` : ""}
+              ${isFrostTender(t) ? frostBadge("full") : ""}
+            </div>
           </div>
         </div>
       </div>
@@ -5296,6 +5319,11 @@ function screenTaxonDetail() {
             ${fieldRow("droplets", "Water", t.water_needs ? t.water_needs.charAt(0).toUpperCase() + t.water_needs.slice(1) : null)}
             ${fieldRow("map", "Soil", t.soil_needs)}
             ${fieldRow("bowlSpoon", "Feeding", t.feeding_needs)}
+            ${/* Moved out of the Record card. "Bring it in before a freeze" is
+                 an instruction, not a statistic — and keeping it as a field row
+                 preserves the em-dash when nobody has decided yet, which a
+                 badge cannot express. */""}
+            ${fieldRow("temperatureSnow", "Frost tender", t.frost_tender === null || t.frost_tender === undefined ? null : (t.frost_tender ? "Yes — bring it in" : "No"))}
           </div>
 
           ${/* "Details" was a junk-drawer name. These say what the plant IS and
@@ -5310,7 +5338,7 @@ function screenTaxonDetail() {
         </div>
 
         <div class="detail-rail">
-          <div class="action-card">
+          <div class="action-card on-dark">
             <button class="action-row" onclick="openModal('editTaxon',{taxonId:'${t.id}'})">${icon("edit")}<span class="action-label">Edit species record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}',{focus:'both'})">
               ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("claude")}
@@ -5319,14 +5347,6 @@ function screenTaxonDetail() {
             </button>
             <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${icon("photoStar")}<span class="action-label">Set species photo</span><span class="action-chevron">${icon("chevronRight")}</span></button>
-          </div>
-
-          <div class="section-card">
-            <h4>Record</h4>
-            ${fieldRow("seedling", "Specimens", all.length ? `${countLabel(all.length, "specimen", "specimens")} in ${countLabel(locs.length, "location", "locations")}` : null)}
-            ${fieldRow("photo", "Photos", taxonPhotos(t.id).length ? countLabel(taxonPhotos(t.id).length, "photo", "photos") : null)}
-            ${fieldRow("temperatureSnow", "Frost tender", t.frost_tender === null || t.frost_tender === undefined ? null : (t.frost_tender ? "Yes — bring it in" : "No"))}
-            ${fieldRow("note", "Last updated", t.updated_at ? fmtDate(t.updated_at) : null)}
           </div>
 
           ${taskSectionFor("taxa", t.id)}

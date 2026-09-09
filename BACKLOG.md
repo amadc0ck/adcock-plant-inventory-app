@@ -945,6 +945,40 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.27.3 — the rail menu was dark-on-dark, and Record folded into the header
+
+Two problems in one screenshot.
+
+**The action menu had no card.** `.action-card` was built for the hero's
+parchment panel: no background of its own, `--ink` text, hairlines tuned for
+cream. v2.27.0 moved it into the dark rail and **all three inverted at once** —
+dark text on a dark page with no surface behind it, which is the washed-out menu
+she photographed. An `.on-dark` variant gives it the same surface as the
+`.section-card` beside it; the specimen page's copy stays on parchment and keeps
+the original.
+
+**The same trap as the icons, one layer up.** A component that only works where
+someone prepared the ground — except here the ground was a colour context rather
+than a CSS rule. **Moving a component across a light/dark boundary is a
+migration, not a relocation**, and nothing in the markup said so.
+
+**The Record card is gone.** Its four rows were: two counts already stated by the
+Specimens and Photos headings twenty pixels below, plus two facts that are not a
+card's worth on their own.
+
+- **Specimens, photos and last-updated** become one compact meta line in the
+  hero, beside the name they describe. The specimen count returns there after
+  v2.27.1 removed it — that removal was to de-duplicate against Record, and
+  Record is what left.
+- **Frost tender moved into *Growing it***. "Bring it in before a freeze" is an
+  instruction, not a statistic. Kept as a FIELD ROW rather than only a badge,
+  because a badge cannot express the difference between *"no"* and *"nobody has
+  decided yet"* — and `frost_tender` is a counted profile field where that
+  distinction is the whole point. `frostBadge()` still appears in the hero when
+  the answer is yes.
+
+The page is now two cards and a two-item rail, down from six cards at v2.27.0.
+
 ### v2.27.2 — icons stop exploding, at the source
 
 The seedling added to the parentage line in v2.27.1 rendered full-bleed across

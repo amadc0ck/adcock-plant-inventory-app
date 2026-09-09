@@ -805,7 +805,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.27.0";
+const APP_VERSION = "2.27.1";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5243,9 +5243,14 @@ function screenTaxonDetail() {
             })()}
             ${taxonSecondaryName(t) ? `<div style="color:var(--ink);font-size:14.5px;margin-top:3px;font-weight:500;">${escapeHtml(taxonSecondaryName(t))}</div>` : ""}
             ${t.description ? `<div style="margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.5;">${escapeHtml(t.description)}</div>` : ""}
-            <div style="margin-top:12px;font-size:13px;color:var(--ink);">
-              ${countLabel(all.length, "specimen", "specimens")}${locs.length ? ` in ${countLabel(locs.length, "location", "locations")}` : ""}
-            </div>
+            ${/* TAXON-1b. The Taxonomy card is gone and this is what it was
+                 actually for. Family and genus are in the tag line above;
+                 genus, epithet, infraspecific and cultivar are all composed
+                 into the title. **Parentage was the only part visible nowhere
+                 else**, so it moves here rather than justifying a six-row card
+                 in which half the rows were em-dashes and the rest restated the
+                 two lines above them. */""}
+            ${t.parentage ? `<div style="margin-top:8px;font-size:13px;color:var(--ink-soft);">${icon("seedling")} ${escapeHtml(t.parentage)}</div>` : ""}
           </div>
         </div>
       </div>
@@ -5264,16 +5269,6 @@ function screenTaxonDetail() {
 
       <div class="detail-layout">
         <div class="detail-main">
-          <div class="section-card">
-            <h4>Taxonomy</h4>
-            ${fieldRow("clipboard", "Family", t.family)}
-            ${fieldRow("clipboard", "Genus", t.genus)}
-            ${fieldRow("clipboard", "Species", t.species_epithet)}
-            ${fieldRow("clipboard", "Infraspecific", infraspecificLabel(t.infraspecific))}
-            ${fieldRow("tag", "Cultivar", cultivarLabel(t.cultivar))}
-            ${fieldRow("seedling", "Parentage", t.parentage)}
-          </div>
-
           ${/* Care ABSORBS Planting. They were one topic split across two cards
                — six of the seven fields are literally how to grow the plant —
                and the split was mine, from adding Planting as a new card in
@@ -5288,7 +5283,6 @@ function screenTaxonDetail() {
             ${fieldRow("droplets", "Water", t.water_needs ? t.water_needs.charAt(0).toUpperCase() + t.water_needs.slice(1) : null)}
             ${fieldRow("map", "Soil", t.soil_needs)}
             ${fieldRow("bowlSpoon", "Feeding", t.feeding_needs)}
-            ${fieldRow("temperature", "Hardy to", t.hardy_to)}
           </div>
 
           ${/* "Details" was a junk-drawer name. These say what the plant IS and
@@ -5298,8 +5292,6 @@ function screenTaxonDetail() {
             <h4>What it is</h4>
             ${fieldRow("leaf", "Type", listOptionsFor("plant_type")[t.plant_type] || t.plant_type)}
             ${fieldRow("seedling", "Growth habit", listOptionsFor("growth_habit")[t.growth_habit] || t.growth_habit)}
-            ${fieldRow("map", "Mature size", t.mature_size)}
-            ${fieldRow("plant2", "Bloom season", listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season)}
             ${fieldRow("leaf", "Native to", t.native_range)}
           </div>
         </div>
@@ -5315,12 +5307,6 @@ function screenTaxonDetail() {
             <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${icon("photoStar")}<span class="action-label">Set species photo</span><span class="action-chevron">${icon("chevronRight")}</span></button>
           </div>
-
-          ${t.description ? `
-            <div class="section-card">
-              <h4>Notes</h4>
-              <p style="font-size:13px;line-height:1.5;margin:6px 0 0;color:var(--ink);">${escapeHtml(t.description)}</p>
-            </div>` : ""}
 
           <div class="section-card">
             <h4>Record</h4>

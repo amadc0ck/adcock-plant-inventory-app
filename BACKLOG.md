@@ -945,6 +945,43 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.27.1 — condensing the species page, and three duplications I had introduced
+
+Amanda, with a screenshot: *"we need some further condensing. Can we put the
+taxonomy in the header somehow"* — and she was right that it belonged there.
+
+**The Taxonomy card was almost pure restatement.** On *Echeveria* 'Violet Queen'
+it showed six rows: three em-dashes, and three repeating the two lines directly
+above them. The tag line already gives family; the title is COMPOSED from genus,
+epithet, infraspecific and cultivar. **`parentage` was the only part visible
+nowhere else**, so it moved into the hero and the card was deleted.
+
+**Three duplications, all mine, all from v2.27.0:**
+
+| Fact | Appeared in |
+| --- | --- |
+| The description | the hero **and** the rail's Notes card |
+| "1 specimen in 1 location" | the hero **and** the Record card |
+| Hardy to, mature size, bloom season | the stat strip **and** the cards below it |
+
+The first two came from moving things into the rail per the mockup without
+removing the originals. The third is subtler: **a summary strip and a detail
+card are both legitimate, but three of the four strip values also had a row
+twelve pixels further down** — which makes the strip look like a bug rather than
+a summary. The cards keep what the strip does not carry.
+
+**This contradicts v1.38.0's rule** that every field renders even when blank,
+because an unrecorded field marks the record as incomplete and that is
+information. **Deliberately.** That rule earns its keep on Care and Provenance,
+where absence is genuinely unknown data. It does not earn it on six taxonomy
+rows whose filled values duplicate the heading — and the job it was doing there
+is now done properly by "Species profiles unfinished", which counts exactly
+these fields and can be worked from. **If the gap-tracking queue is ever
+retired, this decision has to be revisited.**
+
+Left column is now *Growing it*, *What it is*, Specimens, Photos. Rail is
+Actions, Record, Tasks.
+
 ### v2.27.0 — TAXON-1, the species page rebuilt from Amanda's mockup
 
 She asked to look at how the page was organised, then drew a layout. Built from

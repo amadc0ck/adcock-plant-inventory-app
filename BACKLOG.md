@@ -945,6 +945,62 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.27.0 — TAXON-1, the species page rebuilt from Amanda's mockup
+
+She asked to look at how the page was organised, then drew a layout. Built from
+it, with two deliberate departures.
+
+**The ragged appearance was a symptom.** `.section-grid` is CSS `columns`, which
+flows cards DOWN column one and back to the top of column two. Five cards of
+different heights left a near-empty third column holding *"No open tasks"* — the
+void in her screenshot. `.detail-layout` is a real two-column grid with a fixed
+rail. **`.section-grid` stays for the SPECIMEN page**, which still suits it.
+
+**The grouping was the deeper problem:**
+
+- **Care and Planting were one topic split in two** — six of the seven fields
+  are literally how to grow the plant. **That split was mine**, from adding
+  Planting as a new card in v2.26.0 rather than asking where the fields
+  belonged. Now one card, *Growing it*.
+- **"Details" was a junk-drawer name.** Now *What it is*, and it gains
+  `native_range` from Care: where a plant comes from is a fact about it, not an
+  instruction.
+
+**A stat strip** carries four headline facts above the cards.
+
+**Two departures from the mockup, both deliberate:**
+
+1. **"Species" dropped from the stat strip**, replaced by Water. The heading two
+   inches above already renders the composed name; a summary repeating what it
+   sits under is spent space.
+2. **Live Claude suggestions stay in the hero**, not in a rail "Status" card.
+   The mockup showed *"Suggested value: Accepted"* — passive state. A PENDING
+   suggestion is actionable, carrying Accept and Dismiss, and demoting it into a
+   reference rail would bury the one thing waiting on her. The rail's *Record*
+   card holds the genuinely passive facts: specimens, photos, frost tender, last
+   updated.
+
+**Mobile:** the rail stacks ABOVE the cards, so Actions and Notes stay near the
+top where the old hero put them rather than below the photo grid.
+
+The old hero action rail was **removed, not hidden** — a `display:none`
+duplicate would leave two sets of identical handlers for a later reader.
+
+### v2.26.2 — the coffin icon filled the In Memoriam row
+
+`.attn-row` sizes only `.action-chevron`. Until v2.24.0 no `.attn-row` had ever
+carried a leading icon, so there was no general `svg` rule — unlike
+`.action-row`, which has one. The coffin was the first, and with no intrinsic
+width it grew to fill the row and crushed *"In memoriam / 1 plant that has left
+the collection"* into a one-word-per-line column. Reported with a screenshot.
+
+Adds `.attn-row svg{width:19px;height:19px}`. The chevron keeps its 15px because
+`.attn-row .action-chevron` is the more specific selector.
+
+**Worth keeping:** a class that styles only the icons it happened to contain is
+fine until something new is put in it. Borrowing a container for a use it has
+never had is a layout bug waiting to happen.
+
 ### v2.26.1 — the batch buttons vanished the moment they were needed
 
 Amanda, immediately after v2.26.0: *"where are the banners to run the batches?"*

@@ -979,6 +979,20 @@ card's worth on their own.
 
 The page is now two cards and a two-item rail, down from six cards at v2.27.0.
 
+**VERIFIED 2026-09-09.** Amanda confirmed the action menu, the hero and frost
+tender all render correctly. That closes the v2.27.x chain — six ships in an hour
+(rebuild, condense, icon fix, menu surface), every one of them prompted by a
+screenshot rather than found by me.
+
+**Worth naming, because the pattern was consistent:** four of those six were
+regressions I introduced in the ship immediately before, and all four were
+invisible in the source. A duplicated description, a duplicated count, an
+unsized icon, a component moved across a light/dark boundary — each reads fine
+as code and only fails as pixels. **A layout change is not verified until
+someone looks at it**, and on this project that someone is Amanda with an iPad.
+Ship UI in small increments so the screenshot arrives while the cause is still
+one commit away.
+
 ### v2.27.2 — icons stop exploding, at the source
 
 The seedling added to the parentage line in v2.27.1 rendered full-bleed across

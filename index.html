@@ -610,6 +610,11 @@
     border-bottom:1px solid rgba(37,41,37,0.12);padding:14px 16px;text-align:left;cursor:pointer;font-family:inherit;color:var(--ink);}
   .attn-row:last-child{border-bottom:none;}
   .attn-row:active{background:rgba(36,62,54,0.06);}
+  /* .attn-row sized only .action-chevron, because until v2.24.0 no attn-row had
+     ever carried a leading icon. The coffin was the first, and with no width it
+     grew to fill the row and crushed the label into a one-word column.
+     `.attn-row .action-chevron` is more specific, so the chevron keeps its 15px. */
+  .attn-row svg{width:19px;height:19px;flex-shrink:0;color:var(--moss-dim);}
   .attn-title{font-size:14px;font-weight:600;}
   .attn-sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .attn-count{font-family:'IBM Plex Mono',monospace;font-size:12px;min-width:26px;height:26px;border-radius:13px;
@@ -776,7 +781,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.26.1";
+const APP_VERSION = "2.26.2";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 

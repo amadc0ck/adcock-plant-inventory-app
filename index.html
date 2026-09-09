@@ -576,6 +576,25 @@
   .action-row.action-danger svg{color:var(--terracotta);}
 
   /* Section cards below the hero. */
+  /* TAXON-1 (v2.27.0), from Amanda's mockup. Replaces CSS `columns` on the
+     species page. Columns flow DOWN one and back to the top of the next, so
+     five cards of different heights left a near-empty third column holding
+     "No open tasks" — the void in her screenshot. A fixed rail does not do
+     that: the reference cards keep a column of their own regardless of what
+     the main column is doing.
+
+     .section-grid stays for the SPECIMEN page, which still suits it. */
+  .detail-layout{display:flex;flex-direction:column;gap:14px;margin-top:14px;}
+  .detail-main{display:flex;flex-direction:column;gap:14px;min-width:0;}
+  .detail-rail{display:flex;flex-direction:column;gap:14px;min-width:0;}
+  /* Headline facts, above the fold and above the cards. Deliberately NOT the
+     species name: the heading two inches up already says it. */
+  .stat-strip{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 18px;
+    background:var(--parchment);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;margin-top:14px;}
+  .stat-strip .stat-label{font-size:11px;letter-spacing:0.3px;text-transform:uppercase;color:var(--ink-soft);}
+  .stat-strip .stat-value{font-size:15px;color:var(--ink);margin-top:2px;line-height:1.25;}
+  .stat-strip .value-blank{font-size:15px;}
   .section-grid{display:flex;flex-direction:column;gap:14px;margin-top:14px;}
   .section-grid > *{break-inside:avoid;-webkit-column-break-inside:avoid;}
   .section-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;padding:16px 18px;}
@@ -730,6 +749,11 @@
        order becomes down-then-across, which is fine for independent
        reference cards. */
     .queue-grid{grid-template-columns:repeat(3,1fr);}
+    .stat-strip{grid-template-columns:repeat(4,1fr);}
+    .detail-layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);
+      gap:16px;align-items:start;}
+    .detail-rail{order:2;}
+    .detail-main{order:1;}
     .section-grid{display:block;columns:2;column-gap:14px;}
     /* Bottom sheet is right on a phone and wrong on a desktop, where it
        leaves a 640px column pinned to the bottom edge of a 1400px window.
@@ -781,7 +805,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.26.2";
+const APP_VERSION = "2.27.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5146,6 +5170,16 @@ function screenTaxa() {
   </div>`;
 }
 
+// A headline fact. Blank renders the same dimmed em-dash every field row uses
+// (v1.38.0) rather than vanishing — an unrecorded fact is information, and a
+// strip that silently reflows to three cells reads as a layout bug.
+function statCell(label, value) {
+  return `<div>
+    <div class="stat-label">${escapeHtml(label)}</div>
+    <div class="stat-value">${value ? escapeHtml(String(value)) : `<span class="value-blank">&mdash;</span>`}</div>
+  </div>`;
+}
+
 function screenTaxonDetail() {
   const t = taxonById(state.currentTaxonId);
   if (!t) return `<div class="screen container"><p>Plant not found.</p></div>`;
@@ -5213,73 +5247,91 @@ function screenTaxonDetail() {
               ${countLabel(all.length, "specimen", "specimens")}${locs.length ? ` in ${countLabel(locs.length, "location", "locations")}` : ""}
             </div>
           </div>
-          <div class="detail-actions">
-            <div class="action-card">
-              <button class="action-row" onclick="openModal('editTaxon',{taxonId:'${t.id}'})">${icon("edit")}<span class="action-label">Edit species record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
-              ${/* AI-2. No photograph: every field here follows from the name,
-                   so a text call answers it for a tenth of the cost. */""}
-              ${/* Was two buttons — "Check the name and split it up" and "Ask
-                   Claude to fill the blanks". NAME-2 split them because they
-                   are different questions to CLAUDE: the blanks pass never
-                   touches a filled field, which is why it could not fix a
-                   misspelling. That is still true and the two prompts stay
-                   separate — this function's own note is that a narrow prompt
-                   is cheaper and does not divide the model's attention.
-
-                   But it is ONE question to her: "look at this species." So one
-                   button, two calls, one merged review list. No more expensive
-                   than pressing both, which is what she did anyway, and they
-                   share the cached catalogue prefix.
-
-                   The safety the two buttons used to provide — knowing whether
-                   an answer might overwrite something she typed — moves into
-                   the suggestion row, which now renders "was → now". */""}
-              <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}',{focus:'both'})">
-                ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("claude")}
-                <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Ask Claude about this species"}</span>
-                <span class="action-chevron">${icon("chevronRight")}</span>
-              </button>
-              <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
-              <button class="action-row" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${icon("photoStar")}<span class="action-label">Set species photo</span><span class="action-chevron">${icon("chevronRight")}</span></button>
-            </div>
-          </div>
         </div>
       </div>
 
-      <div class="section-grid">
-        <div class="section-card">
-          <h4>Taxonomy</h4>
-          ${fieldRow("clipboard", "Family", t.family)}
-          ${fieldRow("clipboard", "Genus", t.genus)}
-          ${fieldRow("clipboard", "Species", t.species_epithet)}
-          ${fieldRow("clipboard", "Infraspecific", infraspecificLabel(t.infraspecific))}
-          ${fieldRow("tag", "Cultivar", cultivarLabel(t.cultivar))}
-          ${fieldRow("seedling", "Parentage", t.parentage)}
+      ${/* TAXON-1. Four headline facts, from Amanda's mockup. Her draft had
+           "Species" as the first — dropped, because the heading directly above
+           already renders the composed name, and a summary that repeats the
+           thing it sits under is spent space. Water takes the slot instead:
+           high-value at a glance and not otherwise visible without scrolling. */""}
+      <div class="stat-strip">
+        ${statCell("Hardy to", t.hardy_to)}
+        ${statCell("Water", t.water_needs ? t.water_needs.charAt(0).toUpperCase() + t.water_needs.slice(1) : null)}
+        ${statCell("Bloom season", listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season)}
+        ${statCell("Mature size", t.mature_size)}
+      </div>
+
+      <div class="detail-layout">
+        <div class="detail-main">
+          <div class="section-card">
+            <h4>Taxonomy</h4>
+            ${fieldRow("clipboard", "Family", t.family)}
+            ${fieldRow("clipboard", "Genus", t.genus)}
+            ${fieldRow("clipboard", "Species", t.species_epithet)}
+            ${fieldRow("clipboard", "Infraspecific", infraspecificLabel(t.infraspecific))}
+            ${fieldRow("tag", "Cultivar", cultivarLabel(t.cultivar))}
+            ${fieldRow("seedling", "Parentage", t.parentage)}
+          </div>
+
+          ${/* Care ABSORBS Planting. They were one topic split across two cards
+               — six of the seven fields are literally how to grow the plant —
+               and the split was mine, from adding Planting as a new card in
+               v2.26.0 rather than asking where the fields belonged. */""}
+          <div class="section-card">
+            <h4>Growing it</h4>
+            ${fieldRow("shovel", "Container or ground", listOptionsFor("container_suitability")[t.container_suitability] || t.container_suitability)}
+            ${fieldRow("brightness", "Light", null,
+              (t.light_conditions && t.light_conditions.length)
+                ? `<span class="wrap-gap" style="justify-content:flex-end;">${t.light_conditions.map((c) => `<span class="pill">${escapeHtml(c.replace(/_/g, " "))}</span>`).join("")}</span>`
+                : null)}
+            ${fieldRow("droplets", "Water", t.water_needs ? t.water_needs.charAt(0).toUpperCase() + t.water_needs.slice(1) : null)}
+            ${fieldRow("map", "Soil", t.soil_needs)}
+            ${fieldRow("bowlSpoon", "Feeding", t.feeding_needs)}
+            ${fieldRow("temperature", "Hardy to", t.hardy_to)}
+          </div>
+
+          ${/* "Details" was a junk-drawer name. These say what the plant IS and
+               DOES — and `native_range` belongs here, not under care: where a
+               plant comes from is a fact about it, not an instruction. */""}
+          <div class="section-card">
+            <h4>What it is</h4>
+            ${fieldRow("leaf", "Type", listOptionsFor("plant_type")[t.plant_type] || t.plant_type)}
+            ${fieldRow("seedling", "Growth habit", listOptionsFor("growth_habit")[t.growth_habit] || t.growth_habit)}
+            ${fieldRow("map", "Mature size", t.mature_size)}
+            ${fieldRow("plant2", "Bloom season", listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season)}
+            ${fieldRow("leaf", "Native to", t.native_range)}
+          </div>
         </div>
-        <div class="section-card">
-          <h4>Details</h4>
-          ${fieldRow("leaf", "Type", listOptionsFor("plant_type")[t.plant_type] || t.plant_type)}
-          ${fieldRow("seedling", "Growth habit", listOptionsFor("growth_habit")[t.growth_habit] || t.growth_habit)}
-          ${fieldRow("map", "Mature size", t.mature_size)}
-          ${fieldRow("plant2", "Bloom season", listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season)}
+
+        <div class="detail-rail">
+          <div class="action-card">
+            <button class="action-row" onclick="openModal('editTaxon',{taxonId:'${t.id}'})">${icon("edit")}<span class="action-label">Edit species record</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            <button class="action-row" ${state.suggestingTaxaId === t.id ? "disabled" : ""} onclick="askClaudeAboutSpecies('${t.id}',{focus:'both'})">
+              ${state.suggestingTaxaId === t.id ? '<span class="spinner"></span>' : icon("claude")}
+              <span class="action-label">${state.suggestingTaxaId === t.id ? "Asking Claude…" : "Ask Claude about this species"}</span>
+              <span class="action-chevron">${icon("chevronRight")}</span>
+            </button>
+            <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            <button class="action-row" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${icon("photoStar")}<span class="action-label">Set species photo</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+          </div>
+
+          ${t.description ? `
+            <div class="section-card">
+              <h4>Notes</h4>
+              <p style="font-size:13px;line-height:1.5;margin:6px 0 0;color:var(--ink);">${escapeHtml(t.description)}</p>
+            </div>` : ""}
+
+          <div class="section-card">
+            <h4>Record</h4>
+            ${fieldRow("seedling", "Specimens", all.length ? `${countLabel(all.length, "specimen", "specimens")} in ${countLabel(locs.length, "location", "locations")}` : null)}
+            ${fieldRow("photo", "Photos", taxonPhotos(t.id).length ? countLabel(taxonPhotos(t.id).length, "photo", "photos") : null)}
+            ${fieldRow("temperatureSnow", "Frost tender", t.frost_tender === null || t.frost_tender === undefined ? null : (t.frost_tender ? "Yes — bring it in" : "No"))}
+            ${fieldRow("note", "Last updated", t.updated_at ? fmtDate(t.updated_at) : null)}
+          </div>
+
+          ${taskSectionFor("taxa", t.id)}
         </div>
-        <div class="section-card">
-          <h4>Care</h4>
-          ${fieldRow("leaf", "Native to", t.native_range)}
-          ${fieldRow("temperature", "Hardy to", t.hardy_to)}
-          ${fieldRow("droplets", "Water", t.water_needs ? t.water_needs.charAt(0).toUpperCase() + t.water_needs.slice(1) : null)}
-          ${fieldRow("brightness", "Light", null,
-            (t.light_conditions && t.light_conditions.length)
-              ? `<span class="wrap-gap" style="justify-content:flex-end;">${t.light_conditions.map((c) => `<span class="pill">${escapeHtml(c.replace(/_/g, " "))}</span>`).join("")}</span>`
-              : null)}
-        </div>
-        <div class="section-card">
-          <h4>Planting</h4>
-          ${fieldRow("shovel", "Container or ground", listOptionsFor("container_suitability")[t.container_suitability] || t.container_suitability)}
-          ${fieldRow("map", "Soil", t.soil_needs)}
-          ${fieldRow("bowlSpoon", "Feeding", t.feeding_needs)}
-        </div>
-        ${taskSectionFor("taxa", t.id)}
       </div>
 
       <div class="row" style="margin-top:26px;margin-bottom:8px;">

@@ -802,6 +802,18 @@ Scroll is preserved the same way (v1.52.2), for the page, the modal and the Gall
 - **Icons:** inline SVG strings via `icon(name)`. As of v1.32, 8 icons use **real Tabler Icons source** (plant, map-pin, map-2, clipboard-text, info-circle, progress-check, progress-x, photo-question), copied from tabler.io rather than approximated. Get exact source from Amanda if more Tabler icons are wanted.
 - **Responsive:** mobile-first, breakpoints at 700px (2-column card grids, larger thumbnails) and 1100px (3-column, widest container). `.card-grid` handles this. `.stack` is reserved for form/vertical layouts and deliberately never becomes a grid.
 - **The `@media` blocks must stay last in `<style>` (v1.37.1).** Media queries add **no specificity**. A single-class base rule declared *after* them wins at every width, and the breakpoint silently stops working — no error, no warning, it just never applies. This had already killed `.plant-list-thumb` (base at 92px declared below the block, so the 120/140px breakpoint sizes never applied on any screen) and it killed `.detail-split` the day it was written. Add new base rules **above** the block.
+- **Every `icon()` SVG carries `class="ico"`, sized 19px by default (v2.27.2).**
+  The icons have no `width`/`height` attributes, so an icon dropped into a
+  container with no sizing rule expands to fill it. That happened twice within
+  an hour — the coffin in an `.attn-row`, then the seedling on a hero line — and
+  the app had accumulated **35 per-container `svg{width:…}` rules**, one for
+  every place an icon had ever been put. The thirty-sixth placement was always
+  going to break. `.ico` is (0,1,0) and every container rule is (0,1,1), so all
+  35 still win and nothing moved; new placements just get a sane default.
+  **The lesson is the shape, not the CSS: a component that only works where
+  someone has already prepared the ground is a trap, and the tell is a growing
+  list of near-identical per-caller rules.**
+
 - **A membership rule gets ONE function, and every caller asks it (v2.23.1).**
   Three separate drifts in a single day, all the same shape: a condition added
   in one place while hand-copied versions of the same test lived elsewhere.

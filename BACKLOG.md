@@ -945,6 +945,28 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.27.2 — icons stop exploding, at the source
+
+The seedling added to the parentage line in v2.27.1 rendered full-bleed across
+the hero. **Identical to v2.26.2's coffin, an hour earlier.** Patching the
+container a second time would have been treating the symptom twice.
+
+**The cause is structural.** `icon()` returns SVGs with no `width`/`height`, so
+they size only where a container rule says so — and the app had **35
+per-container `svg{width:…}` rules**, one for every place an icon had ever been
+put. Any new placement was a full-bleed SVG until someone noticed and added the
+thirty-sixth rule.
+
+`icon()` now tags its output `class="ico"`, with `.ico{width:19px;height:19px}`
+as a base. **Specificity means nothing else changes**: `.ico` is (0,1,0) and
+every rule like `.action-row svg` is (0,1,1), so all 35 still win where they
+apply. Verified all 38 icons start with `<svg ` and take the class.
+
+**Worth keeping:** a component that only works where someone has already
+prepared the ground is a trap, and **the tell was visible long before either
+bug — a growing list of near-identical per-caller rules.** Thirty-five of them
+said "an icon goes here and this is how big"; none said what an icon is.
+
 ### v2.27.1 — condensing the species page, and three duplications I had introduced
 
 Amanda, with a screenshot: *"we need some further condensing. Can we put the

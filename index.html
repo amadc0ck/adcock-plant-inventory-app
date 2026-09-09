@@ -72,6 +72,18 @@
   .topbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .topbar-right-group{display:flex;align-items:center;gap:4px;flex-shrink:0;}
   .icon-only-btn{background:none;border:none;color:#9FB0A3;padding:6px;cursor:pointer;display:flex;}
+  /* Every icon() SVG carries class="ico". None has width/height attributes, so
+     before this an icon placed in a container with no sizing rule expanded to
+     fill it — which is what happened to the coffin in an .attn-row (v2.26.2)
+     and, an hour later, to the seedling on the parentage line (v2.27.2).
+     Thirty-five per-container `svg{width:…}` rules existed below, one for every
+     place an icon had ever been put; the thirty-sixth placement was always
+     going to break.
+
+     Specificity keeps all of them winning: `.ico` is (0,1,0) and every rule
+     like `.action-row svg` is (0,1,1). Nothing changes where a rule already
+     exists; anywhere new gets 19px instead of a full-bleed SVG. */
+  .ico{width:19px;height:19px;flex-shrink:0;}
   .icon-only-btn svg{width:19px;height:19px;}
   .status-light-btn{background:none;border:none;padding:6px;cursor:default;display:flex;}
   .status-light-btn svg{width:18px;height:18px;}
@@ -805,7 +817,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.27.1";
+const APP_VERSION = "2.27.2";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4033,7 +4045,8 @@ function icon(name) {
     heartStar: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.73 17.753l-5.23 -5.181a5 5 0 1 1 7.5 -6.566a5 5 0 0 1 8.563 5.041" /><path d="M17.8 20.817l-2.172 1.138a.392 .392 0 0 1 -.568 -.41l.415 -2.411l-1.757 -1.707a.389 .389 0 0 1 .217 -.665l2.428 -.352l1.086 -2.193a.392 .392 0 0 1 .702 0l1.086 2.193l2.428 .352a.39 .39 0 0 1 .217 .665l-1.757 1.707l.414 2.41a.39 .39 0 0 1 -.567 .411l-2.172 -1.138" /></svg>`,
     plant2: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a10 10 0 1 0 20 0" /><path d="M12 19a10 10 0 0 1 10 -10" /><path d="M2 9a10 10 0 0 1 10 10" /><path d="M12 4a9.7 9.7 0 0 1 2.99 7.5" /><path d="M9.01 11.5a9.7 9.7 0 0 1 2.99 -7.5" /></svg>`,
   };
-  return icons[name] || "";
+  // Tag every icon so `.ico` can give it a default size — see the note there.
+  return (icons[name] || "").replace("<svg ", '<svg class="ico" ');
 }
 
 /* ============================================================

@@ -1003,9 +1003,26 @@ outstanding work. This is what got "In bloom now" retired in v2.6.0.
 **`wishlist` was added to `exportFullBackup()` and the restore in this commit**,
 which is the rule REFERENCE states in bold after four occurrences of forgetting.
 
-**VERIFICATION STATE, 2026-09-08.** The wish list half is confirmed working by
-Amanda in the running app. **The GRAVE-1 half is not**, and it is the half that
-writes:
+**VERIFIED END TO END, 2026-09-08.** Amanda ran the full cycle in the running
+app: *"had it, it died, to I wish I had it"* — the plant recorded as gone, the
+care note written, and the species landing on the wish list from the checkbox in
+the same step. That exercises every write in GRAVE-1 and the WISH-1 hand-off
+between them.
+
+**Still unobserved: the LOCATION side.** Nothing has confirmed that the dead
+plant's bucket count dropped, or — the one that matters — that the bucket did
+NOT then appear under "Empty locations". `plantsEverAtLocation()` exists
+precisely so that deleting it cannot null the `location_id` recording where the
+plant died. Worth a look on that bucket next time she is in Locations.
+
+**A note on verifying this from outside:** `public_plant_inventory` only counts
+`status = 'active'`, so a plant leaving should drop its specimen total by one.
+That check was tried and came back **inconclusive, not negative** — the
+collection grew from 145 species / 231 specimens to 157 / 243 the same day, so a
+net +12 masks the −1. Anon cannot see non-active plants at all. **Do not read a
+flat or rising view count as evidence the status write failed.**
+
+The original state, for reference:
 
 - **"No longer have this plant"** — the `status` + `collection_category` +
   `date_removed` patch, the care note it writes, and the wish-list checkbox.

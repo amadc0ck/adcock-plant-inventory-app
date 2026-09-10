@@ -945,6 +945,29 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.28.2 — "Change photo" and "Set species photo" were the same button
+
+Amanda: *"does change photo and set photo do the same thing?"* They did. Three
+entry points, one call, two names for it:
+
+| Where | Label |
+| --- | --- |
+| the photo itself | *(click)* |
+| button on the photo | "Change photo" / "Choose photo" |
+| action rail | "Set species photo" |
+
+All three ran `openModal('chooseTaxonPhoto', {taxonId})`.
+
+**The rail row was the odd one out, not the pattern.** The specimen page and the
+location page have only ever had the image and its overlaid button — no rail row
+— so the taxon page had drifted from both. Removed, and all three detail pages
+now agree.
+
+**Two names for one action is worse than the duplication.** "Set species photo"
+and "Change photo" read as different capabilities, so the question *"do these do
+the same thing?"* is the interface failing to answer something it should never
+have raised.
+
 ### v2.28.1 — deleteTaxon deleted against a column that does not exist
 
 First use of v2.28.0 failed with `42703: column identifications.taxa_id does not

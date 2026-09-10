@@ -832,7 +832,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.28.1";
+const APP_VERSION = "2.28.2";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5250,6 +5250,12 @@ function screenTaxonDetail() {
           <div class="detail-media">
             <div class="card-media ratio-4x3" style="cursor:pointer;" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">
               ${cover ? photoImgEager(cover) : `<div class="card-media-empty">${icon("photo")}<span>No photos yet</span></div>`}
+              ${/* The ONLY route to the species photo picker, plus the image
+                   itself. A "Set species photo" row in the action rail ran the
+                   exact same openModal with a different name for it — three
+                   ways in, two vocabularies. The specimen and location pages
+                   have always had just these two, so the rail row was the
+                   inconsistency rather than the pattern. */""}
               <button class="media-btn" onclick="event.stopPropagation();openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${cover ? "Change photo" : "Choose photo"}</button>
             </div>
           </div>
@@ -5351,7 +5357,6 @@ function screenTaxonDetail() {
               <span class="action-chevron">${icon("chevronRight")}</span>
             </button>
             <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
-            <button class="action-row" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${icon("photoStar")}<span class="action-label">Set species photo</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             ${/* Only offered where it can succeed. A species with specimens is
                  not a record to delete, and a disabled row that never explains
                  itself is worse than no row. */""}

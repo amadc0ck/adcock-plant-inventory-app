@@ -992,9 +992,15 @@ it is safe against production. Recorded in REFERENCE with the command.
 The other three targets were correct: `suggestions.taxa_id`,
 `suggestions.value_id`, `task_subjects.taxa_id`.
 
-**Partial execution, and it is harmless.** The two `suggestions` deletes ran
-before the failure, so pending suggestions for that taxon are already gone while
-the taxon remains. They were being deleted anyway; nothing needs undoing.
+**Partial execution, and it was harmless.** The two `suggestions` deletes ran
+before the failure, so pending suggestions for that taxon were already gone while
+the taxon remained. They were being deleted anyway; nothing needed undoing.
+
+**VERIFIED 2026-09-09.** Amanda deleted the Unnamed taxon successfully — the
+nameless record carrying `family = Cactaceae` and nothing else, first spotted in
+the 2026-09-08 profile audit. `deleteTaxon` works, and the whole path is
+exercised: refusal while specimens existed, then a clean delete once she had
+moved them off it.
 
 ### v2.28.0 — delete a species
 

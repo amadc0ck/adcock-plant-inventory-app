@@ -945,6 +945,50 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.28.0 — delete a species
+
+Wanted since 2026-08-29 and never built; the taxa cleanup kept needing it. Amanda
+had a species record to delete and there was no way to.
+
+**It refuses while specimens exist**, deliberately. A species with plants is not
+a record to delete — either those plants are something else (reassign them) or
+they are gone (record that, which is what GRAVE-1 now does). Deleting the taxon
+under them would strand real specimens with no species. The action row is only
+rendered when the count is zero: a disabled row that never explains itself is
+worse than no row.
+
+**BACKLOG's own note was incomplete.** It said to clear `suggestions` and
+`task_subjects`. **`identifications` carries a `taxa_id` too** — REFERENCE says
+so in passing under `suggestions` ("same shape as identifications") — and so
+does `suggestions.value_id`, which holds the taxon a `new_specimen` proposal
+points at. Built from the FK list rather than the note. **This is the fourth
+time a hand-maintained cleanup list has been wrong**, after ADM-2, ADM-3, the
+v2.21.1 restore break and MERGE-1.
+
+What it clears, and why each:
+
+| Table | Action |
+| --- | --- |
+| `suggestions.taxa_id` | delete — a proposal about a species that no longer exists |
+| `suggestions.value_id` | delete — different column, same orphan |
+| `identifications` | delete — the Pl@ntNet audit trail for that name |
+| `task_subjects` | **delete, not null** — CHECK-constrained to exactly one of plant/location/taxa, so the id cannot be cleared |
+| `wishlist.taxa_id` | nothing — `on delete set null`, and the entry falls back to its typed name |
+
+The confirm names all of it, including that a wish list entry will fall back to
+free text, because that name may be less exact than the taxon's was.
+
+**A CSS trap caught before shipping.** `.action-card.on-dark .action-row` is
+specificity (0,3,1) and `.action-row.action-danger` is (0,2,1), so the
+destructive row would have rendered cream like the rest of the menu — the one
+row whose colour IS the warning. Same light/dark migration trap as v2.27.3, one
+level deeper.
+
+**Not built, still open:** the *"Species with no specimens"* tile. Empty taxa are
+invisible and accumulate silently, because `ensureTaxonForName()` creates the
+taxon BEFORE linking the specimen, so a failed link orphans one. This gives a
+way to delete them once found; nothing yet finds them.
+
 ### v2.27.3 — the rail menu was dark-on-dark, and Record folded into the header
 
 Two problems in one screenshot.

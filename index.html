@@ -591,6 +591,11 @@
   .action-card.on-dark .action-row{color:var(--cream);border-bottom-color:var(--line);}
   .action-card.on-dark .action-row svg{color:var(--moss-dim);}
   .action-card.on-dark .action-row:active{background:rgba(245,239,227,0.07);}
+  /* The on-dark rule is (0,3,1) and .action-row.action-danger is (0,2,1), so
+     without this the destructive row would render cream like the rest of the
+     menu — the one row whose colour is the warning. */
+  .action-card.on-dark .action-row.action-danger,
+  .action-card.on-dark .action-row.action-danger svg{color:var(--terracotta);}
   .action-row svg{width:19px;height:19px;flex-shrink:0;color:var(--moss-dim);}
   .action-row .action-label{flex:1;min-width:0;}
   .action-row .action-chevron{width:15px;height:15px;opacity:0.4;}
@@ -827,7 +832,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.27.3";
+const APP_VERSION = "2.28.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5347,6 +5352,10 @@ function screenTaxonDetail() {
             </button>
             <button class="action-row" onclick="openModal('newSpecimen',{taxonId:'${t.id}'})">${icon("seedling")}<span class="action-label">Add a specimen</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">${icon("photoStar")}<span class="action-label">Set species photo</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            ${/* Only offered where it can succeed. A species with specimens is
+                 not a record to delete, and a disabled row that never explains
+                 itself is worse than no row. */""}
+            ${all.length === 0 ? `<button class="action-row action-danger" onclick="deleteTaxon('${t.id}')">${icon("trash")}<span class="action-label">Delete species</span></button>` : ""}
           </div>
 
           ${taskSectionFor("taxa", t.id)}
@@ -10145,6 +10154,56 @@ async function acquireWishlistEntry(id) {
     toast(`Created ${created.accession_number} — set its location next`);
     await loadAll();
     openPlant(created.id);
+  } catch (e) { toast(e.message, true); }
+}
+
+/* SPEC-DEL (v2.28.0). There was no deleteTaxon in the app at all — wanted since
+   2026-08-29, and the taxa cleanup kept needing it.
+
+   **Refuses while specimens exist**, deliberately. A species with plants is not
+   a record to delete; either those plants are something else (reassign them) or
+   they are gone (record that, which is what GRAVE-1 is for). Deleting the taxon
+   under them would strand real specimens with no species.
+
+   BACKLOG's note said to clear `suggestions` and `task_subjects`. **It missed
+   `identifications`**, which carries a taxa_id too (REFERENCE §suggestions:
+   "same shape as identifications"). Built from the FK list rather than the note
+   — the same stale-list that made mergePlants lossy for a fortnight. */
+async function deleteTaxon(taxaId) {
+  const t = taxonById(taxaId);
+  if (!t) return;
+  const specs = specimensOfTaxon(taxaId);
+  if (specs.length) {
+    toast(`${countLabel(specs.length, "specimen is", "specimens are")} still recorded as this species — move them to another species first, or record them as no longer in the collection`, true);
+    return;
+  }
+  // A wishlist entry keeps its row: wishlist.taxa_id is ON DELETE SET NULL, so
+  // it falls back to the free-text name it was created with. Worth saying,
+  // because the name it falls back to may be less exact than the taxon's.
+  const wishes = state.wishlist.filter((w) => w.taxa_id === taxaId);
+  const sugg = state.suggestions.filter((x) => x.taxa_id === taxaId || x.value_id === taxaId).length;
+  const subs = state.taskSubjects.filter((x) => x.taxa_id === taxaId).length;
+  const consequences = [
+    sugg ? `${countLabel(sugg, "pending suggestion", "pending suggestions")} discarded` : "",
+    subs ? `${countLabel(subs, "task loses", "tasks lose")} this as a subject` : "",
+    wishes.length ? `${countLabel(wishes.length, "wish list entry falls", "wish list entries fall")} back to its typed name` : "",
+  ].filter(Boolean);
+  if (!confirm(`Delete "${taxonDisplayName(t)}"?`
+    + (consequences.length ? `\n\n${consequences.join("\n")}` : "\n\nNothing else references it.")
+    + `\n\nThis can't be undone.`)) return;
+  try {
+    await restDelete("suggestions", `taxa_id=eq.${taxaId}`);
+    // `value_id` holds the taxon a `new_specimen` suggestion proposes. Not the
+    // same column, same orphan if it is left behind.
+    await restDelete("suggestions", `value_id=eq.${taxaId}`);
+    await restDelete("identifications", `taxa_id=eq.${taxaId}`);
+    // task_subjects is CHECK-constrained to exactly one of plant/location/taxa,
+    // so the taxa_id cannot be nulled — the row goes.
+    await restDelete("task_subjects", `taxa_id=eq.${taxaId}`);
+    await restDelete("taxa", `id=eq.${taxaId}`);
+    toast("Species deleted");
+    goTab("plants");
+    await loadAll();
   } catch (e) { toast(e.message, true); }
 }
 

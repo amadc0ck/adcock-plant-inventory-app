@@ -945,6 +945,19 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.31.1 — the app did not boot from v2.30.0 to v2.31.1
+
+`SEASON_MONTHS` was declared beside `BLOOM_SEASON_LABELS`, 400 lines below
+`BLOOM_WINDOW_WEEKS` which derives from it. The derived const ran first, hit the
+temporal dead zone, and nothing booted: `Cannot access 'SEASON_MONTHS' before
+initialization`. Moved above its dependants.
+
+**`node --check` passed the whole time — it PARSES, and declaration order is a
+runtime property.** Verifying deploys by grepping the version string out of the
+served HTML proved the file shipped, not that it ran. `tools/boot-check.mjs`
+now executes the top level against a stub DOM; verified it fails the broken file
+with the exact error and passes the fixed one.
+
 ### v2.31.0 — a dead plant is not "Healthy", and the photo pickers on iOS
 
 **Health.** `plantsAttention` did not filter on status, so a departed plant

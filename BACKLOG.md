@@ -945,6 +945,22 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.31.0 — a dead plant is not "Healthy", and the photo pickers on iOS
+
+**Health.** `plantsAttention` did not filter on status, so a departed plant
+marked watch/recovery raised a to-do — leaving "Healthy" as the only value that
+did not, which is absurd on a dead plant. That queue is active-only now,
+`needsAttention()` no longer counts non-active plants (it predates GRAVE-1,
+when a dead plant had nowhere else to surface), the departure action sets health
+to `unknown`, and departed plants get their own grey coffin badge instead of
+inheriting the green tick.
+
+**Photo pickers.** `aspect-ratio` sat on the `<button>` with the image relying
+on `height:100%`; iOS Safari will not resolve a percentage height against a
+button's aspect-ratio box, so thumbnails rendered at intrinsic height and
+overlapped. All three pickers now use the `.card-media.ratio-1x1` wrapper the
+rest of the app already uses. **A ratio belongs on a plain div, not on a button.**
+
 ### v2.30.0 — BLOOM-3, twelve seasons
 
 Amanda: *"I couldn't select Late Winter or Early Spring."* Neither existed. The

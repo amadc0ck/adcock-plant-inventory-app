@@ -492,6 +492,10 @@
   .status-badge{position:absolute;top:-7px;right:-7px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.45);z-index:1;}
   .status-badge svg{width:14px;height:14px;}
   .status-badge.status-active{background:var(--moss);color:#12200F;}
+  /* A plant that has left the collection is neither well nor unwell. Without
+     this it took the green tick and read "Active & healthy" once needsAttention
+     stopped counting non-active plants. */
+  .status-badge.status-gone{background:var(--moss-dim);color:var(--parchment);opacity:0.75;}
   .status-badge.status-attention{background:var(--terracotta);color:#3A1608;}
   .status-badge.status-urgent{background:var(--terracotta);color:#3A1608;box-shadow:0 0 0 3px rgba(217,116,116,0.45);}
 
@@ -832,7 +836,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.30.0";
+const APP_VERSION = "2.31.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3342,7 +3346,12 @@ const HEALTH_LABELS = { healthy: "Healthy", watch: "Watch", urgent: "Urgent care
 // value, update one copy, miss the other. One helper, one source of truth.
 const HEALTH_ATTENTION = ["watch", "urgent", "recovery"];
 function needsAttention(pl) {
-  return pl.status !== "active" || HEALTH_ATTENTION.includes(pl.health_status);
+  // `status !== "active"` used to count here, from before GRAVE-1: a dead plant
+  // had nowhere else to surface, so the health pill was made to carry it. It
+  // has the Graveyard now, and "needs attention" should mean a LIVING plant
+  // that needs care — otherwise every departed plant reads as an open worry.
+  if (pl.status !== "active") return false;
+  return HEALTH_ATTENTION.includes(pl.health_status);
 }
 function isUrgent(pl) {
   return pl.health_status === "urgent";
@@ -5555,10 +5564,14 @@ function plantRow(pl) {
   const cover = plantCoverPhoto(pl);
   const attention = needsAttention(pl);
   const urgent = isUrgent(pl);
+  const gone = pl.status !== "active";
+  const badgeClass = gone ? "status-gone" : urgent ? "status-urgent" : attention ? "status-attention" : "status-active";
+  const badgeTitle = gone ? (STATUS_LABELS[pl.status] || pl.status)
+    : urgent ? "Urgent care" : attention ? "Needs attention" : "Active & healthy";
 
   return `
   <div class="tag-card plant-list-card" onclick="openPlant('${pl.id}')">
-    <div class="status-badge ${urgent ? "status-urgent" : attention ? "status-attention" : "status-active"}" title="${urgent ? "Urgent care" : attention ? "Needs attention" : "Active & healthy"}">${attention ? icon("alertTriangle") : icon("check")}</div>
+    <div class="status-badge ${badgeClass}" title="${escapeHtml(badgeTitle)}">${gone ? icon("coffin") : attention ? icon("alertTriangle") : icon("check")}</div>
     <div class="plant-list-thumb">
       ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
     </div>
@@ -6404,7 +6417,10 @@ function reportSections() {
     // if the plant is still unwell, it comes straight back.
     { key: "plantsAttention", title: "Plants needing attention", sub: "Urgent care, watch or recovery",
       items: state.plants
-        .filter((pl) => HEALTH_ATTENTION.includes(pl.health_status))
+        // Active only. A dead plant marked `watch` is not a care task, and
+        // leaving it out of this filter meant "Healthy" was the only status
+        // that did not raise a to-do on a plant that had died.
+        .filter((pl) => pl.status === "active" && HEALTH_ATTENTION.includes(pl.health_status))
         .filter((pl) => !openTasksForSubject("plant", pl.id).length)
         // TODO-3. `next_check_date` used to speak only to the check-in queue,
         // so completing a task about an unwell plant put it straight back into
@@ -8353,8 +8369,17 @@ function modalContent() {
       ${photos.length === 0 ? `<p class="subtle">No specimen of this plant has photos yet. Add photos to a specimen first, or upload one from the Inbox.</p>` : `
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:50vh;overflow-y:auto;">
           ${photos.map((p) => `
-            <button onclick="setTaxonPhoto('${t.id}','${p.id}')" style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);outline:${t.primary_photo_id === p.id ? "3px solid var(--moss)" : "none"};">
-              ${photoImg(p)}
+            ${/* PICK-1. `aspect-ratio` was on the BUTTON and the image relied on
+                 height:100% inside it. iOS Safari does not resolve a percentage
+                 height against a button's aspect-ratio box, so on Amanda's phone
+                 every thumbnail rendered at intrinsic height and overlapped the
+                 ones below — the picker was unusable past a few photos.
+
+                 `.card-media.ratio-1x1` is the wrapper the rest of the app uses
+                 for exactly this and has never had the problem. A plain div,
+                 not a button, is what carries the ratio. */""}
+            <button onclick="setTaxonPhoto('${t.id}','${p.id}')" style="border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);outline:${t.primary_photo_id === p.id ? "3px solid var(--moss)" : "none"};">
+              <div class="card-media ratio-1x1">${photoImg(p)}</div>
             </button>`).join("")}
         </div>`}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
@@ -8860,8 +8885,8 @@ function modalContent() {
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:50vh;overflow-y:auto;">
           ${photos.map((p) => {
             return `
-            <button onclick="setLocationPhoto('${data.locationId}','${p.id}')" style="aspect-ratio:1;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
-              ${photoImg(p)}
+            <button onclick="setLocationPhoto('${data.locationId}','${p.id}')" style="border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
+              <div class="card-media ratio-1x1">${photoImg(p)}</div>
             </button>`;
           }).join("")}
         </div>`}
@@ -8886,9 +8911,9 @@ function modalContent() {
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:38vh;overflow-y:auto;">
           ${photos.map((p) => {
             return `
-            <div style="position:relative;aspect-ratio:1;">
-              <button onclick="setPrimaryPhoto('${data.plantId}','${p.id}')" style="width:100%;height:100%;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
-                ${photoImg(p)}
+            <div style="position:relative;">
+              <button onclick="setPrimaryPhoto('${data.plantId}','${p.id}')" style="width:100%;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);display:block;">
+                <div class="card-media ratio-1x1">${photoImg(p)}</div>
               </button>
               <button onclick="event.stopPropagation();deletePhoto('${p.id}')" class="thumb-delete-btn" aria-label="Delete photo">${icon("trash")}</button>
             </div>`;
@@ -10156,6 +10181,11 @@ async function saveNoLongerHave(plantId) {
       status,
       collection_category: "historical",
       date_removed: when,
+      // Health is a question about a living plant. Leaving it on whatever it
+      // was means a dead plant reads "Healthy", which is what Amanda hit —
+      // and every other value raises a to-do. `unknown` is the one value
+      // HEALTH_ATTENTION does not include.
+      health_status: "unknown",
       updated_at: new Date().toISOString(),
     });
     // The care note is the durable record. A status enum says "dead"; the note

@@ -945,6 +945,34 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.28.1 — deleteTaxon deleted against a column that does not exist
+
+First use of v2.28.0 failed with `42703: column identifications.taxa_id does not
+exist`. **`identifications` has no `taxa_id`.** It carries `photo_id`, `source`,
+`status`, `suggested_name` and `confirmed_name` — it references a species BY
+NAME, being the Pl@ntNet audit trail. Verified column by column against the
+database.
+
+**The source of the error was REFERENCE**, which asserted *"Same shape as
+`identifications`, which carries exactly one of `photo_id` / `taxa_id`"*. That
+line is now corrected in place.
+
+**The uncomfortable part.** v2.28.0's commit message said it was built *"from
+the FK list rather than the note"*, contrasting itself with BACKLOG's incomplete
+list — and then built from a different document. Four stale-list incidents had
+already happened (ADM-2, ADM-3, the v2.21.1 restore break, MERGE-1) and the
+lesson drawn each time was "the list was wrong". **The actual lesson is that
+every list in this repo is a document, including this one, and the schema is not
+a document.** One request per column answers it, and anon cannot read rows, so
+it is safe against production. Recorded in REFERENCE with the command.
+
+The other three targets were correct: `suggestions.taxa_id`,
+`suggestions.value_id`, `task_subjects.taxa_id`.
+
+**Partial execution, and it is harmless.** The two `suggestions` deletes ran
+before the failure, so pending suggestions for that taxon are already gone while
+the taxon remains. They were being deleted anyway; nothing needs undoing.
+
 ### v2.28.0 — delete a species
 
 Wanted since 2026-08-29 and never built; the taxa cleanup kept needing it. Amanda

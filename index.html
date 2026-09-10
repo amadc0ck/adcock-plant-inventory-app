@@ -832,7 +832,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.28.0";
+const APP_VERSION = "2.28.1";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -10165,10 +10165,17 @@ async function acquireWishlistEntry(id) {
    they are gone (record that, which is what GRAVE-1 is for). Deleting the taxon
    under them would strand real specimens with no species.
 
-   BACKLOG's note said to clear `suggestions` and `task_subjects`. **It missed
-   `identifications`**, which carries a taxa_id too (REFERENCE §suggestions:
-   "same shape as identifications"). Built from the FK list rather than the note
-   — the same stale-list that made mergePlants lossy for a fortnight. */
+   BACKLOG's note said to clear `suggestions` and `task_subjects`. It missed
+   `suggestions.value_id`, which holds the taxon a `new_specimen` proposal
+   points at — a different column, the same orphan.
+
+   **v2.28.1: it did NOT miss `identifications`, and I added a delete against a
+   column that does not exist.** `identifications` has no `taxa_id`: it carries
+   `photo_id`, `suggested_name` and `confirmed_name`, referencing species BY
+   NAME because it is the Pl@ntNet audit trail. REFERENCE said otherwise and
+   REFERENCE was wrong. I claimed to be building from the FK list rather than
+   the note, and then built from a different document — **the only list that is
+   not a document is the database**, which answers in one request per column. */
 async function deleteTaxon(taxaId) {
   const t = taxonById(taxaId);
   if (!t) return;
@@ -10196,7 +10203,6 @@ async function deleteTaxon(taxaId) {
     // `value_id` holds the taxon a `new_specimen` suggestion proposes. Not the
     // same column, same orphan if it is left behind.
     await restDelete("suggestions", `value_id=eq.${taxaId}`);
-    await restDelete("identifications", `taxa_id=eq.${taxaId}`);
     // task_subjects is CHECK-constrained to exactly one of plant/location/taxa,
     // so the taxa_id cannot be nulled — the row goes.
     await restDelete("task_subjects", `taxa_id=eq.${taxaId}`);

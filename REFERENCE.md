@@ -449,7 +449,7 @@ Everything Claude proposes, one row per proposal (v1.80.0). Separate from `ident
 TASK-1 + RPT-3 (v1.84.0). A task is something Amanda wants to do; a subject is what it is about.
 
 - `tasks` — `id` uuid PK · `title` (required) · `detail` · `status` (`open` | `done`) · `due_date` · `created_at` · `completed_at`
-- `task_subjects` — `task_id` FK cascade, plus **exactly one** of `plant_id` / `location_id` / `taxa_id`, enforced by `check (num_nonnulls(...) = 1)`. Same shape as `identifications`, which carries exactly one of `photo_id` / `taxa_id`.
+- `task_subjects` — `task_id` FK cascade, plus **exactly one** of `plant_id` / `location_id` / `taxa_id`, enforced by `check (num_nonnulls(...) = 1)`. (Not the same shape as `identifications`, despite what this line said until 2026-09-09: **`identifications` has no `taxa_id`.** It carries `photo_id`, `source`, `status`, `suggested_name` and `confirmed_name` — it references a species BY NAME, being the Pl@ntNet audit trail. Verified against the database after that claim produced a `42703` in `deleteTaxon`.)
 
 **Why one feature and not two.** RPT-3 was specified as a manual "needs a check-in" flag, and the task request arrived separately. They are the same thing at different sizes: a flag is a task with one subject and no note. Building both would have produced two places to look for what needs doing — the exact fault v1.79.0 corrected by retiring Reports and moving work into the queue. **If a "flag this record" feature is ever proposed again, it is a task.**
 
@@ -813,6 +813,24 @@ Scroll is preserved the same way (v1.52.2), for the page, the modal and the Gall
   **The lesson is the shape, not the CSS: a component that only works where
   someone has already prepared the ground is a trap, and the tell is a growing
   list of near-identical per-caller rules.**
+
+- **Verify a column against the DATABASE, not against this file (v2.28.1).**
+  `deleteTaxon` shipped with a delete against `identifications.taxa_id`, which
+  does not exist — a `42703` the first time Amanda used it. The claim came from
+  this document, which asserted `identifications` carries `photo_id` / `taxa_id`
+  and was simply wrong; that line is now corrected. **The commit message
+  claiming to build "from the FK list rather than the note" was building from a
+  different note.** One request per column settles it:
+
+  ```
+  curl -s -o /dev/null -w "%{http_code}" \
+    "$SUPABASE_URL/rest/v1/<table>?select=<column>&limit=1" \
+    -H "apikey: $PUBLISHABLE_KEY" -H "Authorization: Bearer $PUBLISHABLE_KEY"
+  ```
+
+  `200` means the column exists (RLS then returns `[]`); `400` means it does
+  not. Anon cannot read the rows, which is what makes this safe to run against
+  production for a schema question.
 
 - **A membership rule gets ONE function, and every caller asks it (v2.23.1).**
   Three separate drifts in a single day, all the same shape: a condition added

@@ -945,6 +945,44 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.30.0 — BLOOM-3, twelve seasons
+
+Amanda: *"I couldn't select Late Winter or Early Spring."* Neither existed. The
+six-value list was also **asymmetric** — summer had early and late variants and
+no other season did — so the flaw was visible before it was reported.
+
+Twelve now: early/mid/late for all four seasons.
+
+**Purely additive, no SQL.** `taxa` carries no CHECK constraint on its
+vocabularies (the reason v2.8.0 added five `plant_type` values with no
+migration), and the twelve are a **superset of the six** — every stored value is
+still valid.
+
+**`SEASON_MONTHS` is now the single source.** `seasonsNow()`,
+`BLOOM_WINDOW_WEEKS` and `BLOOM_SEASON_START_MONTH` all derive from it instead
+of restating the same knowledge three times. That is what the six-value version
+got wrong: early/late existed for summer in the labels and the windows but
+nowhere else, and nobody noticed the other nine were missing.
+
+**A regression caught by diffing the mapping month by month.** The old
+`seasonsNow()` had exactly one overlap — `late_summer` covered August AND
+September. A naive twelve-bucket table gives each label one month, which would
+have dropped late-summer bloomers off "Should be blooming" every September.
+Every `late_` season now bleeds into the following month, which generalises the
+overlap the original author put there deliberately rather than deleting it.
+Verified: no month loses a match it previously had.
+
+`BLOOM_WINDOW_WEEKS` keys off the NAME (`early_`/`late_` → 7 weeks, broad → 12)
+rather than the month count, since the late seasons now span two months and are
+still edges.
+
+**Watch for this if the new values do not appear:** `bloom_season` is an
+editable list, and once anything has been added or renamed in Settings,
+`seedListIfNeeded()` copies the whole list into `list_options` and
+`listOptionsFor()` reads only the table from then on. **The built-in map is dead
+for a list that has been edited**, so the six new values would have to be added
+in Settings rather than in code. Nothing has been edited yet as far as is known.
+
 ### v2.29.0 — BLOOM-2, bloom season becomes a multi-select and the loop closes
 
 Amanda: *"the bloom season wont resolve until we fix the multi select behavior.

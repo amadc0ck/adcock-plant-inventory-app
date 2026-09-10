@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Gates that exist because each one failed in production first.
+#   boot-check   — the app did not boot for ~2h (v2.30.0 → v2.31.1)
+#   test         — four "the tile and the list disagree" faults
+#   schema-check — deleteTaxon deleted against a column that does not exist
+# Kept under a couple of seconds. A hook that annoys gets bypassed.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+echo "pre-push:"
+node tools/boot-check.mjs   >/dev/null && echo "  ok  boot-check"
+node tools/test.mjs         >/dev/null && echo "  ok  characterisation tests"
+if node -e "process.exit(0)" 2>/dev/null && [ -z "${SKIP_SCHEMA_CHECK:-}" ]; then
+  # Needs network. SKIP_SCHEMA_CHECK=1 git push when offline.
+  node tools/schema-check.mjs >/dev/null && echo "  ok  schema-check" || {
+    echo "  !!  schema-check failed — run: node tools/schema-check.mjs"; exit 1; }
+fi

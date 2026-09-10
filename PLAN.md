@@ -1,5 +1,8 @@
 # Remediation plan
 
+> **Stage 0 and Stage 1 items 1.1 and 1.2 were executed 2026-09-10.** See the
+> status column against each. Stage 2 is deliberately not started.
+
 Companion to `AUDIT.md`. Every item is shippable on its own behind a green
 build. No big-bang rewrite; the single-file, no-build constraint is treated as
 permanent, per Amanda 2026-09-10.
@@ -23,7 +26,7 @@ permanent, per Amanda 2026-09-10.
 
 ## Stage 0 — Safety net
 
-### 0.1 · Extract-and-test harness
+### 0.1 · Extract-and-test harness · **DONE**
 **Rationale** F1. **Size** M. **Depends on** nothing.
 
 `index.html` cannot be imported. `tools/boot-check.mjs` already proves the
@@ -39,7 +42,7 @@ vm context; a test file imports it and asserts. Zero changes to `index.html`.
 **Acceptance** `node tools/test.mjs` exits 0, runs in under 5 s, and requires no
 network or database.
 
-### 0.2 · Characterisation tests for the queue predicates
+### 0.2 · Characterisation tests for the queue predicates · **DONE**
 **Rationale** F1, F3. **Size** S. **Depends on** 0.1.
 
 Pin current behaviour of the rules that decide what appears in a queue:
@@ -55,7 +58,7 @@ e.g. `seasonsNow(September)` still matches `late_summer`; a taxon with a
 `bloom_habit` has no `bloom_season` gap; `[].every()` does not make an
 empty-specimen taxon vanish.
 
-### 0.3 · Baseline metrics recorded
+### 0.3 · Baseline metrics recorded · **DONE**
 **Rationale** measurability. **Size** S.
 
 Record today's numbers in `AUDIT.md` (done) and add
@@ -68,7 +71,7 @@ Record today's numbers in `AUDIT.md` (done) and add
 
 ## Stage 1 — Low risk, high leverage
 
-### 1.1 · Guard the cleanup lists with a schema check
+### 1.1 · Guard the cleanup lists with a schema check · **DONE**
 **Rationale** F1, F4 — cause of the merge data loss AND the `deleteTaxon`
 failure. **Size** S. **Depends on** none.
 
@@ -81,7 +84,7 @@ references a column that is absent.
 run against `main` and it passes. Catches the `identifications.taxa_id` class
 before a user does.
 
-### 1.2 · `boot-check` in a pre-push hook
+### 1.2 · `boot-check` in a pre-push hook · **DONE**
 **Rationale** F1 — the 2-hour outage. **Size** S. **Depends on** none.
 
 Already written and validated. Wire it so it cannot be forgotten.

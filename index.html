@@ -832,7 +832,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.28.2";
+const APP_VERSION = "2.29.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1270,7 +1270,7 @@ async function exportFullBackup() {
 
 function exportPlantsCsv() {
   const headers = ["accession_number", "botanical_name", "common_name", "cultivar", "family", "genus", "species",
-    "description", "plant_type", "growth_habit", "mature_size", "bloom_season",
+    "description", "plant_type", "growth_habit", "mature_size", "bloom_season", "bloom_habit",
     "identification_status", "collection_category", "original_collection", "status", "health_status",
     "location_path", "date_acquired", "acquisition_source_type", "acquisition_source_name",
     "native_range", "hardy_to", "light_requirements", "water_needs", "notes",
@@ -1287,7 +1287,8 @@ function exportPlantsCsv() {
     return [
       pl.accession_number, taxonDisplayName(t) === "Unknown" ? "" : taxonDisplayName(t),
       tv("common_name"), tv("cultivar"), tv("family"), tv("genus"), tv("species_epithet"),
-      tv("description"), tv("plant_type"), tv("growth_habit"), tv("mature_size"), tv("bloom_season"),
+      tv("description"), tv("plant_type"), tv("growth_habit"), tv("mature_size"),
+      (t && t.bloom_season || []).join("; "), tv("bloom_habit"),
       pl.identification_status, pl.collection_category, pl.original_collection, pl.status, pl.health_status,
       loc ? locationPath(loc) : "", pl.date_acquired, pl.acquisition_source_type, pl.acquisition_source_name,
       tv("native_range"), tv("hardy_to"), (t && t.light_conditions || []).join("; "), tv("water_needs"), pl.notes,
@@ -2365,7 +2366,7 @@ function locationOptionList() {
 const EDITABLE_LISTS = {
   plant_type: "Plant type",
   growth_habit: "Growth habit",
-  bloom_season: "Bloom season",
+  bloom_season: "Bloom season", bloom_habit: "Bloom habit",
   water_needs: "Water needs",
   light_conditions: "Light needs",
 };
@@ -2405,7 +2406,7 @@ const FIELD_LABELS = { family: "Family", genus: "Genus", species_epithet: "Speci
   infraspecific: "Infraspecific", parentage: "Parentage", description: "Description",
   botanical_name: "Botanical name", common_name: "Common name", cultivar: "Cultivar",
   is_hybrid: "Hybrid", working_label: "Working label",
-  plant_type: "Type", growth_habit: "Growth habit", mature_size: "Mature size", bloom_season: "Bloom season",
+  plant_type: "Type", growth_habit: "Growth habit", mature_size: "Mature size", bloom_season: "Bloom season", bloom_habit: "Bloom habit",
   container_suitability: "Container or ground", soil_needs: "Soil", feeding_needs: "Feeding",
   native_range: "Native range", hardy_to: "Hardy to", water_needs: "Water needs",
   frost_tender: "Frost tender" };
@@ -2745,7 +2746,18 @@ const TAXON_PROFILE_FIELDS = [
   "container_suitability", "soil_needs", "feeding_needs",
   "is_hybrid",
 ];
-const TAXON_SENTINELS = { bloom_season: ["not_observed"] };
+/* Empty since v2.29.0. A sentinel is a value that is present but says nothing,
+   and both entries earned their place by being answers the app treated as
+   non-answers: `origin: unknown` (removed with the column, ORIG-1) and
+   `bloom_season: not_observed` (now a bloom_habit value, which is a real
+   answer). **A sentinel offered to Claude is a loop** — it can satisfy the
+   prompt while never satisfying the check, which is exactly what kept six
+   species in the queue. Prefer null. */
+const TAXON_SENTINELS = {};
+
+/* A field whose gap is answered by ANOTHER field. bloom_season is not missing
+   on a plant whose bloom_habit says it has no season. */
+const TAXON_ANSWERED_BY = { bloom_season: "bloom_habit" };
 const TAXON_HYBRID_ONLY = ["is_hybrid"];
 /* PROF-3, measured 2026-09-08 across 143 taxa. The tile read 135 of 143
    unfinished, and 55 of those were records already FINISHED that could not say
@@ -2788,6 +2800,10 @@ function taxonProfileGaps(t) {
     // A cultivar has no species epithet — REFERENCE, and Kalanchoe 'Roseleaf'
     // sat at "1 of 16 blank" on a finished record because of it.
     if (TAXON_CULTIVAR_EXEMPT.includes(f) && hasCultivar) return false;
+    // Amanda, 2026-09-09: "if the bloom habit has a valid entry even if rarely,
+    // monocarpic or never.. then it is no longer a gap".
+    const answeredBy = TAXON_ANSWERED_BY[f];
+    if (answeredBy && String(t[answeredBy] || "").trim()) return false;
     const v = t[f];
     if (f === "frost_tender" || f === "is_hybrid") return v === null || v === undefined;
     if (Array.isArray(v)) return v.length === 0;
@@ -2800,6 +2816,8 @@ function taxonProfileFieldCount(t) {
   return TAXON_PROFILE_FIELDS.filter((f) => {
     if (TAXON_HYBRID_ONLY.includes(f) && !taxonLooksHybrid(t)) return false;
     if (TAXON_CULTIVAR_EXEMPT.includes(f) && hasCultivar) return false;
+    const answeredBy = TAXON_ANSWERED_BY[f];
+    if (answeredBy && String(t[answeredBy] || "").trim()) return false;
     return true;
   }).length;
 }
@@ -2990,9 +3008,40 @@ function bloomingSpecimens() {
 // Which bloom_season values match today. Northern hemisphere; the overlaps are
 // intentional, since a plant tagged `summer` and one tagged `late_summer` are
 // both plausibly flowering in August.
+/* ONE predicate, used by expectedToBloom() and bloomsDeferredCount() — which
+   carried hand-copied versions of the same four-line test and would have
+   drifted the moment bloom_season became an array. Fourth instance of that
+   pattern; see REFERENCE.
+
+   `intermittent` counts as blooming now BY DEFINITION. `monocarpic` and
+   `rarely` never nag: one blooms once and dies, the other will not flower in
+   cultivation. `not_observed` means nobody has looked — a reason to go and
+   look, so it stays eligible. */
+// What to SHOW for "when does it bloom". A habit answers the question when
+// there is no season, so one reader serves the stat strip, the timelines and
+// the task copy rather than three of them agreeing by luck.
+function bloomSeasonLabel(t) {
+  if (!t) return null;
+  const list = Array.isArray(t.bloom_season) ? t.bloom_season : (t.bloom_season ? [t.bloom_season] : []);
+  if (list.length) return list.map((x) => BLOOM_SEASON_LABELS[x] || x).join(", ");
+  const habit = String(t.bloom_habit || "").trim();
+  return habit ? (BLOOM_HABIT_LABELS[habit] || habit) : null;
+}
+
+function taxonBloomsNow(t, seasons) {
+  if (!t) return false;
+  const habit = String(t.bloom_habit || "").trim();
+  if (habit === "monocarpic" || habit === "rarely") return false;
+  if (habit === "intermittent") return true;
+  const list = Array.isArray(t.bloom_season) ? t.bloom_season : (t.bloom_season ? [t.bloom_season] : []);
+  return list.length ? list.some((x) => seasons.includes(x)) : false;
+}
+
 function seasonsNow(date) {
   const m = (date || new Date()).getMonth() + 1;
-  const out = ["intermittent"];
+  // `intermittent` left this list in v2.29.0 — it is a bloom_habit now, and
+  // taxonBloomsNow() reads the habit directly instead of matching it here.
+  const out = [];
   if (m >= 3 && m <= 5) out.push("spring");
   if (m === 6) out.push("early_summer");
   if (m >= 6 && m <= 8) out.push("summer");
@@ -3016,8 +3065,7 @@ function expectedToBloom() {
     const t = p.taxa_id ? taxonById(p.taxa_id) : null;
     // `monocarpic` is excluded: it blooms once and dies, so nudging every year
     // would be noise. `not_observed` means nobody knows yet.
-    if (!t || !t.bloom_season || t.bloom_season === "monocarpic" || t.bloom_season === "not_observed") return false;
-    return seasons.includes(t.bloom_season);
+    return taxonBloomsNow(t, seasons);
   });
 }
 
@@ -3029,10 +3077,23 @@ function expectedToBloom() {
 const BLOOM_WINDOW_WEEKS = {
   spring: 12, summer: 12, fall: 12, winter: 12,
   early_summer: 7, late_summer: 7,
+};
+const BLOOM_HABIT_WINDOW_WEEKS = {
   intermittent: null,   // on and off by nature — closing it would be wrong
   monocarpic: null,     // blooms once, then the plant dies
+  rarely: null,         // if it did flower, do not hurry it closed
   not_observed: 16,     // nobody knows; chase only after a long while
 };
+/* With several seasons ticked the window is the LONGEST of them. A plant
+   flagged late spring AND summer is plausibly open across both, and closing it
+   on the shorter one would nag about a bloom that is still real. */
+function bloomWindowWeeks(t) {
+  const habit = String((t && t.bloom_habit) || "").trim();
+  if (habit) return habit in BLOOM_HABIT_WINDOW_WEEKS ? BLOOM_HABIT_WINDOW_WEEKS[habit] : 12;
+  const list = Array.isArray(t && t.bloom_season) ? t.bloom_season : [];
+  const weeks = list.map((x) => BLOOM_WINDOW_WEEKS[x]).filter((w) => typeof w === "number");
+  return weeks.length ? Math.max(...weeks) : 12;
+}
 function openBlooms() {
   return state.bloomEvents.filter((b) => !b.ended_on);
 }
@@ -3042,8 +3103,7 @@ function bloomsToClose() {
     .map((b) => {
       const pl = state.plants.find((p) => p.id === b.plant_id);
       const t = pl && pl.taxa_id ? taxonById(pl.taxa_id) : null;
-      const weeks = t && t.bloom_season in BLOOM_WINDOW_WEEKS
-        ? BLOOM_WINDOW_WEEKS[t.bloom_season] : 12;
+      const weeks = bloomWindowWeeks(t);
       if (weeks == null || !b.started_on) return null;
       const days = daysBetween(b.started_on, today);
       return days != null && days > weeks * 7 ? { b, pl, days } : null;
@@ -3334,7 +3394,32 @@ const CONTAINER_SUITABILITY_LABELS = {
   either: "Happy either way",
   ground: "Better in the ground",
 };
-const BLOOM_SEASON_LABELS = { spring: "Spring", early_summer: "Early summer", summer: "Summer", late_summer: "Late summer", fall: "Fall", winter: "Winter", intermittent: "Intermittent / year-round", monocarpic: "Monocarpic — blooms once, then dies", not_observed: "Not yet observed" };
+/* BLOOM-2 (v2.29.0). `bloom_season` is now text[] and holds SEASONS ONLY.
+   `intermittent`, `monocarpic` and `not_observed` were never seasons — they are
+   reasons there is no season — and mixing them into one list made "late spring
+   to early summer" inexpressible while letting Claude answer a question with a
+   non-answer. */
+const BLOOM_SEASON_LABELS = { spring: "Spring", early_summer: "Early summer", summer: "Summer", late_summer: "Late summer", fall: "Fall", winter: "Winter" };
+
+/* An EXCEPTION field: it only ever says "there is no season to record, and here
+   is why". There is deliberately no `seasonal` value — a plant that blooms on a
+   season says so by having seasons ticked. That is what makes Amanda's rule
+   coherent: ANY habit value clears the bloom_season gap, because every one of
+   them means there is nothing seasonal to fill in.
+
+   `not_observed` is HERS, not Claude's: it means nobody has seen it bloom HERE,
+   which Claude cannot know. The Edge Function is told not to return it.
+
+   `rarely` is the value that was missing and the reason six species could never
+   complete — Cephalocereus senilis, Euphorbia trigona, Portulacaria afra and
+   the rest largely do not flower in cultivation, and Claude had no way to say
+   so except `not_observed`, which counted as blank. */
+const BLOOM_HABIT_LABELS = {
+  intermittent: "Intermittent / year-round",
+  monocarpic: "Monocarpic — blooms once, then dies",
+  rarely: "Rarely blooms in cultivation",
+  not_observed: "Not yet observed here",
+};
 // Native or introduced relative to the garden's own region. Distinct from
 // `native_range`, which holds where the plant is from ("Central Mexico").
 
@@ -3346,6 +3431,7 @@ const BUILTIN_LISTS = {
   plant_type: PLANT_TYPE_LABELS,
   growth_habit: GROWTH_HABIT_LABELS,
   bloom_season: BLOOM_SEASON_LABELS,
+  bloom_habit: BLOOM_HABIT_LABELS,
   container_suitability: CONTAINER_SUITABILITY_LABELS,
   water_needs: WATER_NEEDS_LABELS,
   light_conditions: LIGHT_CONDITION_LABELS,
@@ -3876,8 +3962,7 @@ function bloomsDeferredCount() {
     if (blooming.has(p.id) || p.status !== "active") return false;
     if (!hasScheduledTask("plant", p.id)) return false;
     const t = p.taxa_id ? taxonById(p.taxa_id) : null;
-    if (!t || !t.bloom_season || t.bloom_season === "monocarpic" || t.bloom_season === "not_observed") return false;
-    return seasons.includes(t.bloom_season);
+    return taxonBloomsNow(t, seasons);
   }).length;
 }
 
@@ -5310,7 +5395,7 @@ function screenTaxonDetail() {
       <div class="stat-strip">
         ${statCell("Hardy to", t.hardy_to)}
         ${statCell("Water", t.water_needs ? t.water_needs.charAt(0).toUpperCase() + t.water_needs.slice(1) : null)}
-        ${statCell("Bloom season", listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season)}
+        ${statCell("Bloom season", bloomSeasonLabel(t))}
         ${statCell("Mature size", t.mature_size)}
       </div>
 
@@ -5588,7 +5673,7 @@ function screenPlantDetail() {
           const active = activeBloom(pl.id);
           const history = bloomsForPlant(pl.id);
           const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
-          const expected = t && t.bloom_season ? (listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season) : null;
+          const expected = bloomSeasonLabel(t);
           return `
           <div class="section-card" ${active ? `style="border-color:var(--pink);"` : ""}>
             <div class="row" style="margin-bottom:10px;">
@@ -7832,7 +7917,7 @@ function modalContent() {
     const pl = state.plants.find((p) => p.id === data.plantId);
     if (!pl) return `<p>Not found.</p>`;
     const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
-    const expected = t && t.bloom_season ? (listOptionsFor("bloom_season")[t.bloom_season] || t.bloom_season) : null;
+    const expected = bloomSeasonLabel(t);
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Mark as blooming</h3>
@@ -8417,9 +8502,13 @@ function modalContent() {
       : Object.entries(BUILTIN_LISTS[key] || {}).map(([value, label], i) => ({ id: null, value, label, sort_order: i, active: true }));
     // Count of records already using each value, so retiring one is an informed
     // decision rather than a blind toggle.
-    const usage = (value) => key === "light_conditions"
-      ? state.taxa.filter((t) => (t.light_conditions || []).includes(value)).length
-      : state.taxa.filter((t) => t[key] === value).length;
+    // Named light_conditions explicitly until v2.29.0, when bloom_season became
+    // the second array field and the count silently went to zero for it. Asks
+    // the VALUE what shape it is, so the third array field needs no edit here.
+    const usage = (value) => state.taxa.filter((t) => {
+      const v = t[key];
+      return Array.isArray(v) ? v.includes(value) : v === value;
+    }).length;
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">${escapeHtml(title)}</h3>
@@ -8504,10 +8593,21 @@ function modalContent() {
         <label>Mature size</label>
         <input id="et-maturesize" placeholder="e.g. 3&ndash;4 ft tall &times; 5 ft wide" value="${escapeHtml(t.mature_size || "")}" />
         <label>Bloom season</label>
-        <select id="et-bloomseason">
+        <div class="wrap-gap" style="margin-top:2px;">
+          ${Object.entries(listOptionsFor("bloom_season")).map(([k, v]) => `
+            <label class="checkbox-row" style="margin-top:6px;background:var(--bg);padding:6px 10px 6px 8px;border-radius:20px;width:auto;">
+              <input type="checkbox" class="et-bloom-checkbox" value="${k}" ${(Array.isArray(t.bloom_season) ? t.bloom_season : []).includes(k) ? "checked" : ""} />
+              <span style="font-size:13px;">${v}</span>
+            </label>`).join("")}
+        </div>
+        <div class="field-help">Tick every season it flowers in &mdash; late spring to early summer is two ticks, which the old single choice could not say.</div>
+
+        <label>Bloom habit</label>
+        <select id="et-bloomhabit">
           <option value="">— Not recorded —</option>
-          ${Object.entries(listChoicesFor("bloom_season", t.bloom_season)).map(([k, v]) => `<option value="${k}" ${t.bloom_season === k ? "selected" : ""}>${v}</option>`).join("")}
+          ${Object.entries(listChoicesFor("bloom_habit", t.bloom_habit)).map(([k, v]) => `<option value="${k}" ${t.bloom_habit === k ? "selected" : ""}>${v}</option>`).join("")}
         </select>
+        <div class="field-help">Only when there is no season to give &mdash; it blooms on and off, blooms once and dies, rarely flowers in cultivation, or nobody has seen it bloom here yet. Setting one stops the app asking for a season.</div>
         <div class="section-label">Planting</div>
         <label>Container or ground</label>
         <select id="et-container">
@@ -9790,7 +9890,11 @@ async function acceptSuggestion(id, opts) {
       // "direct; morning" into an array column and failed outright. Claude is
       // told to return them semicolon-separated; this is where they become an
       // array again.
-      const ARRAY_FIELDS = ["light_conditions"];
+      // bloom_season joined this in v2.29.0 when it became text[]. Without it,
+      // accepting a bloom suggestion would have written the STRING
+      // "spring; early_summer" into an array column and failed outright — the
+      // same failure light_conditions had before v2.8.0 added it here.
+      const ARRAY_FIELDS = ["light_conditions", "bloom_season"];
       const v = BOOL_FIELDS.includes(sg.field) ? String(sg.value_text) === "true"
         : ARRAY_FIELDS.includes(sg.field)
           ? String(sg.value_text).split(";").map((x) => x.trim().toLowerCase().replace(/\s+/g, "_")).filter(Boolean)
@@ -10382,10 +10486,13 @@ async function deferBloomNudge(plantIds) {
   try {
     for (const pl of plants) {
       const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
-      const due = nextBloomSeasonStart(t && t.bloom_season);
+      // First ticked season decides when to resurface; with none, the fallback
+      // inside nextBloomSeasonStart pushes it a year out, which is right for a
+      // plant whose habit says it has no season at all.
+      const due = nextBloomSeasonStart(((t && t.bloom_season) || [])[0]);
       const [created] = await restPost("tasks", {
         title: `Check for bloom — ${taxonDisplayName(t) || pl.accession_number}`,
-        detail: `Expected to bloom but nothing recorded ${fmtDate(new Date().toISOString())}. Resurfacing for the next ${t && t.bloom_season ? (BLOOM_SEASON_LABELS[t.bloom_season] || t.bloom_season).toLowerCase() : "season"}.`,
+        detail: `Expected to bloom but nothing recorded ${fmtDate(new Date().toISOString())}. Resurfacing for the next ${bloomSeasonLabel(t) ? bloomSeasonLabel(t).toLowerCase() : "season"}.`,
         due_date: due,
         status: "open",
       });
@@ -10393,7 +10500,7 @@ async function deferBloomNudge(plantIds) {
     }
     toast(plants.length > 1
       ? `${plants.length} bloom tasks made`
-      : `Back on the list ${fmtDate(nextBloomSeasonStart((plants[0].taxa_id ? taxonById(plants[0].taxa_id) : null)?.bloom_season))}`);
+      : `Back on the list ${fmtDate(nextBloomSeasonStart((((plants[0].taxa_id ? taxonById(plants[0].taxa_id) : null) || {}).bloom_season || [])[0]))}`);
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }
@@ -12470,7 +12577,8 @@ function wireModalForms() {
           plant_type: document.getElementById("et-planttype").value || null,
           growth_habit: document.getElementById("et-growthhabit").value || null,
           mature_size: document.getElementById("et-maturesize").value || null,
-          bloom_season: document.getElementById("et-bloomseason").value || null,
+          bloom_season: Array.from(document.querySelectorAll(".et-bloom-checkbox:checked")).map((el) => el.value),
+          bloom_habit: document.getElementById("et-bloomhabit").value || null,
           native_range: document.getElementById("et-native").value || null,
           hardy_to: document.getElementById("et-hardy").value || null,
           frost_tender: document.getElementById("et-frosttender").checked,

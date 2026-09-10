@@ -79,6 +79,8 @@ The **kind** of plant — whatever the most specific level is known: a species, 
 - `parentage` text (wired up v1.83.0) — the cross a cultivar came from, e.g. *E. gibbiflora* 'Metallica' × *E. elegans* 'Potosina'. Vendors put the pedigree in the name field; this is where it goes so that recording the real name does not discard it.
 - `working_label` — names an unidentified taxon until it has a real one. Three plants can obviously be the same kind without anyone knowing what that kind is; a null `taxa_id` cannot express that.
 - `description`, `plant_type`, `growth_habit`, `mature_size`, `bloom_season`
+- `bloom_season` **text[]** (was text until v2.29.0) — SEASONS ONLY: spring, early_summer, summer, late_summer, fall, winter. Multi-select, so "late spring into early summer" is two values.
+- `bloom_habit` text, nullable (v2.29.0) — `intermittent` / `monocarpic` / `rarely` / `not_observed`. An **exception field**: it only ever says there is no season to record, and why. **There is deliberately no `seasonal` value** — a plant that blooms on a season says so by having seasons ticked, which is what makes "any habit value clears the bloom_season gap" coherent. `not_observed` is Amanda's to set and the Edge Function is told not to return it: whether anyone has SEEN a plant bloom here is not something the model can know.
 - `native_range`, `hardy_to`, `light_conditions`, `water_needs`
 - `container_suitability` text, nullable (v2.26.0, PLANT-1) — `container` / `either` / `ground`. **Where it grows best, not whether it survives winter** — that is `frost_tender`. Unconstrained like every other taxa vocabulary, so adding a value stays a code change.
 - `soil_needs` / `feeding_needs` text, nullable (v2.26.0) — free text like `hardy_to` and `mature_size`, because "fast-draining cactus mix; tolerates poor sandy soil" carries more than any token would.
@@ -813,6 +815,15 @@ Scroll is preserved the same way (v1.52.2), for the page, the modal and the Gall
   **The lesson is the shape, not the CSS: a component that only works where
   someone has already prepared the ground is a trap, and the tell is a growing
   list of near-identical per-caller rules.**
+
+- **A sentinel must never be a value Claude can return (v2.29.0).** A sentinel is
+  a value that is present but says nothing, so the blank test treats it as
+  absent. Offer that same value in the prompt and it becomes a **closed loop**:
+  the model answers it, Amanda accepts it, the field still counts blank, and the
+  species returns in the next batch. Six did, on `bloom_season: not_observed` —
+  and it was accurate, because the vocabulary had no word for "rarely flowers in
+  cultivation". `SENTINELS` is now empty in both halves. **Prefer null**: an
+  absent answer is honestly blank and stays visible as work.
 
 - **Verify a column against the DATABASE, not against this file (v2.28.1).**
   `deleteTaxon` shipped with a delete against `identifications.taxa_id`, which

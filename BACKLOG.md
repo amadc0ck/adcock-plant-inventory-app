@@ -945,6 +945,67 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.29.0 — BLOOM-2, bloom season becomes a multi-select and the loop closes
+
+Amanda: *"the bloom season wont resolve until we fix the multi select behavior.
+these 6 fail to not observed everytime."* Both halves of that were right, and the
+second was a closed loop.
+
+**`not_observed` was offered to Claude AND counted as blank.** It was a
+`bloom_season` value in `suggest-species`'s prompt and the only entry in
+`SENTINELS`. So Claude answered it, Amanda accepted it, the gap did not close,
+and the same species came back next batch. **The model could satisfy the prompt
+while never satisfying the check.**
+
+**And Claude was being accurate.** The six were *Cephalocereus senilis*,
+*Euphorbia ammak*, *Euphorbia trigona*, *Kalanchoe tomentosa* and *Portulacaria
+afra* ×2 — plants that largely **do not flower in cultivation**. There was
+`monocarpic` for bloom-once-then-die and nothing for "this will not realistically
+flower for you", so `not_observed` was the closest available truth. **The
+vocabulary was missing a word, and the sentinel hid that.**
+
+**Three changes:**
+
+| | |
+| --- | --- |
+| `bloom_season` → **text[]** | seasons only; "late spring into early summer" is two ticks |
+| `bloom_habit` → new | intermittent · monocarpic · **rarely** · not_observed |
+| `SENTINELS` | **empty**, in both halves |
+
+**No `seasonal` habit value, deliberately.** A plant that blooms on a season says
+so by having seasons ticked. That is what makes Amanda's rule — *"if the bloom
+habit has a valid entry even if rarely, monocarpic or never.. then it is no
+longer a gap"* — coherent rather than approximate: every habit value means there
+is nothing seasonal to record. `bloom_habit` is itself **not counted**, because
+a normal seasonal bloomer correctly has none.
+
+**`not_observed` is hers, not Claude's.** Whether anyone has seen a plant bloom
+in this garden is not something the model can know; the prompt says so outright.
+
+**Six code sites that would have broken silently on the type change:**
+
+- `expectedToBloom()` and `bloomsDeferredCount()` carried **hand-copied copies of
+  the same four-line test** — fourth instance of that pattern. Both now call
+  `taxonBloomsNow()`.
+- `BLOOM_WINDOW_WEEKS` was keyed on a scalar. `bloomWindowWeeks()` takes the
+  **longest** of the ticked seasons: a plant flagged late summer AND fall is
+  plausibly open across both, and closing on the shorter one would nag about a
+  bloom that is still real.
+- `acceptSuggestion`'s `ARRAY_FIELDS` — without `bloom_season` there, accepting a
+  suggestion would have written the string `"spring; early_summer"` into an array
+  column, exactly as `light_conditions` did before v2.8.0.
+- Settings' usage count special-cased `light_conditions` by name. **Generalised
+  to ask the value its shape**, so the third array field needs no edit — the
+  per-caller-rule smell again.
+- `nextBloomSeasonStart()` and the task copy both read a scalar.
+- `seasonsNow()` emitted `intermittent`, which is not a season any more.
+
+**Migration:** the view had to be DROPPED, not replaced — Postgres refuses to
+change a column's type while a view depends on it. The `update` moving the three
+mode values into `bloom_habit` runs BEFORE the type change, while they are still
+readable as text, and the `using` clause then nulls them out of the array rather
+than turning `'monocarpic'` into `{monocarpic}`.
+
 ### v2.28.2 — "Change photo" and "Set species photo" were the same button
 
 Amanda: *"does change photo and set photo do the same thing?"* They did. Three

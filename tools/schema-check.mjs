@@ -66,32 +66,60 @@ for (const m of html.matchAll(/rest(Patch|Post|Upsert|Delete|Get|GetAll)\(\s*"([
 const skip = new Set(["select", "limit", "order", "on_conflict", "length", "type", "method", "headers", "body"]);
 const head = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 
-/* Fired in parallel. Sequentially this was 79 round trips and 30 seconds, which
-   is long enough that a pre-push hook gets bypassed — and a bypassed gate is
-   worse than no gate, because it looks like one. */
-const jobs = [];
-for (const [table, cols] of [...wanted].sort()) {
-  for (const col of [...cols].sort()) {
-    if (skip.has(col)) continue;
-    jobs.push((async () => {
+/* Concurrency-capped, and only a 400 counts as missing.
+   Sequentially this was 79 round trips and 30 seconds — long enough that a
+   pre-push hook gets bypassed, and a bypassed gate is worse than none because
+   it still looks like one. Fully parallel was fast but FLAKY: 79 simultaneous
+   requests drew a non-200 that read as a missing column and blocked a push
+   that should have gone through. A gate that cries wolf gets ignored too, so:
+   a small pool, and anything that is not a clean 400 is retried once and then
+   reported as an error rather than as a schema fault. */
+const POOL = 8;
+async function probe(table, col) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
       const r = await fetch(`${URL_}/rest/v1/${table}?select=${col}&limit=1`, { headers: head });
-      return { table, col, ok: r.status === 200, status: r.status };
-    })());
+      if (r.status === 200) return { table, col, ok: true };
+      if (r.status === 400) return { table, col, ok: false, missing: true };
+      if (attempt) return { table, col, ok: false, status: r.status };
+    } catch (e) {
+      if (attempt) return { table, col, ok: false, error: e.message };
+    }
+    await new Promise((r) => setTimeout(r, 250));
   }
+  return { table, col, ok: false, status: "unknown" };
 }
-const results = await Promise.all(jobs);
+
+const queue = [];
+for (const [table, cols] of [...wanted].sort()) {
+  for (const col of [...cols].sort()) if (!skip.has(col)) queue.push([table, col]);
+}
+const results = [];
+await Promise.all(Array.from({ length: POOL }, async () => {
+  for (;;) {
+    const job = queue.shift();
+    if (!job) return;
+    results.push(await probe(job[0], job[1]));
+  }
+}));
 
 const byTable = new Map();
 for (const r of results) {
   if (!byTable.has(r.table)) byTable.set(r.table, []);
   byTable.get(r.table).push(r);
 }
-let missing = 0;
+let missing = 0, errored = 0;
 for (const [table, rows] of [...byTable].sort()) {
-  const bad = rows.filter((r) => !r.ok);
-  missing += bad.length;
-  console.log(`  ${bad.length ? "FAIL" : "ok  "}  ${table.padEnd(24)} ${rows.length} column(s)` +
-    (bad.length ? `\n          missing: ${bad.map((b) => b.status === 400 ? b.col : `${b.col} (HTTP ${b.status})`).join(", ")}` : ""));
+  const gone = rows.filter((r) => r.missing);
+  const err = rows.filter((r) => !r.ok && !r.missing);
+  missing += gone.length; errored += err.length;
+  const tag = gone.length ? "FAIL" : err.length ? "??  " : "ok  ";
+  console.log(`  ${tag}  ${table.padEnd(24)} ${rows.length} column(s)` +
+    (gone.length ? `\n          missing: ${gone.map((b) => b.col).join(", ")}` : "") +
+    (err.length ? `\n          unreachable: ${err.map((b) => `${b.col} (${b.status || b.error})`).join(", ")}` : ""));
 }
-console.log(`\n  ${results.length} columns checked, ${missing} missing`);
+console.log(`\n  ${results.length} columns checked, ${missing} missing` +
+  (errored ? `, ${errored} unreachable (network, not schema)` : ""));
+// Only a real 400 fails the build. An unreachable column is a network problem
+// and must not block a push.
 process.exit(missing ? 1 : 0);

@@ -836,7 +836,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.31.0";
+const APP_VERSION = "2.31.1";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3071,6 +3071,27 @@ function expectedToBloom() {
    depends on the species, so the window comes from `bloom_season` rather than
    one number that is wrong for both a five-day Echeveria and a months-long
    Aeonium. Unknown or genuinely long-running seasons are never chased. */
+/* Which months each label plausibly covers, northern hemisphere. **The overlaps
+   are deliberate and were in the original**: a plant tagged `summer` and one
+   tagged `late_summer` are both plausibly flowering in August, so the broad
+   label spans its whole season and the narrow ones pin an edge.
+
+   A table rather than a chain of ifs, so this is the ONE place a season's
+   months are defined — seasonsNow() reads it, and nothing else hard-codes a
+   month range. */
+/* DECLARED HERE, not beside BLOOM_SEASON_LABELS where it reads more naturally.
+   BLOOM_WINDOW_WEEKS derives from it three lines down, and v2.30.0 put this
+   400 lines further on — so the derived const hit the temporal dead zone and
+   the whole app failed to boot with "Cannot access 'SEASON_MONTHS' before
+   initialization". `node --check` PARSES and cannot see that. Anything derived
+   at module top level must sit below its source. */
+const SEASON_MONTHS = {
+  early_spring: [3],  spring: [3, 4, 5],   late_spring: [5, 6],
+  early_summer: [6],  summer: [6, 7, 8],   late_summer: [8, 9],
+  early_fall:   [9],  fall:   [9, 10, 11], late_fall:   [11, 12],
+  early_winter: [12], winter: [12, 1, 2],  late_winter: [2, 3],
+};
+
 /* A broad season is a quarter; an edge is about half of one. Keyed off the
    NAME, not the month count — the `late_` seasons cover two months and are
    still edges. Derived rather than listed again, so a thirteenth entry cannot
@@ -3418,20 +3439,6 @@ const BLOOM_SEASON_LABELS = {
   early_winter: "Early winter", winter: "Winter", late_winter: "Late winter",
 };
 
-/* Which months each label plausibly covers, northern hemisphere. **The overlaps
-   are deliberate and were in the original**: a plant tagged `summer` and one
-   tagged `late_summer` are both plausibly flowering in August, so the broad
-   label spans its whole season and the narrow ones pin an edge.
-
-   A table rather than a chain of ifs, so this is the ONE place a season's
-   months are defined — seasonsNow() reads it, and nothing else hard-codes a
-   month range. */
-const SEASON_MONTHS = {
-  early_spring: [3],  spring: [3, 4, 5],   late_spring: [5, 6],
-  early_summer: [6],  summer: [6, 7, 8],   late_summer: [8, 9],
-  early_fall:   [9],  fall:   [9, 10, 11], late_fall:   [11, 12],
-  early_winter: [12], winter: [12, 1, 2],  late_winter: [2, 3],
-};
 
 /* An EXCEPTION field: it only ever says "there is no season to record, and here
    is why". There is deliberately no `seasonal` value — a plant that blooms on a

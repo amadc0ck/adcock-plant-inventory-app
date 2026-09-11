@@ -945,6 +945,21 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.33.1 — daylight reworked as the logo sheet
+
+Amanda: *"I thought I would like the light mode. I dont."* The first attempt was
+#FBF9F4 on white — legible, clinical, and nothing like this garden. I had
+optimised entirely for glare and thrown the brand away doing it.
+
+Reworked to **Deep Garden Green on Warm Cream, which is how the wordmark is
+drawn.** It measures 10.09:1, so the most on-brand pairing available is also the
+most readable — the reason to prefer it is that it looks right, and the contrast
+is a bonus rather than the argument.
+
+**Accents darkened in HSL, preserving hue.** Darkening them toward the brand
+green was tried first and muddied everything: Bloom Orange went khaki, Terra
+Cotta went brown. In HSL they stay recognisably themselves at 4.6:1+.
+
 ### v2.33.0 — THEME-1, a daylight theme and the token layer under it
 
 Amanda reads the app on an iPad **in the garden, in direct sun**, where a dark

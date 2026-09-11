@@ -83,49 +83,47 @@
     --line:var(--hairline);
   }
 
-  /* DAYLIGHT. Built for reading the iPad outside in direct sun, which is a
-     different problem from "light mode": glare washes out dark screens, and a
-     light ground with near-black text is what survives it. So this is
-     high-contrast first and pretty second.
+  /* DAYLIGHT. Reworked in v2.33.1 — the first attempt was #FBF9F4 on white,
+     which was legible and clinical and looked nothing like this garden.
 
-     Panels stay light because they already were — the difference between page
-     and card is carried by a hairline instead of by tone. */
+     This version is the LOGO SHEET: Deep Garden Green on Warm Cream, which is
+     exactly how the wordmark is drawn. It happens to measure 10.09:1, so the
+     most on-brand pairing available is also the most readable one — the reason
+     to prefer it is that it looks right, and the contrast is a bonus rather
+     than the argument.
+
+     Accents are darkened in HSL, preserving hue and saturation. Darkening them
+     toward the brand green was tried first and muddied everything — Bloom
+     Orange went khaki, Terra Cotta went brown. These stay recognisably
+     themselves at 4.6:1+. */
   [data-theme="daylight"]{
-    --ground:#FBF9F4;
-    --ground-raised:#FFFFFF;
-    --on-ground:var(--brand-charcoal);
+    --ground:var(--brand-cream);
+    --ground-raised:#FFFDF7;
+    --on-ground:var(--brand-green);
     --on-ground-muted:#5A6B5D;
-    --panel:#FFFFFF;
-    --panel-dim:#F1ECE1;
-    --on-panel:var(--brand-charcoal);
+    --panel:#FFFDF7;
+    --panel-dim:#EDE4D2;
+    --on-panel:var(--brand-green);
     --on-panel-muted:#5A6B5D;
-    --hairline:rgba(37,41,37,0.16);
+    --hairline:rgba(36,62,54,0.16);
 
-    /* The legacy aliases MUST be repeated here. `--bg:var(--ground)` on :root
-       resolves AT :root — a custom property is substituted where it is
-       declared, not where it is used — so overriding --ground alone left every
-       component still holding the night value. The preview showed it instantly:
-       light page, dark cards, unreadable. Until the ~500 references are
-       migrated to the semantic names, both layers have to be themed. */
-    --ground:#FBF9F4;
-    --ground-raised:#FFFFFF;
-    --bg:#FBF9F4;
-    --bg-raised:#FFFFFF;
-    --parchment:#FFFFFF;
-    --parchment-dim:#F1ECE1;
-    --ink:var(--brand-charcoal);
+    /* Aliases repeated: `--bg:var(--ground)` resolves at :root, so theming the
+       semantic name alone leaves every unmigrated component on night values. */
+    --bg:var(--brand-cream);
+    --bg-raised:#FFFDF7;
+    --parchment:#FFFDF7;
+    --parchment-dim:#EDE4D2;
+    --ink:var(--brand-green);
     --ink-soft:#5A6B5D;
-    --cream:var(--brand-charcoal);
-    --line:rgba(37,41,37,0.16);
+    --cream:var(--brand-green);
+    --line:rgba(36,62,54,0.16);
 
-    /* Accents darkened to stay legible on a light ground: the brand values
-       reach only 1.8–3.5:1 there. Same hues, enough depth to read in sun. */
-    --moss:#4F6349;
-    --moss-dim:#42543D;
-    --blue:#3F6F69;
-    --orange:#A85F14;
-    --terracotta:#B4433F;
-    --pink:#A8456A;
+    --moss:#5E715A;
+    --moss-dim:#4A5A47;
+    --blue:#4C716C;
+    --orange:#A4580D;
+    --terracotta:#C53636;
+    --pink:#BD3A68;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
@@ -942,7 +940,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.33.0";
+const APP_VERSION = "2.33.1";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 

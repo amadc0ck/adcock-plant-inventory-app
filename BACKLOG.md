@@ -26,7 +26,14 @@ Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
 
 ### OUTSTANDING SQL — one statement, held deliberately
 
-**NOTHING OUTSTANDING.** `alter table taxa drop column origin;` **ran
+**AWAITING RESULTS, 2026-09-11.** A read-only audit for the four data-quality
+findings — quotes baked into `cultivar`, the hybrid sign inside `genus`,
+`is_hybrid = false` on records whose parentage names a cross, and `cv.` notation
+in `botanical_name`. It is a SELECT; nothing is written until the rows come back
+and the fix is built from them, not from the three-day-old bullet list. The
+query is in the session transcript and reproducible from those four rules.
+
+**NOTHING OUTSTANDING** (previous entry). `alter table taxa drop column origin;` **ran
 2026-09-08** — ORIG-1 is complete end to end: view rewritten, app shipped,
 `suggest-species` v11 deployed, column dropped.
 

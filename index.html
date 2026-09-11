@@ -23,21 +23,109 @@
      Background stays Deep Garden Green + Warm Cream + Charcoal;
      accents are functional cues, not general chrome.
      ============================================================ */
+/* THEME-1 (v2.33.0). Two layers, deliberately.
+
+   BRAND holds the eight colours from the logo sheet. They are constants and do
+   not change with the theme — the garden is the same garden at midday.
+
+   SEMANTIC names say what a colour is FOR, not what it looks like: `--ground`
+   is the page, `--on-ground` is text on the page, `--panel` is a card sitting
+   on it, `--on-panel` is text on that card. **This is the permanent fix for a
+   bug that shipped three times** — .action-row, .attn-row icons, .attn-row
+   colours — where a component built for the cream panel was moved onto the dark
+   page and inverted, because it named `--ink` rather than "the text colour for
+   whatever I am on".
+
+   The old names are kept as aliases so ~500 existing references keep working
+   and can be migrated gradually. Theming overrides BOTH, so daylight works
+   everywhere today rather than only in migrated components.
+
+   `--on-ground-muted` is new and had to be: measured against the dark ground,
+   only --cream, --parchment-dim and --orange reached WCAG AA, and two of those
+   are near-white. There was no readable muted tone at all (AUDIT F7). This is
+   Aloe Green pulled toward Warm Cream — 5.76:1 on --ground, 4.85:1 raised. */
   :root{
-    --bg:#243E36;          /* Deep Garden Green */
-    --bg-raised:#2C4A40;
-    --parchment:#F5EFE3;   /* Warm Cream */
-    --parchment-dim:#E8E0D0;
-    --ink:#252925;         /* Charcoal */
-    --ink-soft:#5A6B5D;
-    --cream:#F5EFE3;
-    --moss:#70866B;        /* Aloe Green */
+    /* Brand — fixed, from the logo sheet */
+    --brand-green:#243E36;   /* Deep Garden Green */
+    --brand-aloe:#70866B;    /* Aloe Green */
+    --brand-terracotta:#D97474;
+    --brand-orange:#F2A65A;  /* Aloe Bloom Orange */
+    --brand-pink:#D67A9A;    /* Cactus Flower Pink */
+    --brand-agave:#7CA7A1;   /* Agave Blue */
+    --brand-cream:#F5EFE3;   /* Warm Cream */
+    --brand-charcoal:#252925;
+
+    /* Semantic — what components should name */
+    --ground:var(--brand-green);
+    --ground-raised:#2C4A40;
+    --on-ground:var(--brand-cream);
+    --on-ground-muted:#B2BAA7;
+    --panel:var(--brand-cream);
+    --panel-dim:#E8E0D0;
+    --on-panel:var(--brand-charcoal);
+    --on-panel-muted:#5A6B5D;
+    --hairline:rgba(245,239,227,0.14);
+
+    /* Legacy aliases — migrating, do not add new uses */
+    --bg:var(--ground);
+    --bg-raised:var(--ground-raised);
+    --parchment:var(--panel);
+    --parchment-dim:var(--panel-dim);
+    --ink:var(--on-panel);
+    --ink-soft:var(--on-panel-muted);
+    --cream:var(--on-ground);
+    --moss:var(--brand-aloe);
     --moss-dim:#576B53;
-    --blue:#7CA7A1;        /* Agave Blue */
-    --orange:#F2A65A;      /* Aloe Bloom Orange */
-    --terracotta:#D97474;  /* Terra Cotta */
-    --pink:#D67A9A;        /* Cactus Flower Pink */
-    --line: rgba(245,239,227,0.14);
+    --blue:var(--brand-agave);
+    --orange:var(--brand-orange);
+    --terracotta:var(--brand-terracotta);
+    --pink:var(--brand-pink);
+    --line:var(--hairline);
+  }
+
+  /* DAYLIGHT. Built for reading the iPad outside in direct sun, which is a
+     different problem from "light mode": glare washes out dark screens, and a
+     light ground with near-black text is what survives it. So this is
+     high-contrast first and pretty second.
+
+     Panels stay light because they already were — the difference between page
+     and card is carried by a hairline instead of by tone. */
+  [data-theme="daylight"]{
+    --ground:#FBF9F4;
+    --ground-raised:#FFFFFF;
+    --on-ground:var(--brand-charcoal);
+    --on-ground-muted:#5A6B5D;
+    --panel:#FFFFFF;
+    --panel-dim:#F1ECE1;
+    --on-panel:var(--brand-charcoal);
+    --on-panel-muted:#5A6B5D;
+    --hairline:rgba(37,41,37,0.16);
+
+    /* The legacy aliases MUST be repeated here. `--bg:var(--ground)` on :root
+       resolves AT :root — a custom property is substituted where it is
+       declared, not where it is used — so overriding --ground alone left every
+       component still holding the night value. The preview showed it instantly:
+       light page, dark cards, unreadable. Until the ~500 references are
+       migrated to the semantic names, both layers have to be themed. */
+    --ground:#FBF9F4;
+    --ground-raised:#FFFFFF;
+    --bg:#FBF9F4;
+    --bg-raised:#FFFFFF;
+    --parchment:#FFFFFF;
+    --parchment-dim:#F1ECE1;
+    --ink:var(--brand-charcoal);
+    --ink-soft:#5A6B5D;
+    --cream:var(--brand-charcoal);
+    --line:rgba(37,41,37,0.16);
+
+    /* Accents darkened to stay legible on a light ground: the brand values
+       reach only 1.8–3.5:1 there. Same hues, enough depth to read in sun. */
+    --moss:#4F6349;
+    --moss-dim:#42543D;
+    --blue:#3F6F69;
+    --orange:#A85F14;
+    --terracotta:#B4433F;
+    --pink:#A8456A;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
@@ -591,9 +679,9 @@
      menu in Amanda's screenshot. This variant gives it the same surface as the
      .section-card beside it. The specimen page's copy stays on parchment and
      keeps the original. */
-  .action-card.on-dark{background:var(--bg-raised);border-color:var(--line);}
-  .action-card.on-dark .action-row{color:var(--cream);border-bottom-color:var(--line);}
-  .action-card.on-dark .action-row svg{color:var(--moss-dim);}
+  .action-card.on-dark{background:var(--ground-raised);border-color:var(--hairline);}
+  .action-card.on-dark .action-row{color:var(--on-ground);border-bottom-color:var(--hairline);}
+  .action-card.on-dark .action-row svg{color:var(--moss);}
   .action-card.on-dark .action-row:active{background:rgba(245,239,227,0.07);}
   /* The on-dark rule is (0,3,1) and .action-row.action-danger is (0,2,1), so
      without this the destructive row would render cream like the rest of the
@@ -666,12 +754,16 @@
      2.03:1, against a WCAG AA floor of 4.5. Both were effectively invisible.
      `node tools/palette.mjs` renders the whole matrix; check a pairing there
      before moving a component across grounds. */
-  .attn-row.on-dark{color:var(--cream);border-bottom-color:var(--line);}
-  /* --parchment-dim (8.81:1), not --blue (4.35) or --moss (2.92). Brighter than
-     a subtitle wants, and deliberate: the palette has NO muted tone that passes
-     AA on this ground — only --cream, --parchment-dim and --orange do, and two
-     of those are near-white. Legibility first; see AUDIT.md for the gap. */
-  .attn-row.on-dark .attn-sub{color:var(--parchment-dim);opacity:0.8;}
+  /* MIGRATED to semantic tokens (THEME-1). It said --cream and --parchment-dim,
+     which are literal: in daylight --parchment-dim is near-white and the
+     subtitle vanished on a white ground — the preview caught it. `--on-ground`
+     and `--on-ground-muted` mean "text on whatever the page is", so both
+     themes resolve correctly: 10.09 / 5.76 at night, 14.03 / 5.40 in daylight.
+     **This is what the token layer is for**, and the `.on-dark` name is now the
+     misleading part — it means "on the page ground", which is only dark at
+     night. Renaming it is part of the remaining migration. */
+  .attn-row.on-dark{color:var(--on-ground);border-bottom-color:var(--hairline);}
+  .attn-row.on-dark .attn-sub{color:var(--on-ground-muted);}
   .attn-row.on-dark svg{color:var(--blue);}
   .attn-row.on-dark:active{background:rgba(245,239,227,0.07);}
   /* .attn-row sized only .action-chevron, because until v2.24.0 no attn-row had
@@ -850,7 +942,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.32.1";
+const APP_VERSION = "2.33.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -942,6 +1034,7 @@ const state = {
   taxaSearch: "",
   taxaOnlySuggestions: false,
   taxaNoCoverOnly: false,     // COVER-1 filter on the Plants tab
+  theme: (() => { try { return localStorage.getItem("abg-theme") || "night"; } catch (e) { return "night"; } })(),
   recentDays: 7,              // WORK-1 window
   wishTaxon: "",              // WISH-1: optional species link on a new entry
   wishSearch: "",
@@ -12141,6 +12234,19 @@ function navBar() {
   </div></div>`;
 }
 
+/* Persisted per device, deliberately: the iPad lives outside and the laptop
+   does not, so this is a property of where you are, not of the account. */
+const THEME_KEY = "abg-theme";
+function applyTheme() {
+  document.documentElement.setAttribute("data-theme", state.theme === "daylight" ? "daylight" : "night");
+}
+function toggleTheme() {
+  state.theme = state.theme === "daylight" ? "night" : "daylight";
+  try { localStorage.setItem(THEME_KEY, state.theme); } catch (e) { /* private mode */ }
+  applyTheme();
+  render();
+}
+
 function topBar() {
   const driveOk = !!state.driveToken;
   // HEAD-1. To Do's title used to live here in the global top bar, which is why
@@ -12154,6 +12260,11 @@ function topBar() {
         <img src="assets/logo-horizontal-dark.png" alt="Adcock Botanical Garden" style="max-width:200px;" />
       </div>
       <div class="topbar-right-group">
+        ${/* THEME-1. In the header, not buried in Settings: the moment it is
+             wanted is standing in the garden with the sun on the screen. */""}
+        <button class="status-light-btn" onclick="toggleTheme()" title="${state.theme === "daylight" ? "Switch to the dark theme" : "Daylight — for reading outside"}">
+          ${icon("brightness")}
+        </button>
         <button class="status-light-btn" onclick="${driveOk ? "" : "goTab('settings')"}" title="${driveOk ? "Google Drive connected" : "Google Drive needs to reconnect — tap to fix"}">
           ${driveOk ? icon("statusConnected") : icon("statusDisconnected")}
         </button>
@@ -12993,6 +13104,7 @@ function wireModalForms() {
 }
 
 async function boot() {
+  applyTheme();   // before the first paint, or daylight flashes dark on load
   // An import interrupted by a refresh or a closed tab can be picked up, as
   // long as the picker links are still inside their 60-minute window.
   loadInboxPrefs();

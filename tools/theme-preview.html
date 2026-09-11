@@ -1,0 +1,1014 @@
+<!doctype html><meta charset="utf-8"><title>ABG themes</title>
+<style>
+  /* ============================================================
+     COLOR SYSTEM — Adcock Botanical Garden approved palette.
+     Roles are deliberate, not decorative:
+       --moss (Aloe Green)      = secondary controls, inactive nav
+       --orange (Aloe Bloom)    = primary capture action, highlights, selected state
+       --terracotta             = attention / waiting / unresolved
+       --blue (Agave Blue)      = informational, location, photo-related
+       --pink (Cactus Flower)   = special / flowering — used sparingly
+     Background stays Deep Garden Green + Warm Cream + Charcoal;
+     accents are functional cues, not general chrome.
+     ============================================================ */
+/* THEME-1 (v2.33.0). Two layers, deliberately.
+
+   BRAND holds the eight colours from the logo sheet. They are constants and do
+   not change with the theme — the garden is the same garden at midday.
+
+   SEMANTIC names say what a colour is FOR, not what it looks like: `--ground`
+   is the page, `--on-ground` is text on the page, `--panel` is a card sitting
+   on it, `--on-panel` is text on that card. **This is the permanent fix for a
+   bug that shipped three times** — .action-row, .attn-row icons, .attn-row
+   colours — where a component built for the cream panel was moved onto the dark
+   page and inverted, because it named `--ink` rather than "the text colour for
+   whatever I am on".
+
+   The old names are kept as aliases so ~500 existing references keep working
+   and can be migrated gradually. Theming overrides BOTH, so daylight works
+   everywhere today rather than only in migrated components.
+
+   `--on-ground-muted` is new and had to be: measured against the dark ground,
+   only --cream, --parchment-dim and --orange reached WCAG AA, and two of those
+   are near-white. There was no readable muted tone at all (AUDIT F7). This is
+   Aloe Green pulled toward Warm Cream — 5.76:1 on --ground, 4.85:1 raised. */
+  :root{
+    /* Brand — fixed, from the logo sheet */
+    --brand-green:#243E36;   /* Deep Garden Green */
+    --brand-aloe:#70866B;    /* Aloe Green */
+    --brand-terracotta:#D97474;
+    --brand-orange:#F2A65A;  /* Aloe Bloom Orange */
+    --brand-pink:#D67A9A;    /* Cactus Flower Pink */
+    --brand-agave:#7CA7A1;   /* Agave Blue */
+    --brand-cream:#F5EFE3;   /* Warm Cream */
+    --brand-charcoal:#252925;
+
+    /* Semantic — what components should name */
+    --ground:var(--brand-green);
+    --ground-raised:#2C4A40;
+    --on-ground:var(--brand-cream);
+    --on-ground-muted:#B2BAA7;
+    --panel:var(--brand-cream);
+    --panel-dim:#E8E0D0;
+    --on-panel:var(--brand-charcoal);
+    --on-panel-muted:#5A6B5D;
+    --hairline:rgba(245,239,227,0.14);
+
+    /* Legacy aliases — migrating, do not add new uses */
+    --bg:var(--ground);
+    --bg-raised:var(--ground-raised);
+    --parchment:var(--panel);
+    --parchment-dim:var(--panel-dim);
+    --ink:var(--on-panel);
+    --ink-soft:var(--on-panel-muted);
+    --cream:var(--on-ground);
+    --moss:var(--brand-aloe);
+    --moss-dim:#576B53;
+    --blue:var(--brand-agave);
+    --orange:var(--brand-orange);
+    --terracotta:var(--brand-terracotta);
+    --pink:var(--brand-pink);
+    --line:var(--hairline);
+  }
+
+  /* DAYLIGHT. Built for reading the iPad outside in direct sun, which is a
+     different problem from "light mode": glare washes out dark screens, and a
+     light ground with near-black text is what survives it. So this is
+     high-contrast first and pretty second.
+
+     Panels stay light because they already were — the difference between page
+     and card is carried by a hairline instead of by tone. */
+  [data-theme="daylight"]{
+    --ground:#FBF9F4;
+    --ground-raised:#FFFFFF;
+    --on-ground:var(--brand-charcoal);
+    --on-ground-muted:#5A6B5D;
+    --panel:#FFFFFF;
+    --panel-dim:#F1ECE1;
+    --on-panel:var(--brand-charcoal);
+    --on-panel-muted:#5A6B5D;
+    --hairline:rgba(37,41,37,0.16);
+
+    /* The legacy aliases MUST be repeated here. `--bg:var(--ground)` on :root
+       resolves AT :root — a custom property is substituted where it is
+       declared, not where it is used — so overriding --ground alone left every
+       component still holding the night value. The preview showed it instantly:
+       light page, dark cards, unreadable. Until the ~500 references are
+       migrated to the semantic names, both layers have to be themed. */
+    --ground:#FBF9F4;
+    --ground-raised:#FFFFFF;
+    --bg:#FBF9F4;
+    --bg-raised:#FFFFFF;
+    --parchment:#FFFFFF;
+    --parchment-dim:#F1ECE1;
+    --ink:var(--brand-charcoal);
+    --ink-soft:#5A6B5D;
+    --cream:var(--brand-charcoal);
+    --line:rgba(37,41,37,0.16);
+
+    /* Accents darkened to stay legible on a light ground: the brand values
+       reach only 1.8–3.5:1 there. Same hues, enough depth to read in sun. */
+    --moss:#4F6349;
+    --moss-dim:#42543D;
+    --blue:#3F6F69;
+    --orange:#A85F14;
+    --terracotta:#B4433F;
+    --pink:#A8456A;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
+  /* Nothing in this app scrolls sideways at the page level — the Gallery rows
+     scroll inside their own containers. A stray wide element shifting every
+     screen left is always a bug, so stop it becoming one silently. */
+  /* clip, NOT hidden (v2.17.3). overflow-x:hidden makes the element a scroll
+     container, and position:sticky inside a scroll container no longer pins to
+     the viewport — so the rule v2.6.1 added to stop screens scrolling sideways
+     silently killed every sticky header in the app, .sticky-header-group and
+     .sticky-controls alike. Nobody would connect those two things; the Select
+     button had simply been scrolling out of reach ever since.
+     `clip` clips the overflow without creating a scroll container, so it still
+     stops the sideways scroll AND sticky works. Measured both ways: hidden puts
+     a sticky bar at top=-1959 after a 2000px scroll, clip holds it at 0. */
+  html,body{max-width:100%;overflow-x:clip;}
+  body{padding-bottom:76px;min-height:100vh;}
+  body.has-task-banner{padding-top:46px;}
+  h1,h2,h3,.display{font-family:'Fraunces',serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  a{color:inherit;}
+  button{font-family:inherit;}
+  ::selection{background:var(--orange);color:var(--ink);}
+
+  .container{max-width:640px;margin:0 auto;padding:0 16px;}
+
+  .sticky-header-group{position:sticky;top:0;z-index:20;background:var(--bg);}
+  /* The task banner is fixed over the top 46px, so the header group has to
+     start below it or it pins underneath and disappears. */
+  body.has-task-banner .sticky-header-group{top:46px;}
+  .topbar{padding:22px 0 14px;border-bottom:1px solid var(--line);}
+  .topbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .topbar-right-group{display:flex;align-items:center;gap:4px;flex-shrink:0;}
+  .icon-only-btn{background:none;border:none;color:#9FB0A3;padding:6px;cursor:pointer;display:flex;}
+  /* Every icon() SVG carries class="ico". None has width/height attributes, so
+     before this an icon placed in a container with no sizing rule expanded to
+     fill it — which is what happened to the coffin in an .attn-row (v2.26.2)
+     and, an hour later, to the seedling on the parentage line (v2.27.2).
+     Thirty-five per-container `svg{width:…}` rules existed below, one for every
+     place an icon had ever been put; the thirty-sixth placement was always
+     going to break.
+
+     Specificity keeps all of them winning: `.ico` is (0,1,0) and every rule
+     like `.action-row svg` is (0,1,1). Nothing changes where a rule already
+     exists; anywhere new gets 19px instead of a full-bleed SVG. */
+  .ico{width:19px;height:19px;flex-shrink:0;}
+  .icon-only-btn svg{width:19px;height:19px;}
+  .status-light-btn{background:none;border:none;padding:6px;cursor:default;display:flex;}
+  .status-light-btn svg{width:18px;height:18px;}
+  .status-light{width:10px;height:10px;border-radius:50%;display:inline-block;}
+
+  .nav-row{display:flex;align-items:flex-end;justify-content:space-around;position:relative;}
+  .nav-camera-btn{width:52px;height:52px;border-radius:50%;background:var(--orange);color:#3A2408;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;transform:translateY(-16px);box-shadow:0 6px 16px -4px rgba(0,0,0,0.5);flex-shrink:0;}
+  .nav-camera-btn svg{width:22px;height:22px;}
+  .topbar .container{display:flex;align-items:center;justify-content:center;}
+  .brand{font-family:'Fraunces',serif;font-weight:500;font-size:22px;letter-spacing:0.2px;display:flex;justify-content:center;}
+  .brand img{max-width:280px;width:100%;height:auto;}
+  .brand-lockup{display:flex;align-items:center;justify-content:center;gap:11px;}
+  .brand-lockup img{width:38px;height:38px;object-fit:contain;flex-shrink:0;}
+  .brand-text{display:flex;flex-direction:column;line-height:1.15;}
+  .brand-name{font-family:'Fraunces',serif;font-weight:600;font-size:19px;text-transform:uppercase;letter-spacing:1.5px;color:var(--cream);}
+  .brand-sub{font-family:'Fraunces',serif;font-style:italic;font-size:11px;letter-spacing:0.8px;color:var(--moss);text-transform:uppercase;margin-top:1px;}
+  .brand .dot{color:var(--blue);}
+  .subtle{color:#9FB0A3;font-size:12.5px;}
+  /* A zero count is still shown — an empty container is the record that needs
+     work — but recedes so a long list of unpopulated buckets stays scannable. */
+  .count-zero,.value-blank{opacity:0.45;}
+
+  /* PD-2 structured fields. These render even when blank, so the blank state
+     needs to read as "not recorded" rather than as a rendering bug. */
+  .detail-row{display:flex;gap:14px;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);}
+  .detail-row:last-child{border-bottom:none;}
+  .detail-row-label{font-size:12.5px;color:#8AA090;flex-shrink:0;}
+  .detail-row-value{font-size:13.5px;color:#C9D6CC;text-align:right;min-width:0;}
+
+  .navbar{position:fixed;bottom:0;left:0;right:0;background:var(--bg-raised);border-top:1px solid var(--line);z-index:30;padding-bottom:env(safe-area-inset-bottom);}
+  .navbar .container{display:flex;justify-content:space-around;padding:8px 12px 6px;max-width:640px;}
+  .navbtn{background:none;border:none;color:var(--moss);display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;padding:6px 10px;border-radius:10px;cursor:pointer;letter-spacing:0.3px;position:relative;}
+  .navbtn.active{color:var(--cream);}
+  .navbtn svg{width:20px;height:20px;}
+  .navbtn .badge{position:absolute;transform:translate(10px,-8px);background:var(--terracotta);color:var(--cream);font-size:9px;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;}
+
+  .tag-card{background:var(--parchment);color:var(--ink);border-radius:3px;position:relative;padding:16px 16px 14px 22px;box-shadow:0 1px 0 rgba(0,0,0,0.15), 0 6px 14px -8px rgba(0,0,0,0.4);}
+  .tag-id{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;color:var(--moss-dim);text-transform:uppercase;}
+
+  .surface{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;font-weight:600;font-size:14px;padding:11px 16px;cursor:pointer;border:none;transition:opacity .15s;}
+  /* An <svg> with a viewBox and no width/height has no intrinsic size, so as a
+     flex item inside .btn it stretched to fill the button — a droplet the size
+     of the whole "Water 201 plants" bar. Nothing in the sheet constrained it;
+     .icon-btn svg did, but only for buttons that opted in. This is the floor.
+     .icon-btn svg (15px) is declared later at equal specificity and still wins
+     where it applies. Fixes the Import from Google Photos button too, which
+     carried the same fault. */
+  .btn svg{width:16px;height:16px;flex-shrink:0;}
+  .btn:active{opacity:0.75;}
+  .btn-primary{background:var(--moss);color:#0F1712;}
+  .btn-accent{background:var(--orange);color:#3A2408;}
+  .btn-secondary{background:transparent;color:var(--cream);border:1px solid var(--line);}
+  .btn-ghost{background:transparent;color:var(--blue);padding:6px 8px;font-size:13px;border:none;border-radius:6px;cursor:pointer;transition:opacity .15s;}
+  .btn-ghost:active{opacity:0.7;}
+  .btn-danger{background:transparent;color:var(--terracotta);border:1px solid rgba(208,106,78,0.4);}
+  .btn:disabled{opacity:0.4;cursor:default;}
+  .btn-block{width:100%;}
+  .btn-sm{padding:7px 12px;font-size:12.5px;}
+  .btn-on-cream{color:var(--ink);border-color:rgba(37,41,37,0.2);}
+  /* .btn-secondary is transparent with cream text — correct on the green
+     screen, INVISIBLE on a parchment card, where it renders as cream on cream
+     with a cream border. Requiring every call site to remember btn-on-cream
+     did not work: it was missed on the check-in bar's "Checked it" (since the
+     bar shipped) and again on Location Detail's water button (v2.12.0).
+
+     Scoped by ancestor instead, so it cannot be forgotten. Safe as a blanket
+     rule because a .btn-secondary inside one of these containers is broken by
+     definition — there is no correct-looking case to regress. .tag-card has no
+     dark sub-regions: .card-media and .plant-list-thumb are --parchment-dim,
+     and .detail-body is --parchment. btn-on-cream still works and is now
+     belt-and-braces where already used. */
+  .tag-card .btn-secondary,
+  .task-row .btn-secondary,
+  .hover-card .btn-secondary,
+  .checkin-bar .btn-secondary{color:var(--ink);border-color:rgba(37,41,37,0.2);}
+  .icon-btn{display:inline-flex;align-items:center;gap:6px;}
+  .icon-btn svg{width:15px;height:15px;flex-shrink:0;}
+  .btn-danger.icon-btn{padding:9px 10px;}
+
+  .ref-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .ref-link{display:inline-flex;align-items:center;font-size:11.5px;font-weight:600;padding:5px 9px;border-radius:6px;
+            background:var(--bg);color:var(--cream);border:1px solid var(--line);text-decoration:none;}
+  .ref-link:hover{background:var(--moss-dim);}
+  .ref-fold{margin-top:10px;}
+  .ref-fold summary{cursor:pointer;list-style:none;}
+  .ref-fold summary::-webkit-details-marker{display:none;}
+  .ref-fold summary::before{content:"\25B8 ";}
+  .ref-fold[open] summary::before{content:"\25BE ";}
+  input,select,textarea{background:var(--bg);border:1px solid var(--line);color:var(--cream);border-radius:8px;padding:11px 12px;font-size:15px;font-family:inherit;width:100%;}
+  /* iOS Safari force-zooms into any field whose font-size is under 16px and
+     never zooms back out, which is why the page had to be pinched back to fit
+     after every tap into a search box. The viewport tag was never the problem.
+     16px only where there is no hover — desktop keeps the tighter 15px. */
+  @media (pointer:coarse){ input,select,textarea{font-size:16px;} }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--moss);outline-offset:1px;}
+  label{font-size:12px;color:#9FB0A3;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:5px;margin-top:14px;}
+  label:first-child{margin-top:0;}
+  .field-help{font-size:11.5px;color:#7E9084;margin-top:4px;}
+  .checkbox-row{display:flex;align-items:center;gap:9px;margin-top:14px;}
+  .checkbox-row input{width:auto;}
+  .checkbox-row label{margin:0;text-transform:none;font-size:14px;color:var(--cream);letter-spacing:0;}
+
+  .empty{text-align:center;padding:60px 20px;color:#8AA090;}
+  /* icon() emits a bare viewBox with no width/height, so inside a block
+     container an SVG stretches to 100% of it. Every empty state was showing a
+     200px icon. */
+  .empty svg{width:32px;height:32px;}
+  .empty .display{font-size:19px;color:var(--cream);margin-bottom:6px;}
+
+  .pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;letter-spacing:0.3px;}
+  .pill-moss{background:rgba(112,134,107,0.2);color:#B7C9B2;}
+  .pill-orange{background:rgba(242,166,90,0.2);color:var(--orange);}
+  .pill-terracotta{background:rgba(208,106,78,0.2);color:#E8A78F;}
+  .pill-blue{background:rgba(124,167,161,0.2);color:#AECDC8;}
+  .pill-pink{background:rgba(214,122,154,0.2);color:#E7A9BF;}
+  .pill-outline{background:transparent;border:1px solid var(--line);color:#9FB0A3;}
+
+  .screen{padding-top:6px;padding-bottom:24px;animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+
+  .fab{position:fixed;right:20px;bottom:92px;z-index:25;width:56px;height:56px;border-radius:50%;background:var(--orange);color:#3A2408;border:none;box-shadow:0 8px 20px -6px rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .fab svg{width:26px;height:26px;}
+
+  /* LAYER-1. The stacking order, written down because it was ad-hoc and the
+     modal ended up UNDERNEATH the lightbox: opening "compare" from the Pl@ntNet
+     badge rendered the candidate list behind the photograph.
+       28  bulk action bar
+       30  bottom nav
+       60  task banner
+       80  lightbox            — a photo, full screen
+       90  modal               — ALWAYS above the lightbox: several modals are
+                                 opened from inside it, and the photo behind is
+                                 the context you are comparing against
+      100  reference-image overlay — opened from the compare modal, so above it
+      110  hover card          — a pointer affordance
+      120  toast               — errors must be readable over anything above
+     Anything new goes on this list, not on a number that happened to work. */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(10,15,11,0.7);z-index:90;display:flex;align-items:flex-end;justify-content:center;}
+  .modal{background:var(--bg-raised);border-top-left-radius:16px;border-top-right-radius:16px;width:100%;max-width:640px;max-height:88vh;overflow-y:auto;padding:20px 20px calc(20px + env(safe-area-inset-bottom));border-top:1px solid var(--line);}
+  .modal-handle{width:36px;height:4px;background:var(--line);border-radius:3px;margin:0 auto 16px;}
+  /* A one-tap answer the record already knows. It was a grey help-text link
+     under a grey help-text line and read as more explanation. */
+  /* Appears on BOTH grounds — the dark modal and the cream detail card — so it
+     inherits its colour instead of assuming one. Hardcoding var(--cream) put
+     light text on the parchment panel and made every suggestion unreadable. */
+  .suggestion-row{display:flex;align-items:center;gap:10px;margin-top:8px;padding:10px 12px;
+    background:rgba(124,167,161,0.12);border:1px solid rgba(124,167,161,0.35);border-radius:10px;color:inherit;}
+  .suggestion-row .sg-label{font-size:12.5px;line-height:1.35;color:inherit;}
+  .suggestion-row .sg-why{font-size:11px;line-height:1.3;margin-top:2px;color:inherit;opacity:0.68;}
+  .suggestion-head{font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:inherit;opacity:0.65;}
+  /* On parchment the tint and the blue are both too light to read against. */
+  .on-cream-ground{color:var(--ink);}
+  .on-cream-ground .suggestion-row{background:rgba(58,90,84,0.10);border-color:rgba(58,90,84,0.30);}
+  .on-cream-ground .suggestion-icon{color:var(--ink-soft);}
+  /* The queue as a dashboard rather than a settings list. A row of title,
+     subtitle and a small pill reads as a menu; the number is the thing she is
+     actually scanning for, so it leads. */
+  .queue-group{margin-bottom:20px;}
+  .queue-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;}
+  .queue-head h3{font-family:'Fraunces',serif;font-size:15px;font-style:italic;font-weight:500;color:var(--blue);margin:0;}
+  .queue-head .queue-total{font-size:11px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);font-family:'IBM Plex Mono',monospace;}
+  .queue-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  .queue-tile{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;padding:12px 13px;
+    text-align:left;cursor:pointer;color:inherit;font-family:inherit;display:flex;flex-direction:column;gap:2px;min-height:92px;}
+  .queue-tile:hover{border-color:var(--moss);}
+  .queue-tile.is-clear{opacity:0.45;}
+  .queue-tile.is-urgent{border-color:var(--terracotta);}
+  .queue-num{font-family:'Fraunces',serif;font-size:26px;font-weight:600;line-height:1;color:var(--cream);}
+  .queue-tile.is-clear .queue-num{color:var(--moss-dim);}
+  .queue-tile.is-urgent .queue-num{color:var(--terracotta);}
+  .queue-title{font-size:13px;font-weight:600;color:var(--cream);margin-top:4px;line-height:1.25;}
+  .queue-sub{font-size:11px;color:#8AA090;line-height:1.3;}
+  .frost-badge{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;
+    background:rgba(124,167,161,0.18);border:1px solid rgba(124,167,161,0.5);color:var(--blue);
+    border-radius:20px;padding:2px 8px;font-size:10.5px;letter-spacing:0.3px;}
+  .frost-badge svg{width:14px;height:14px;}
+
+  /* WEATHER-1. An in-flow card at the top of To Do, deliberately NOT the fixed
+     .task-banner: that slot is for transient interrupts (a new version, a
+     resumable import) and weather is standing context. Two banners competing
+     for the same fixed 46px was never going to end well. */
+  .wx-banner{border-radius:10px;padding:11px 13px;margin-bottom:14px;display:flex;
+    align-items:flex-start;gap:10px;border:1px solid var(--line);background:var(--bg-raised);}
+  .wx-banner.wx-frost{border-color:rgba(124,167,161,0.55);background:rgba(124,167,161,0.12);}
+  .wx-banner.wx-heat{border-color:rgba(242,166,90,0.55);background:rgba(242,166,90,0.12);}
+  .wx-banner.wx-urgent{border-color:var(--terracotta);background:rgba(217,116,116,0.14);}
+  .wx-banner svg{width:19px;height:19px;flex-shrink:0;margin-top:1px;}
+  .wx-banner.wx-frost svg{color:var(--blue);}
+  .wx-banner.wx-heat svg{color:var(--orange);}
+  .wx-banner.wx-urgent svg{color:var(--terracotta);}
+  .wx-body{flex:1;min-width:0;}
+  .wx-title{font-size:13.5px;font-weight:600;color:var(--cream);line-height:1.3;}
+  .wx-sub{font-size:11.5px;color:#8AA090;line-height:1.4;margin-top:2px;}
+  .wx-act{margin-top:8px;}
+  .wx-strip{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#8AA090;
+    font-family:'IBM Plex Mono',monospace;margin-bottom:14px;}
+  .wx-strip b{color:var(--cream);font-weight:600;}
+  /* On the parchment detail panel, not the dark screen — --blue is too low
+     contrast there, and a bare span gives its svg no size at all. */
+  .water-line{display:flex;align-items:center;gap:7px;margin-top:14px;font-size:12.5px;color:var(--ink-soft);}
+  .water-line svg{width:15px;height:15px;flex-shrink:0;color:var(--moss-dim);}
+  .suggestion-icon{display:flex;color:var(--blue);flex-shrink:0;}
+  .suggestion-icon svg{width:18px;height:18px;}
+
+  .divider{height:1px;background:var(--line);margin:18px 0;}
+  .section-label{font-family:'Fraunces',serif;font-size:14px;font-style:italic;color:var(--blue);margin:22px 0 4px;}
+  .section-label:first-child{margin-top:0;}
+
+  .row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .stack{display:flex;flex-direction:column;gap:10px;}
+  .card-grid{display:flex;flex-direction:column;gap:10px;}
+  .wrap-gap{display:flex;flex-wrap:wrap;gap:6px;}
+
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .login-box{width:100%;max-width:360px;}
+  .login-card{
+    background:var(--parchment);
+    border-radius:18px;
+    padding:32px 26px 28px;
+    box-shadow:0 20px 50px -20px rgba(0,0,0,0.5), 0 2px 0 rgba(0,0,0,0.08);
+  }
+  .login-card label{color:var(--ink-soft);}
+  .login-card input{
+    background:#FFFFFF;
+    border:1px solid rgba(37,41,37,0.18);
+    color:var(--ink);
+  }
+  .login-card input:focus{outline:2px solid var(--moss);}
+  .btn-primary-dark{background:var(--bg);color:var(--parchment);}
+  .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parchment);padding:10px 18px;border-radius:8px;font-size:13.5px;z-index:120;box-shadow:0 8px 20px rgba(0,0,0,0.4);}
+  .toast.error{background:#5A2A20;color:#F5D5C6;}
+
+  .photo-row{display:flex;gap:12px;align-items:flex-start;}
+  .photo-icon{width:52px;height:52px;border-radius:6px;background:rgba(124,167,161,0.15);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--blue);}
+  .photo-icon svg{width:24px;height:24px;}
+  .photo-icon.on-cream{background:var(--parchment-dim);color:var(--moss-dim);}
+
+  .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .search-input{margin-bottom:12px;}
+  .connect-status{display:flex;align-items:center;gap:8px;}
+  .dot-status{width:8px;height:8px;border-radius:50%;}
+
+  .filter-bar{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px;}
+  .filter-bar select{width:auto;flex-shrink:0;font-size:13px;padding:8px 10px;background:var(--bg-raised);}
+
+  .loc-group{margin-bottom:18px;}
+  .loc-group-title{font-family:'Fraunces',serif;font-style:italic;font-size:15px;color:var(--blue);margin-bottom:8px;padding-left:2px;}
+  .loc-child{margin-left:16px;}
+
+  .plant-list-card{display:flex;gap:14px;cursor:pointer;padding:14px;}
+  /* LOC-1. A media card, not a list row: the image is the identifying thing for
+     a place. Padding lives on the body so the photo goes edge to edge. */
+  .loc-card{padding:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;}
+  .loc-card-body{padding:12px 14px 14px;}
+  /* TASK-1 */
+  .task-row{display:flex;gap:11px;align-items:flex-start;background:var(--parchment);border-radius:10px;padding:11px 13px;cursor:pointer;}
+  .task-row.is-done{opacity:0.55;}
+  .task-row.is-done .task-title{text-decoration:line-through;}
+  .task-check{width:20px;height:20px;flex-shrink:0;margin-top:1px;border-radius:5px;border:1.8px solid var(--moss-dim);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;color:#12200F;}
+  .task-check.is-done{background:var(--moss);border-color:var(--moss);}
+  .task-check svg{width:13px;height:13px;}
+  .task-title{font-size:14px;color:var(--ink);line-height:1.3;}
+  .task-detail{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.45;}
+  .task-due{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--moss-dim);margin-top:5px;}
+  .task-due.is-overdue{color:var(--terracotta);font-weight:700;}
+  .task-subjects{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;}
+  .task-subject{display:inline-flex;align-items:center;gap:4px;background:var(--parchment-dim);border:none;border-radius:20px;padding:3px 9px;font-size:11px;color:var(--ink);cursor:pointer;font-family:inherit;}
+  .task-subject svg{width:12px;height:12px;color:var(--moss-dim);}
+  .task-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+  .task-chip{display:inline-flex;align-items:center;gap:5px;background:var(--moss);color:#12200F;border:none;border-radius:20px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;}
+  .task-chip svg{width:12px;height:12px;}
+  .task-pick{display:flex;align-items:center;gap:9px;width:100%;background:var(--bg);border:none;border-radius:8px;padding:10px 12px;font-size:13px;color:var(--cream);cursor:pointer;font-family:inherit;text-align:left;}
+  .task-pick.is-picked{background:var(--moss);color:#12200F;}
+  .task-pick svg{width:15px;height:15px;flex-shrink:0;}
+  /* The check-in banner on a specimen. Shown ONLY when actually due — a
+     bordered "everything is fine" panel on every healthy plant is a lot of
+     chrome for a non-event. The not-due case is one quiet line instead.
+     The svg rule is not optional: these icons carry a viewBox and no
+     width/height, so inside a flex row they stretch to fill the container. */
+  .checkin-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-radius:8px;padding:9px 12px;font-size:12.5px;
+    background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.5);color:var(--ink);}
+  .checkin-bar svg{width:16px;height:16px;flex-shrink:0;color:var(--terracotta);}
+  .checkin-bar .checkin-text{flex:1;min-width:140px;}
+  /* MOVE-1 */
+  .move-summary{display:flex;align-items:center;gap:14px;background:var(--bg);border-radius:8px;padding:11px 13px;margin-bottom:14px;}
+  .stay-list{display:flex;flex-direction:column;gap:10px;}
+  .stay{display:flex;gap:10px;align-items:flex-start;position:relative;}
+  .stay-dot{width:8px;height:8px;border-radius:50%;background:var(--parchment-dim);border:2px solid var(--moss-dim);flex-shrink:0;margin-top:5px;}
+  .stay.is-current .stay-dot{background:var(--moss);border-color:var(--moss);}
+  .stay-when{font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);margin-top:2px;}
+  .timeline-move{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.3px;color:var(--moss-dim);display:flex;align-items:center;gap:6px;margin:-4px 0 10px 2px;}
+  .timeline-move svg{width:12px;height:12px;flex-shrink:0;}
+  /* Two backgrounds, two colours. The default is for the cream cards; in the
+     lightbox the surround is near-black, where var(--ink) is invisible — the
+     suggested NAME vanished and the badge read "PLANTNET … — compare →" with a
+     gap where the answer should be. Same trap as .on-cream-ground on the dark
+     Plants page. */
+  .ident-badge{margin-top:6px;padding:7px 9px;background:rgba(124,167,161,0.15);border-radius:6px;font-size:12.5px;color:var(--ink);line-height:1.4;}
+  .ident-badge.on-dark{color:var(--cream);background:rgba(124,167,161,0.22);border:1px solid rgba(124,167,161,0.45);}
+  .ident-source{display:block;font-size:9.5px;color:var(--blue);text-transform:uppercase;letter-spacing:0.4px;}
+  /* Settings sections. Collapsed by default so the page is a short menu rather
+     than a wall — most of it is set once and never touched again. */
+  /* TODO-1 */
+  .todo-split{display:flex;flex-direction:column;gap:18px;}
+  .todo-queue{min-width:0;flex:1;}
+  .todo-tasks{min-width:0;}
+  .row-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(37,41,37,0.10);}
+  .row-act{background:var(--parchment-dim);border:none;border-radius:20px;padding:5px 11px;font-size:12px;color:var(--ink);cursor:pointer;font-family:inherit;}
+  .row-act:hover{background:var(--moss);color:#12200F;}
+  /* One back link, used by every drilled-in screen. The label is now the place
+     it returns to rather than always a tab name, so it can be long — "Names to
+     split", a bucket name, a quoted search — and it must never wrap beside its
+     chevron. Truncates instead. */
+  /* HOVER-1 */
+  .hover-card{position:absolute;z-index:110;width:290px;background:var(--parchment);color:var(--ink);
+    border-radius:10px;box-shadow:0 12px 34px -8px rgba(0,0,0,0.55);overflow:hidden;
+    opacity:0;visibility:hidden;transform:translateY(-4px);transition:opacity .12s,transform .12s;pointer-events:none;}
+  .hover-card.is-open{opacity:1;visibility:visible;transform:translateY(0);}
+  /* `visibility:hidden` still occupies the scrollable area, so a card last shown
+     near the right edge kept the document wider than the viewport and every
+     screen sat scrolled sideways. Parked off-canvas when closed instead. */
+  .hover-card:not(.is-open){left:-9999px !important;top:0 !important;}
+  .hover-card-media{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);}
+  .hover-card-media img{width:100%;height:100%;object-fit:cover;display:block;}
+  .hover-card-body{padding:11px 13px;}
+  .hover-card-name{font-family:'Fraunces',serif;font-size:15px;font-weight:600;margin-top:2px;line-height:1.25;}
+  .hover-card-sub{font-size:12.5px;color:var(--ink-soft);margin-top:1px;}
+  .hover-card-meta{display:flex;flex-direction:column;gap:3px;margin:8px 0 9px;font-size:11.5px;color:var(--ink-soft);}
+  .hover-card-meta div{display:flex;align-items:center;gap:5px;}
+  .hover-card-meta svg{width:12px;height:12px;flex-shrink:0;opacity:0.7;}
+  [data-plant-card]{cursor:pointer;}
+  /* FILE-1 */
+  .file-group{padding:12px 14px;}
+  .file-strip{display:flex;gap:6px;margin:10px 0;overflow-x:auto;padding-bottom:2px;}
+  .file-thumb{width:56px;height:56px;border-radius:6px;overflow:hidden;flex-shrink:0;background:var(--parchment-dim);cursor:pointer;}
+  .file-thumb img{width:100%;height:100%;object-fit:cover;}
+  .file-more{width:56px;height:56px;border-radius:6px;flex-shrink:0;background:var(--parchment-dim);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--moss-dim);}
+  .file-suggest{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(112,134,107,0.16);border:1px solid rgba(112,134,107,0.45);border-radius:8px;padding:10px 12px;}
+  .file-suggest.is-choice{background:var(--parchment-dim);border-color:rgba(37,41,37,0.12);}
+  .file-choices{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+  .screen-head{margin-bottom:16px;}
+  .screen-title{font-size:22px;font-weight:500;margin:0;}
+  .screen-context{margin:4px 0 0;line-height:1.45;}
+  .head-actions{display:flex;flex-wrap:wrap;gap:8px;flex-shrink:0;}
+  .back-link{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:2px 0 14px;
+    background:none;border:none;cursor:pointer;color:var(--cream);font-family:inherit;font-size:13.5px;opacity:0.8;}
+  .back-link:hover{opacity:1;}
+  .back-link svg{width:17px;height:17px;flex-shrink:0;}
+  .back-link .back-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+  /* SCROLL-1. The default scrollbars are a heavy white slab on this palette —
+     on the Gallery's horizontal rows they read as a UI element rather than a
+     hint. Thin, in the palette, and only present when there is something to
+     scroll. `scrollbar-width`/`scrollbar-color` is the standard property;
+     the ::-webkit rules cover Safari and Chrome, which still need them. */
+  * { scrollbar-width: thin; scrollbar-color: rgba(245,239,227,0.22) transparent; }
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:rgba(245,239,227,0.20);border-radius:8px;}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(245,239,227,0.38);}
+  ::-webkit-scrollbar-corner{background:transparent;}
+
+  /* On a cream surface the light thumb disappears, so invert it there. */
+  .modal, .tag-card, .surface, .on-cream-ground{scrollbar-color:rgba(37,41,37,0.25) transparent;}
+  .modal ::-webkit-scrollbar-thumb,
+  .tag-card ::-webkit-scrollbar-thumb,
+  .file-strip::-webkit-scrollbar-thumb{background:rgba(37,41,37,0.22);}
+  .modal ::-webkit-scrollbar-thumb:hover,
+  .tag-card ::-webkit-scrollbar-thumb:hover,
+  .file-strip::-webkit-scrollbar-thumb:hover{background:rgba(37,41,37,0.40);}
+
+  .filter-note{background:rgba(124,167,161,0.14);border:1px solid rgba(124,167,161,0.4);border-radius:8px;padding:11px 13px;color:var(--cream);}
+  .filter-note-head{font-size:10.5px;letter-spacing:0.5px;text-transform:uppercase;color:var(--blue);font-family:'IBM Plex Mono',monospace;}
+  .set-section{padding:0;overflow:hidden;margin-bottom:0;}
+  .set-head{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;padding:15px 16px;cursor:pointer;color:var(--cream);font-family:inherit;}
+  .set-chevron{display:flex;flex-shrink:0;opacity:0.5;transition:transform .15s;}
+  .set-chevron svg{width:16px;height:16px;}
+  .set-section.is-open .set-chevron{transform:rotate(90deg);opacity:0.9;}
+  .set-body{padding:0 16px 16px;}
+  .set-section + .set-section{margin-top:10px;}
+  .batch-row{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:9px 11px;}
+  .batch-qty{width:62px;flex-shrink:0;margin:0;padding:7px 8px;text-align:center;}
+  .stay-edit{padding:0;flex-shrink:0;opacity:0.45;}
+  .stay-edit:hover{opacity:1;}
+  .stay-note{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.4;}
+  .assigned-row{display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:8px;padding:9px 11px;}
+  .assigned-row svg{width:13px;height:13px;flex-shrink:0;}
+  .checkin-quiet{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);}
+  /* AI-3. Two different messages: linking to an existing species is correct and
+     just needs saying; a near miss is a warning. They must not look alike. */
+  .dupe-note{border-radius:8px;padding:9px 11px;margin:8px 0 4px;font-size:12.5px;line-height:1.45;}
+  .dupe-note.is-link{background:rgba(124,167,161,0.16);border:1px solid rgba(124,167,161,0.5);color:var(--ink);}
+  .dupe-note.is-warn{background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.55);color:var(--ink);}
+  .dupe-note strong{font-weight:700;}
+  .dupe-note .dupe-pick{background:none;border:none;padding:0;margin-top:6px;font-size:12.5px;text-decoration:underline;cursor:pointer;color:var(--ink);font-family:inherit;display:block;}
+  .plant-list-thumb{width:92px;height:92px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--parchment-dim);}
+  .plant-list-thumb-empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--moss-dim);}
+  .plant-list-thumb-empty svg{width:26px;height:26px;}
+
+  .thumb-delete-btn{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(37,41,37,0.75);color:var(--parchment);border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+  .thumb-delete-btn svg{width:12px;height:12px;}
+
+  .status-badge{position:absolute;top:-7px;right:-7px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.45);z-index:1;}
+  .status-badge svg{width:14px;height:14px;}
+  .status-badge.status-active{background:var(--moss);color:#12200F;}
+  /* A plant that has left the collection is neither well nor unwell. Without
+     this it took the green tick and read "Active & healthy" once needsAttention
+     stopped counting non-active plants. */
+  .status-badge.status-gone{background:var(--moss-dim);color:var(--parchment);opacity:0.75;}
+  .status-badge.status-attention{background:var(--terracotta);color:#3A1608;}
+  .status-badge.status-urgent{background:var(--terracotta);color:#3A1608;box-shadow:0 0 0 3px rgba(217,116,116,0.45);}
+
+  .select-check{position:absolute;top:-6px;left:-6px;width:22px;height:22px;border-radius:50%;background:var(--parchment);border:2px solid var(--moss-dim);z-index:2;display:flex;align-items:center;justify-content:center;color:#0F1712;}
+  .select-check.checked{background:var(--moss);border-color:var(--moss);}
+  .select-check svg{width:12px;height:12px;}
+
+  .bulk-action-bar{position:fixed;left:0;right:0;bottom:76px;background:var(--bg-raised);border-top:1px solid var(--line);padding:12px 0;z-index:28;}
+
+  /* ============================================================
+     CARD MEDIA — one image treatment, shared by Plant Detail,
+     Location Detail and the Inbox card. LOC-1 adopts it for the
+     Locations cards. 16:9 was dropped: it crops off-center subjects
+     badly, which is the whole reason for the pattern. Reach for a
+     ratio class here; do not add another bespoke image box.
+     ============================================================ */
+  /* The focal picker shows the WHOLE frame. It used to be a .ratio-4x3
+     .card-media, so it was already cropped: you picked a point on the crop,
+     could not see what was being cut, and the percentage was measured against
+     the cropped box rather than the photo. The previews show what the point
+     actually does at each ratio the app crops to. */
+  .focal-stage{position:relative;width:fit-content;max-width:100%;margin:0 auto;line-height:0;cursor:crosshair;}
+  .focal-stage img{max-width:100%;max-height:44vh;width:auto;height:auto;display:block;border-radius:8px;}
+  .focal-previews{display:flex;gap:12px;justify-content:center;margin-top:12px;}
+  .focal-previews > div{width:84px;}
+  .focal-prev{border-radius:6px;overflow:hidden;background:var(--parchment-dim);position:relative;}
+  .focal-prev.r-1x1{aspect-ratio:1;}
+  .focal-prev.r-4x3{aspect-ratio:4/3;}
+  .focal-prev img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
+  .focal-prev-cap{display:block;font-size:10.5px;color:#8AA090;margin-top:5px;text-align:center;line-height:1.3;}
+  .card-media{width:100%;background:var(--parchment-dim);position:relative;overflow:hidden;}
+  .card-media.ratio-4x3{aspect-ratio:4/3;}
+  .card-media.ratio-1x1{aspect-ratio:1;}
+  .card-media img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
+
+  /* PERF-1. These sit in the DOM before their blob arrives so the loader can
+     set src without a re-render. Hidden until then purely in CSS — no class
+     toggle to go wrong, and a failed fetch can never flash a broken-image
+     icon. Inline styles at call sites still override the box rules. */
+  .photo-img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;transition:opacity .18s ease;}
+  /* LOCP-3. An Area or an Archive is not a filing queue — its photos are the
+     content. Whole frame, no crop (the focal point is for thumbnails, and
+     there is nothing to centre on here), one column, captions underneath. */
+  .on-cream-icon{padding:0;color:var(--moss-dim);display:flex;}
+  .on-cream-icon svg{width:20px;height:20px;}
+  .on-cream-icon:hover{color:var(--ink);}
+  /* v2.18.0. Was CSS multi-column, which flows a chronological feed DOWN column
+     one and then back to the top for column two — so scrolling straight down
+     ran the dates out of order and back again. REFERENCE's own rule on
+     .section-grid says columns are "acceptable for independent reference cards
+     and would not be for a sequence", and a photo feed is a sequence. Mirrors
+     .card-grid now, so the Gallery tab and a location's photos agree. */
+  .photo-feed{display:flex;flex-direction:column;gap:10px;}
+  .photo-feed-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  .photo-feed-media{width:100%;aspect-ratio:1;background:#0B1410;cursor:zoom-in;line-height:0;overflow:hidden;}
+  .photo-feed-media .photo-img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
+  .photo-feed-body{padding:12px 15px 15px;}
+  .photo-feed-actions{display:flex;align-items:center;gap:18px;margin-bottom:10px;}
+  .photo-feed-actions .icon-only{background:none;border:none;padding:0;cursor:pointer;color:var(--cream);display:flex;}
+  .photo-feed-actions .icon-only svg{width:21px;height:21px;}
+  .photo-feed-actions .icon-only:hover{color:var(--moss);}
+  .photo-feed-actions .icon-only.danger{color:var(--terracotta);}
+  .photo-feed-actions .spacer{margin-left:auto;}
+  .photo-feed-cap{font-size:13.5px;color:var(--cream);line-height:1.45;}
+  .photo-feed-meta{font-size:11px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);margin-top:8px;font-family:'IBM Plex Mono',monospace;}
+  .photo-img:not([src]){opacity:0;}
+  .card-media-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
+  .card-media-empty svg{width:36px;height:36px;}
+  .card-media-empty span{font-size:12.5px;}
+  /* Lives inside the media box. The old .hero-change-btn floated over a
+     full-width hero via negative margin, which breaks in a two-column split. */
+  .card-media .media-btn{position:absolute;left:12px;bottom:12px;background:rgba(37,41,37,0.72);color:var(--parchment);border:none;font-size:12px;padding:7px 12px;border-radius:20px;cursor:pointer;backdrop-filter:blur(4px);z-index:1;}
+
+  /* Detail screens: image stacked on phones, beside the details from 700px. */
+  .detail-split{display:flex;flex-direction:column;}
+  .detail-split .detail-media{flex-shrink:0;}
+  .detail-split .detail-body{padding:18px 18px 16px 22px;min-width:0;}
+
+  /* PD-7 — Plant Detail v2.
+     The whole screen holds one shape regardless of which fields are filled:
+     every section renders, every field renders, blanks show a dimmed dash. */
+
+  /* Third column of the hero on wide screens; full width below 1100px. */
+  .detail-actions{padding:0 18px 18px 22px;}
+  /* Vertical action list at the right of the hero card. */
+  .action-card{border:1px solid rgba(37,41,37,0.18);border-radius:10px;overflow:hidden;flex-shrink:0;}
+  .action-row{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;border-bottom:1px solid rgba(37,41,37,0.18);padding:13px 14px;font-size:13.5px;font-family:inherit;color:var(--ink);text-align:left;cursor:pointer;}
+  .action-row:last-child{border-bottom:none;}
+  .action-row:active{background:rgba(36,62,54,0.06);}
+  /* The action card was built for the hero's parchment panel: no background of
+     its own, --ink text, and hairlines tuned for cream. v2.27.0 moved it into
+     the dark rail, where all three inverted into dark-on-dark — the washed-out
+     menu in Amanda's screenshot. This variant gives it the same surface as the
+     .section-card beside it. The specimen page's copy stays on parchment and
+     keeps the original. */
+  .action-card.on-dark{background:var(--ground-raised);border-color:var(--hairline);}
+  .action-card.on-dark .action-row{color:var(--on-ground);border-bottom-color:var(--hairline);}
+  .action-card.on-dark .action-row svg{color:var(--moss);}
+  .action-card.on-dark .action-row:active{background:rgba(245,239,227,0.07);}
+  /* The on-dark rule is (0,3,1) and .action-row.action-danger is (0,2,1), so
+     without this the destructive row would render cream like the rest of the
+     menu — the one row whose colour is the warning. */
+  .action-card.on-dark .action-row.action-danger,
+  .action-card.on-dark .action-row.action-danger svg{color:var(--terracotta);}
+  .action-row svg{width:19px;height:19px;flex-shrink:0;color:var(--moss-dim);}
+  .action-row .action-label{flex:1;min-width:0;}
+  .action-row .action-chevron{width:15px;height:15px;opacity:0.4;}
+  .action-row.action-danger{color:var(--terracotta);}
+  .action-row.action-danger svg{color:var(--terracotta);}
+
+  /* Section cards below the hero. */
+  /* TAXON-1 (v2.27.0), from Amanda's mockup. Replaces CSS `columns` on the
+     species page. Columns flow DOWN one and back to the top of the next, so
+     five cards of different heights left a near-empty third column holding
+     "No open tasks" — the void in her screenshot. A fixed rail does not do
+     that: the reference cards keep a column of their own regardless of what
+     the main column is doing.
+
+     .section-grid stays for the SPECIMEN page, which still suits it. */
+  .detail-layout{display:flex;flex-direction:column;gap:14px;margin-top:14px;}
+  .detail-main{display:flex;flex-direction:column;gap:14px;min-width:0;}
+  .detail-rail{display:flex;flex-direction:column;gap:14px;min-width:0;}
+  /* Headline facts, above the fold and above the cards. Deliberately NOT the
+     species name: the heading two inches up already says it. */
+  .stat-strip{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 18px;
+    background:var(--parchment);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;margin-top:14px;}
+  .stat-strip .stat-label{font-size:11px;letter-spacing:0.3px;text-transform:uppercase;color:var(--ink-soft);}
+  .stat-strip .stat-value{font-size:15px;color:var(--ink);margin-top:2px;line-height:1.25;}
+  .stat-strip .value-blank{font-size:15px;}
+  .section-grid{display:flex;flex-direction:column;gap:14px;margin-top:14px;}
+  .section-grid > *{break-inside:avoid;-webkit-column-break-inside:avoid;}
+  .section-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;padding:16px 18px;}
+  .section-card h4{font-family:'Fraunces',serif;font-style:italic;font-size:16px;font-weight:500;color:var(--cream);margin:0 0 10px;}
+  /* Icon + label + value. The icon column is fixed so labels align down the card. */
+  .field-row{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);}
+  .field-row:last-child{border-bottom:none;}
+  .field-row-icon{width:17px;flex-shrink:0;align-self:center;color:var(--blue);}
+  .field-row-icon svg{width:17px;height:17px;display:block;}
+  .field-row-label{font-size:12.5px;color:#8AA090;flex-shrink:0;}
+  .field-row-value{font-size:13.5px;color:#C9D6CC;margin-left:auto;text-align:right;min-width:0;word-break:break-word;}
+
+  /* Long-running task banner. Imports and backfills outlive the modal that
+     started them — tapping the backdrop dismisses the modal but not the work —
+     so progress needs somewhere to live that a stray tap cannot hide. */
+  .task-banner{position:fixed;left:0;right:0;top:0;z-index:60;background:var(--orange);color:#3A2408;
+    display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,0.3);}
+  .task-banner .task-spin{width:14px;height:14px;border:2px solid rgba(58,36,8,0.35);border-top-color:#3A2408;
+    border-radius:50%;animation:taskspin 0.8s linear infinite;flex-shrink:0;}
+  @keyframes taskspin{to{transform:rotate(360deg);}}
+  .task-banner-text{flex:1;min-width:0;font-size:13px;font-weight:600;}
+  .task-banner-sub{font-size:11px;font-weight:400;opacity:0.8;}
+
+  /* Reports: stat tiles and attention rows, both on cream. */
+  .stat-row{display:grid;grid-template-columns:repeat(4,1fr);}
+  .stat-cell{text-align:center;padding:14px 6px;border-right:1px solid rgba(37,41,37,0.12);}
+  .stat-cell:last-child{border-right:none;}
+  .stat-cell svg{width:20px;height:20px;color:var(--moss-dim);}
+  .stat-num{font-family:'Fraunces',serif;font-size:24px;font-weight:600;color:var(--ink);line-height:1.1;margin-top:4px;}
+  .stat-label{font-size:10px;letter-spacing:0.5px;text-transform:uppercase;color:var(--ink-soft);margin-top:2px;}
+  .attn-row{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;
+    border-bottom:1px solid rgba(37,41,37,0.12);padding:14px 16px;text-align:left;cursor:pointer;font-family:inherit;color:var(--ink);}
+  .attn-row:last-child{border-bottom:none;}
+  .attn-row:active{background:rgba(36,62,54,0.06);}
+  /* Third time a component built for the cream panel was put on the dark page
+     and inverted — after .action-row (v2.27.3) and this same class's icon
+     sizing (v2.26.2). Measured: --ink on --bg is 1.28:1 and --ink-soft is
+     2.03:1, against a WCAG AA floor of 4.5. Both were effectively invisible.
+     `node tools/palette.mjs` renders the whole matrix; check a pairing there
+     before moving a component across grounds. */
+  /* MIGRATED to semantic tokens (THEME-1). It said --cream and --parchment-dim,
+     which are literal: in daylight --parchment-dim is near-white and the
+     subtitle vanished on a white ground — the preview caught it. `--on-ground`
+     and `--on-ground-muted` mean "text on whatever the page is", so both
+     themes resolve correctly: 10.09 / 5.76 at night, 14.03 / 5.40 in daylight.
+     **This is what the token layer is for**, and the `.on-dark` name is now the
+     misleading part — it means "on the page ground", which is only dark at
+     night. Renaming it is part of the remaining migration. */
+  .attn-row.on-dark{color:var(--on-ground);border-bottom-color:var(--hairline);}
+  .attn-row.on-dark .attn-sub{color:var(--on-ground-muted);}
+  .attn-row.on-dark svg{color:var(--blue);}
+  .attn-row.on-dark:active{background:rgba(245,239,227,0.07);}
+  /* .attn-row sized only .action-chevron, because until v2.24.0 no attn-row had
+     ever carried a leading icon. The coffin was the first, and with no width it
+     grew to fill the row and crushed the label into a one-word column.
+     `.attn-row .action-chevron` is more specific, so the chevron keeps its 15px. */
+  .attn-row svg{width:19px;height:19px;flex-shrink:0;color:var(--moss-dim);}
+  .attn-title{font-size:14px;font-weight:600;}
+  .attn-sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .attn-count{font-family:'IBM Plex Mono',monospace;font-size:12px;min-width:26px;height:26px;border-radius:13px;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 7px;}
+  .attn-count.has{background:var(--terracotta);color:#3A1608;font-weight:700;}
+  .attn-count.clear{background:rgba(37,41,37,0.08);color:var(--ink-soft);}
+  .attn-row .action-chevron{width:15px;height:15px;opacity:0.35;flex-shrink:0;}
+
+  /* Sticky controls. At 2590 photos, scrolling to the bottom of a filtered set
+     and then wanting to change the filter meant scrolling all the way back.
+     The top bar scrolls away normally, so top:0 is correct; the task banner
+     sits above everything and pushes the page down via body padding, so this
+     needs no offset for it. */
+  /* Pins BELOW the sticky header group, not on top of it — both were at
+     top:0, so scrolling slid the filter row over the brand bar. The offset is
+     measured in render() rather than hardcoded, because the group's height
+     changes with the Inbox sub-bar, the task banner and the breakpoint.
+     z-index is one below the header group so any overlap resolves the right
+     way round. */
+  .sticky-controls{position:sticky;top:var(--sticky-top, 0px);z-index:19;background:var(--bg);
+    padding-top:10px;margin:0 -16px;padding-left:16px;padding-right:16px;
+    box-shadow:0 8px 12px -10px rgba(0,0,0,0.55);}
+
+  /* Gallery browse rows. Horizontal scrollers rather than grids, so a row is
+     a glance and a whole screen is a survey of the collection. */
+  .gal-row{margin-bottom:26px;}
+  .gal-row-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px;}
+  .gal-row-head h3{font-family:'Fraunces',serif;font-size:17px;font-weight:500;margin:0;}
+  .gal-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x proximity;}
+  /* SCROLL-1. These rows scroll by drag or wheel; the bar is a hint, not a
+     control, so it stays hidden until the row is touched. Kept beside the rule
+     above rather than with the global scrollbar block — this file has already
+     been bitten once by styling for one element living in two places. */
+  .gal-scroll{scrollbar-width:none;}
+  .gal-scroll::-webkit-scrollbar{height:0;}
+  .gal-scroll:hover{scrollbar-width:thin;}
+  .gal-scroll:hover::-webkit-scrollbar{height:6px;}
+  /* A soft edge says "there is more" better than a scrollbar does. */
+  .gal-scroll-wrap{position:relative;}
+  .gal-scroll-wrap::after{content:"";position:absolute;top:0;right:0;bottom:0;width:48px;pointer-events:none;
+    background:linear-gradient(to right, rgba(36,62,54,0), var(--bg));}
+  .gal-scroll > *{scroll-snap-align:start;flex-shrink:0;}
+  .gal-tile{width:132px;cursor:pointer;border:none;padding:0;background:none;text-align:left;}
+  .gal-tile .card-media{border-radius:8px;}
+  .gal-tile-cap{font-size:11px;color:#8AA090;margin-top:5px;font-family:'IBM Plex Mono',monospace;}
+  /* Album and archive cards: image with the title burned into the bottom. */
+  .gal-card{width:230px;border-radius:10px;overflow:hidden;position:relative;cursor:pointer;border:none;padding:0;background:var(--parchment-dim);text-align:left;}
+  .gal-card .card-media{border-radius:0;}
+  .gal-card-label{position:absolute;left:0;right:0;bottom:0;padding:26px 14px 12px;color:var(--parchment);
+    background:linear-gradient(to top, rgba(20,32,26,0.88), rgba(20,32,26,0));}
+  .gal-card-title{font-family:'Fraunces',serif;font-size:16px;font-weight:600;line-height:1.2;}
+  .gal-card-meta{font-size:11.5px;opacity:0.85;margin-top:3px;}
+  /* Highlights are smaller and lead with the icon, since the grouping is the
+     point rather than any one photo. */
+  .gal-chip{width:124px;border-radius:10px;overflow:hidden;position:relative;cursor:pointer;border:none;padding:0;background:var(--parchment-dim);text-align:left;}
+  .gal-chip-icon{position:absolute;top:8px;left:8px;width:26px;height:26px;border-radius:50%;background:rgba(20,32,26,0.7);
+    display:flex;align-items:center;justify-content:center;color:var(--parchment);}
+  .gal-chip-icon svg{width:15px;height:15px;}
+
+  /* Photo timeline: one column per location, photos descending inside it. */
+  .timeline-cols{display:flex;gap:14px;overflow-x:auto;padding-bottom:6px;align-items:flex-start;}
+  .timeline-col{flex:0 0 260px;min-width:0;}
+  .timeline-col-head{display:flex;align-items:center;gap:6px;font-family:'Fraunces',serif;font-style:italic;font-size:13px;color:var(--blue);margin-bottom:8px;line-height:1.3;}
+  .timeline-col-head svg{width:14px;height:14px;flex-shrink:0;}
+
+  /* High-contrast pill variants for use on the cream card — the
+     translucent dark-bg pill styles were nearly illegible here. */
+  .pill-solid{display:inline-block;font-size:11px;padding:3px 10px;border-radius:20px;font-weight:700;letter-spacing:0.2px;}
+  .pill-solid-moss{background:var(--moss);color:#12200F;}
+  .pill-solid-terracotta{background:var(--terracotta);color:#3A1608;}
+  .pill-solid-blue{background:var(--blue);color:#0F2622;}
+  .pill-solid-pink{background:var(--pink);color:#3A0F20;}
+  .pill-solid-urgent{background:var(--terracotta);color:#3A1608;box-shadow:0 0 0 2px rgba(217,116,116,0.38);text-transform:uppercase;letter-spacing:0.6px;}
+  .pill-solid-outline{background:transparent;border:1.5px solid var(--ink);color:var(--ink);}
+  .chicory-oncream{color:#3E6B77;}
+
+  /* Full-screen photo lightbox */
+  .lightbox-backdrop{position:fixed;inset:0;background:rgba(6,10,7,0.94);z-index:80;display:flex;flex-direction:column;}
+  .lightbox-top{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;color:var(--cream);}
+  .lightbox-body{flex:1;min-height:0;overflow:auto;display:flex;align-items:center;justify-content:center;position:relative;padding:0 8px;}
+  .lightbox-body img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;cursor:zoom-in;transition:none;}
+  .lightbox-body img.zoomed{max-width:none;max-height:none;width:auto;height:auto;cursor:zoom-out;border-radius:0;}
+  .lightbox-nav{background:rgba(255,255,255,0.12);border:none;color:var(--cream);width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+  .lightbox-nav svg{width:22px;height:22px;}
+  .lightbox-close{background:none;border:none;color:var(--cream);cursor:pointer;padding:6px;}
+  .lightbox-close svg{width:22px;height:22px;}
+  .lightbox-bottom{padding:16px 18px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:10px;}
+  .lightbox-counter{color:#9FB0A3;font-size:12.5px;}
+
+  /* ============================================================
+     RESPONSIVE — mobile-first base above; from here up, use the
+     extra real estate on tablet/laptop screens instead of just
+     centering a phone-width column.
+
+     THIS BLOCK MUST STAY LAST. Media queries add no specificity, so
+     any single-class base rule declared below it silently wins at
+     every width and the breakpoint quietly stops working. That is
+     what happened to .plant-list-thumb (stuck at 92px on every
+     screen) and to .detail-split (stuck stacked). Add new base rules
+     above this block, never after it.
+     ============================================================ */
+  @media (min-width: 700px) {
+    .container{max-width:900px;}
+    .card-grid{display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;align-items:start;}
+    .plant-list-thumb{width:120px;height:120px;}
+    .detail-split{flex-direction:row;align-items:flex-start;}
+    .detail-split .detail-media{width:42%;max-width:400px;}
+    .detail-split .detail-body{flex:1;}
+    /* Columns, not grid. These cards have wildly different heights — Care
+       notes with an empty state next to a four-row Collection — and a grid
+       makes every cell in a row as tall as the tallest, leaving the short
+       ones sitting over a hole. Columns pack vertically instead. Reading
+       order becomes down-then-across, which is fine for independent
+       reference cards. */
+    .queue-grid{grid-template-columns:repeat(3,1fr);}
+    .stat-strip{grid-template-columns:repeat(4,1fr);}
+    .detail-layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);
+      gap:16px;align-items:start;}
+    .detail-rail{order:2;}
+    .detail-main{order:1;}
+    .section-grid{display:block;columns:2;column-gap:14px;}
+    /* Bottom sheet is right on a phone and wrong on a desktop, where it
+       leaves a 640px column pinned to the bottom edge of a 1400px window.
+       Centred and wider from 700px up; the drag handle goes with it, since
+       nothing is being dragged. */
+    .modal-backdrop{align-items:center;padding:24px;}
+    .modal{max-width:760px;border-radius:16px;border-top:none;border:1px solid var(--line);
+      max-height:86vh;padding:24px 26px;}
+    .modal-handle{display:none;}
+    .photo-feed{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;align-items:start;}
+    .section-grid > *{display:inline-block;vertical-align:top;width:100%;margin-bottom:14px;}
+  }
+  @media (min-width: 1100px) {
+    .container{max-width:1280px;}
+    .card-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
+    .plant-list-thumb{width:140px;height:140px;}
+    .login-wrap .container{max-width:none;}
+    .queue-grid{grid-template-columns:repeat(4,1fr);}
+    /* Tasks beside the queue rather than above it, so neither pushes the other
+       off the first screen. */
+    .todo-split{flex-direction:row;align-items:flex-start;gap:22px;}
+    .todo-tasks{width:340px;flex-shrink:0;}
+    .section-grid{columns:3;column-gap:16px;}
+    /* Columns, not grid: photos are shown at their own aspect ratio, so cell
+       heights vary wildly and a grid would leave every short one over a hole. */
+    .photo-feed{grid-template-columns:repeat(3,1fr);gap:16px;}
+    .section-grid > *{margin-bottom:16px;}
+    /* Actions become the hero's third column only when there is room. */
+    .detail-split .detail-media{width:34%;max-width:420px;}
+    .detail-split .detail-actions{width:270px;flex-shrink:0;padding:18px 18px 18px 0;}
+  }
+</style>
+<style>
+  body{padding:0;margin:0;background:#111;}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:100vh;}
+  .pane{padding:24px;}
+  .pane h2{font:500 13px/1 'Inter',sans-serif;letter-spacing:.5px;text-transform:uppercase;
+    margin:0 0 18px;opacity:.65;}
+  .pane[data-theme="night"]{background:var(--ground);color:var(--on-ground);}
+  .pane[data-theme="daylight"]{background:var(--ground);color:var(--on-ground);}
+</style>
+<div class="split">
+  <div class="pane" data-theme="night"><h2>Night &mdash; indoors</h2>
+  <div class="queue-group">
+    <div class="queue-head"><h3>Needs you now</h3><span class="queue-total">6</span></div>
+    <div class="queue-grid">
+      <button class="queue-tile is-urgent"><div class="queue-num">5</div>
+        <div class="queue-title">Due for a check-in</div>
+        <div class="queue-sub">Scheduled, or nothing photographed in 14 days</div></button>
+      <button class="queue-tile"><div class="queue-num">17</div>
+        <div class="queue-title">Waiting to be planted</div>
+        <div class="queue-sub">In a staging area, not yet in the ground</div></button>
+    </div>
+  </div>
+
+  <div class="queue-group" style="margin-top:18px;">
+    <button class="attn-row on-dark">
+      <div style="flex:1;min-width:0;">
+        <div class="attn-title">Worked recently</div>
+        <div class="attn-sub">16 plants in the last 7 days &middot; 9 with no note yet</div>
+      </div>
+    </button>
+  </div>
+
+  <div class="section-card" style="margin-top:18px;">
+    <h4>Growing it</h4>
+    <div class="field-row"><div style="flex:1;">Container or ground</div><div>Happy either way</div></div>
+    <div class="field-row"><div style="flex:1;">Water</div><div>Low</div></div>
+    <div class="field-row"><div style="flex:1;">Soil</div><div class="value-blank">&mdash;</div></div>
+  </div>
+
+  <div class="action-card on-dark" style="margin-top:18px;">
+    <button class="action-row"><span class="action-label">Edit species record</span></button>
+    <button class="action-row action-danger"><span class="action-label">Delete species</span></button>
+  </div>
+
+  <div class="tag-card" style="margin-top:18px;padding:14px 16px;">
+    <div class="tag-id">ABG-2026-0101 &middot; Bucket 28</div>
+    <div style="font-size:14px;margin-top:3px;">A cream panel sitting on the page ground.</div>
+    <div class="subtle" style="font-size:12px;margin-top:4px;">Subtle text on the panel.</div>
+    <div class="wrap-gap" style="margin-top:10px;">
+      <button class="btn btn-accent btn-sm">Primary</button>
+      <button class="btn btn-secondary btn-sm">Secondary</button>
+      <button class="btn-ghost" style="font-size:12.5px;">Ghost</button>
+    </div>
+  </div>
+</div>
+  <div class="pane" data-theme="daylight"><h2>Daylight &mdash; outside in sun</h2>
+  <div class="queue-group">
+    <div class="queue-head"><h3>Needs you now</h3><span class="queue-total">6</span></div>
+    <div class="queue-grid">
+      <button class="queue-tile is-urgent"><div class="queue-num">5</div>
+        <div class="queue-title">Due for a check-in</div>
+        <div class="queue-sub">Scheduled, or nothing photographed in 14 days</div></button>
+      <button class="queue-tile"><div class="queue-num">17</div>
+        <div class="queue-title">Waiting to be planted</div>
+        <div class="queue-sub">In a staging area, not yet in the ground</div></button>
+    </div>
+  </div>
+
+  <div class="queue-group" style="margin-top:18px;">
+    <button class="attn-row on-dark">
+      <div style="flex:1;min-width:0;">
+        <div class="attn-title">Worked recently</div>
+        <div class="attn-sub">16 plants in the last 7 days &middot; 9 with no note yet</div>
+      </div>
+    </button>
+  </div>
+
+  <div class="section-card" style="margin-top:18px;">
+    <h4>Growing it</h4>
+    <div class="field-row"><div style="flex:1;">Container or ground</div><div>Happy either way</div></div>
+    <div class="field-row"><div style="flex:1;">Water</div><div>Low</div></div>
+    <div class="field-row"><div style="flex:1;">Soil</div><div class="value-blank">&mdash;</div></div>
+  </div>
+
+  <div class="action-card on-dark" style="margin-top:18px;">
+    <button class="action-row"><span class="action-label">Edit species record</span></button>
+    <button class="action-row action-danger"><span class="action-label">Delete species</span></button>
+  </div>
+
+  <div class="tag-card" style="margin-top:18px;padding:14px 16px;">
+    <div class="tag-id">ABG-2026-0101 &middot; Bucket 28</div>
+    <div style="font-size:14px;margin-top:3px;">A cream panel sitting on the page ground.</div>
+    <div class="subtle" style="font-size:12px;margin-top:4px;">Subtle text on the panel.</div>
+    <div class="wrap-gap" style="margin-top:10px;">
+      <button class="btn btn-accent btn-sm">Primary</button>
+      <button class="btn btn-secondary btn-sm">Secondary</button>
+      <button class="btn-ghost" style="font-size:12.5px;">Ghost</button>
+    </div>
+  </div>
+</div>
+</div>

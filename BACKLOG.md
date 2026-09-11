@@ -960,6 +960,14 @@ is a bonus rather than the argument.
 green was tried first and muddied everything: Bloom Orange went khaki, Terra
 Cotta went brown. In HSL they stay recognisably themselves at 4.6:1+.
 
+**Confirmed by Amanda 2026-09-11.** The lesson worth keeping: the first version
+failed because I treated "readable in sun" as the whole problem and let the
+brand fall out of it. The contrast numbers were fine both times — what changed
+was starting from the logo instead of from a target ratio.
+
+**Still unverified:** only `.attn-row` and `.action-card` use semantic tokens.
+Every other screen themes through the aliases and has not been seen in daylight.
+
 ### v2.33.0 — THEME-1, a daylight theme and the token layer under it
 
 Amanda reads the app on an iPad **in the garden, in direct sun**, where a dark

@@ -522,28 +522,6 @@ order by location_count desc;
 
 ## Open — verified 2026-08-28, end of session
 
-### DEDUPE-1 — three renders combine `plant_id` + `photo_plants` without deduping — `ready`
-
-Found 2026-09-08 while answering "how does the double link show in the app?" —
-the honest answer was three places, having first assumed none. All three
-concatenate the primary with the tagged plants and render the join:
-
-| Line | Screen | Renders |
-| --- | --- | --- |
-| `5416` | Plant Detail | `Also shows: <the plant whose page you are on>` — it does not exclude the current plant |
-| `5815` | Location Detail, containers | `Identified: X, X` |
-| `5775` | Location Detail, Areas/Archives | `Shows X, X` |
-
-The 12 rows that made this visible are deleted and the v2.19.0 guards close both
-write sites, so nothing can currently produce it. **This is hardening, not a
-live bug.** ~6 lines: dedupe by id, and on Plant Detail exclude `pl.id` from
-`taggedPlants` — a plant listing itself as "also shows" is wrong even with clean
-data, since the only way to see that line is on that plant's own page.
-
-Contrast with the paths that DO dedupe and were never affected:
-`plantPhotosOrdered()` and `plantsAssignedToPhoto()`. The rule is the same one
-REFERENCE §6 states for counting; these three are the display side of it.
-
 ### MERGE-2 — merge from anywhere, and merge child locations — `ready`
 
 Blocked on MERGE-1: widening access to a lossy merge makes it worse. Amanda's
@@ -944,6 +922,22 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.34.0 — DEDUPE-1: three renders stopped hand-rolling "which plants does this photo show"
+
+Plant Detail's *Also shows*, and both *Identified* / *Shows* lines on Location
+Detail, each built `[primary, ...tagged]` by hand and none deduped — a photo
+carrying both `photos.plant_id = X` and a `photo_plants` row for X rendered
+"X, X". All three now call `plantsAssignedToPhoto()`, which always deduped and
+was never affected. Plant Detail additionally excludes the plant whose page it
+is: listing itself under "Also shows" is wrong with clean data too.
+
+Four tests added and mutation-verified — removing the dedupe fails the first.
+The drift class this closes is the same one behind v2.19.0, v2.22.0, v2.23.1 and
+v2.29.0: a predicate copied rather than called.
+
+**Backup taken by Amanda 2026-09-11**, the first since the v2.21.1 restore fix.
+
 
 ### v2.33.1 — daylight reworked as the logo sheet
 

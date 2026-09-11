@@ -212,5 +212,42 @@ t("hasNoteSince is false when the only note predates the work", () => {
   ok(ctx.hasNoteSince("a", OLD));
 });
 
+/* ---------- plantsAssignedToPhoto (DEDUPE-1, v2.34.0) ----------
+
+   Three renders hand-rolled [primary, ...tagged] and none of them deduped:
+   Plant Detail's "Also shows", and both "Identified"/"Shows" lines on Location
+   Detail. A photo carrying BOTH photos.plant_id = X and a photo_plants row for
+   X rendered "X, X". The fix was to delete all three copies and call this
+   function, so these cases pin the behaviour they now depend on. */
+
+t("a plant both assigned and tagged appears once", () => {
+  // The exact shape of the 12 double-linked rows deleted 2026-09-08.
+  setState(ctx, {
+    plants: [{ id: "a" }, { id: "b" }],
+    photos: [{ id: "p", plant_id: "a" }],
+    photoPlants: [{ photo_id: "p", plant_id: "a" }, { photo_id: "p", plant_id: "b" }] });
+  eq(ctx.plantsAssignedToPhoto("p").map((x) => x.id), ["a", "b"]);
+});
+t("the primary comes first", () => {
+  // Ordering is load-bearing: "Identified: <owner>, <others>" reads wrong the
+  // other way round, and the old hand-rolled version got this right by luck.
+  setState(ctx, {
+    plants: [{ id: "a" }, { id: "b" }],
+    photos: [{ id: "p", plant_id: "b" }],
+    photoPlants: [{ photo_id: "p", plant_id: "a" }] });
+  eq(ctx.plantsAssignedToPhoto("p").map((x) => x.id), ["b", "a"]);
+});
+t("a tag naming a deleted plant is dropped, not rendered blank", () => {
+  setState(ctx, {
+    plants: [{ id: "a" }],
+    photos: [{ id: "p", plant_id: "a" }],
+    photoPlants: [{ photo_id: "p", plant_id: "gone" }] });
+  eq(ctx.plantsAssignedToPhoto("p").map((x) => x.id), ["a"]);
+});
+t("an unassigned photo shows nobody", () => {
+  setState(ctx, { plants: [{ id: "a" }], photos: [{ id: "p", plant_id: null }], photoPlants: [] });
+  eq(ctx.plantsAssignedToPhoto("p"), []);
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

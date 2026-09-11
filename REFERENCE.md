@@ -697,6 +697,15 @@ The Locations list renders **only top-level locations**, and a top-level area's 
 
 Both aggregate helpers **dedupe by id**. A photo tagged onto a parent and a child, or onto two sibling containers, is one photo in the rolled-up count. `aggregatePhotoCount` originally summed per-descendant lengths and double-counted.
 
+**The display side of the same rule (DEDUPE-1, v2.34.0).** "Which plants does
+this photo show" is `plantsAssignedToPhoto()` and nothing else — it returns the
+primary first, then the `photo_plants` tags, deduped, skipping tags whose plant
+is gone. Three renders hand-rolled `[primary, ...tagged]` instead and printed
+"X, X" for any photo linked both ways. **Do not rebuild that list inline.** On a
+plant's own detail screen, filter the plant itself out of the result: a specimen
+cannot "also show" itself.
+
+
 `locationCoverPhoto()` follows the same rolled-up logic: own `primary_photo_id` → own newest direct photo → newest photo anywhere beneath. The cost is that the Locations screen now issues Drive fetches on first paint where it previously issued none; `ensurePhotoLoaded` → `debouncedRender()` absorbs the async settle.
 
 ---

@@ -940,8 +940,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.33.1";
-const APP_UPDATED = "2026-09-08";
+const APP_VERSION = "2.34.0";
+const APP_UPDATED = "2026-09-11";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -6002,8 +6002,14 @@ function screenPlantDetail() {
           })()}
           <div class="card-grid">
             ${group.photos.map((p) => {
-              const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
-              const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
+              /* DEDUPE-1. Was a hand-rolled [primary, ...tagged] that neither
+                 deduped nor excluded the plant whose page this is. A photo both
+                 ASSIGNED to a plant and TAGGED with it rendered that plant
+                 twice; the only route to this line is that plant's own detail
+                 screen, so listing itself under "Also shows" is wrong even with
+                 clean data. plantsAssignedToPhoto() is the one predicate for
+                 "which plants does this photo show" — see REFERENCE 6. */
+              const alsoShows = plantsAssignedToPhoto(p.id).filter((x) => x.id !== pl.id);
               const photoLocs = allLocationsForPhoto(p);
               const isPrimary = pl.primary_photo_id === p.id;
               // Photos can appear here either because this plant owns them directly
@@ -6020,7 +6026,7 @@ function screenPlantDetail() {
                     <div>
                       <div class="mono" style="font-size:11px;color:#8AA090;">${fmtDate(photoDate(p))}</div>
                       <div style="font-size:14px;margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "—"}</div>
-                      ${taggedPlants.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:4px;">Also shows: ${taggedPlants.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
+                      ${alsoShows.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:4px;">Also shows: ${alsoShows.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
                       ${photoLocs.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:2px;">📍 ${photoLocs.map((l2) => escapeHtml(l2.name)).join(", ")}</div>` : ""}
                     </div>
                   </div>
@@ -6360,9 +6366,8 @@ function screenLocationDetail() {
              exactly this case. */""}
         <div class="photo-feed">
           ${photos.map((p) => {
-            const claimedBy = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
-            const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
-            const shown = [claimedBy, ...taggedIds.map((id) => state.plants.find((x) => x.id === id))].filter(Boolean);
+            // DEDUPE-1. See the note on Plant Detail above.
+            const shown = plantsAssignedToPhoto(p.id);
             return `
             <div class="photo-feed-card" style="${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}">
               <div class="photo-feed-media" style="position:relative;" onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : `openLightbox('${l.id}','${p.id}','location')`}">
@@ -6389,9 +6394,8 @@ function screenLocationDetail() {
             const plantnetSuggestion = suggestions.find((s) => s.source === "PlantNet");
             const claudeSuggestion = suggestions.find((s) => s.source === "Claude");
             const isIdentifying = state.identifyingPhotoId === p.id;
-            const claimedBy = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
-            const taggedIds = state.photoPlants.filter((pp) => pp.photo_id === p.id).map((pp) => pp.plant_id);
-            const taggedPlants = taggedIds.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
+            // DEDUPE-1. See the note on Plant Detail above.
+            const shown = plantsAssignedToPhoto(p.id);
             const suggestionBadge = (sg) => identificationBadge(sg);
             return `
             <div class="tag-card" style="position:relative;${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}"
@@ -6402,7 +6406,7 @@ function screenLocationDetail() {
                 <div style="flex:1;min-width:0;">
                   <div class="tag-id">${fmtDate(photoDate(p))}${photoMetaSuffix(p)}</div>
                   <div style="font-size:13.5px;color:var(--ink-soft);margin-top:2px;">${p.notes ? escapeHtml(p.notes) : "No notes"}</div>
-                  ${claimedBy || taggedPlants.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:4px;">Identified: ${[claimedBy, ...taggedPlants].filter(Boolean).map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
+                  ${shown.length ? `<div style="font-size:11.5px;color:var(--moss-dim);margin-top:4px;">Identified: ${shown.map((tp) => escapeHtml(plantDisplayName(tp))).join(", ")}</div>` : ""}
                   ${(() => {
                     const otherLocs = allLocationsForPhoto(p).filter((loc) => loc.id !== l.id);
                     return otherLocs.length ? `<div style="font-size:11.5px;color:var(--blue);margin-top:2px;">Also in: ${otherLocs.map((loc) => escapeHtml(loc.name)).join(", ")}</div>` : "";

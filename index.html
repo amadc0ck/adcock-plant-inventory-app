@@ -2751,7 +2751,7 @@ function taxonNameParts(t) {
   // Only meaningful below a species, so it rides along with the epithet.
   const infra = epithet ? (t.infraspecific || "").trim() : "";
   if (!genus || (!epithet && !cultivar)) return null; // not enough to beat the free text
-  /* NAME-3, v2.37.0. **Two different crosses wear the same sign and they are
+  /* NAME-5, v2.37.0. **Two different crosses wear the same sign and they are
      not the same fact.** `is_hybrid` puts the \u00D7 BETWEEN genus and epithet —
      *Kalanchoe* \u00D7 *houghtonii*, a cross between two species. A nothogenus
      wears it BEFORE the genus — \u00D7Graptosedum, a genus that is itself a cross

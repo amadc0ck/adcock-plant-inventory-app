@@ -693,7 +693,7 @@ a merge re-points them rather than dropping them — "watered in Bucket 40" stay
 true when Bucket 40 is absorbed. Verified by probing the database 2026-09-11,
 not from this document.
 
-**The two hybrid signs (NAME-3, v2.37.0).** They are different facts and must
+**The two hybrid signs (NAME-5, v2.37.0).** They are different facts and must
 not be conflated. `taxa.is_hybrid` means *this is a cross between two species*
 and renders the × **between genus and epithet** — *Kalanchoe* × *houghtonii*. A
 **nothogenus** is a genus that is itself an intergeneric cross, wears the ×

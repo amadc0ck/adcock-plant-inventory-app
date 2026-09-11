@@ -27,7 +27,7 @@ Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
 ### OUTSTANDING SQL — one statement, held deliberately
 
 **NOTHING OUTSTANDING.** Both 2026-09-11 statements ran and were verified: the
-NAME-3 data fix (9 rows, all four audit checks now return 0) and
+NAME-5 data fix (9 rows, all four audit checks now return 0) and
 `taxa_identity_uniq` (read back from `pg_indexes`).
 
 **Superseded — AWAITING RESULTS, 2026-09-11.** A read-only audit for the four data-quality
@@ -533,32 +533,6 @@ order by location_count desc;
 
 ## Open — verified 2026-08-28, end of session
 
-### NAME-3 — the data-quality pass, audited 2026-09-11 — `SQL awaiting Amanda`
-
-Audit run against live data. **Two of the four findings were not defects.**
-
-- **Cultivar quotes (3 rows).** Real in storage, but `cultivarLabel()` already
-  strips quotes before adding its own, so nothing ever rendered double-quoted.
-  Hygiene, not a bug.
-- **`cv.` notation (1 row).** Only in `botanical_name`, which the parts
-  outrank — never displayed. Cosmetic.
-- **`xPachyveria` (1 row, 3 specimens).** Real and consequential: it will not
-  group with `Pachyveria 'Haagei'`, which exists separately.
-- **`is_hybrid = false` on 5 records stating a cross — DECLINED, see below.**
-
-**Do not "fix" the five.** `is_hybrid` means *the × goes between genus and
-epithet*. Four of the five have no epithet, so it draws nothing. The fifth,
-*Opuntia basilaris* 'Baby Rita', would render `Opuntia × basilaris 'Baby Rita'`
-— asserting *O. basilaris* is a hybrid species, which is false. All four
-records where `is_hybrid` is true AND an epithet exists are correct
-interspecific hybrids; the flag is doing its job 4 for 4.
-
-**The × actually missing was the nothogenus one**, shipped in v2.37.0 — 12
-records across Graptosedum, Graptoveria, Pachyveria and Sedeveria, all of which
-dropped their sign. Derived from `TAXON_NOTHOGENERA`, never stored.
-
-SQL touches 9 rows across 9 distinct taxa, each hit by exactly one CTE.
-
 ### AI-4 — cite San Marcos Growers when researching a species — `ready`
 
 Requested 2026-09-03. Species facts suggested by AI arrive unattributed, so
@@ -899,6 +873,20 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### NAME-5 — data-quality pass, RAN 2026-09-11
+
+*(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
+the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
+permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
+claiming one. The v2.37.0 commit message still says NAME-3.)*
+
+9 rows across 9 taxa. All four audit checks now return 0 against live data.
+Two of the four original findings were **not defects** — the cultivar quotes
+never rendered double (`cultivarLabel()` already strips them), and setting
+`is_hybrid` on the five cross-parentage records would have been wrong, visibly
+so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
+missing. Do not reopen the is_hybrid half.
+
 ### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
 
 `taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
@@ -947,7 +935,7 @@ a unique violation with no explanation is worth seeing, not swallowing.
 after the index shows Amanda a raw Postgres error.
 
 
-### v2.37.0 — NAME-3: two different crosses, two different signs
+### v2.37.0 — NAME-5: two different crosses, two different signs
 
 `is_hybrid` puts the × between genus and epithet. A **nothogenus** wears it
 before the genus, and that is derivable from the name — `TAXON_NOTHOGENERA`

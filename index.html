@@ -940,7 +940,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.37.0";
+const APP_VERSION = "2.38.0";
 const APP_UPDATED = "2026-09-11";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -13053,7 +13053,29 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
       if (parts[k]) body[k] = parts[k];
     });
   }
-  const [created] = await restPost("taxa", body);
+  /* TAXA-IDX, v2.38.0. **This function is a check-then-act race**, and it lost
+     one: two *Sedum adolphii* rows were created five seconds apart, both
+     findTaxonByName() calls missing because neither insert had landed yet.
+     `taxa` now carries a unique index on the composed name, so the loser gets a
+     23505 instead of writing a second species.
+
+     Losing the race is not an error — the row it wanted now exists. Refresh
+     from the server (state.taxa is stale by definition here: the winner landed
+     after the last loadAll) and resolve to it, so the specimen links to the
+     same species either way and Amanda never sees that this happened.
+
+     Rethrow anything else, and rethrow a 23505 we cannot resolve: a unique
+     violation we cannot explain is worth surfacing, not swallowing. */
+  let created;
+  try {
+    [created] = await restPost("taxa", body);
+  } catch (e) {
+    if (!String(e.message).includes("23505")) throw e;
+    state.taxa = await restGetAll("taxa", "?select=*");
+    const won = findTaxonByName(name, common);
+    if (won) return won.id;
+    throw e;
+  }
   return created ? created.id : null;
 }
 

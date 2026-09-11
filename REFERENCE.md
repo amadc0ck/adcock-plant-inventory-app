@@ -704,6 +704,15 @@ is a hybrid. `nameKey()` strips a leading `x ` so the rendered sign cannot move
 a matching key — without that, `findTaxonByName()` misses and a duplicate taxon
 is created silently.
 
+**`taxa` identity (TAXA-IDX).** A species is identified by
+`(genus, species_epithet, infraspecific, cultivar, working_label)`, lowercased
+and trimmed, with quoting stripped from the cultivar — not by `botanical_name`,
+which is free text and often absent since v1.65.0. A unique partial index
+enforces this where `genus` is present. `working_label` is in the key so two
+genuinely different unidentified plants of one genus stay distinct, while two
+identical blank placeholders are refused. `ensureTaxonForName()` catches the
+23505 and resolves to the winning row — see v2.38.0.
+
 **Deletion / merge cleanup order** — any function deleting or merging a plant must handle, in order. **Corrected 2026-09-08 (MERGE-1): five of these were missing and `mergePlants()` was built from the short list, so every merge silently destroyed the merged plant's watering and bloom history.**
 
 1. `photos.plant_id` — unassign on delete, reassign on merge. Do not delete the photo.

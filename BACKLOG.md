@@ -596,23 +596,23 @@ site-side). A per-species San Marcos link belongs on that page too.
 Everything below is either **waiting on Amanda** or **decided but unbuilt**.
 Nothing here is blocked on code that has not shipped.
 
-### TAXA-IDX — unique index on the composed taxon name — `needs a decision`
+### TAXA-IDX — unique index on the composed taxon name — `SQL awaiting Amanda`
 
-All three tools in the old "Code, ready to build" shipped (v2.35.0 and the
-earlier `deleteTaxon`). What is left is the fix rather than the workaround.
+Code half shipped v2.38.0. The index itself is one statement, still to run.
 
-`ensureTaxonForName()` reads then inserts, and `taxa` has no unique constraint,
-so two rapid creates both miss — that is how two *Sedum adolphii* rows appeared
-five seconds apart. The composed name is computed in JS, not stored, so this
-needs an expression index or a generated column. **Three decisions:**
+Measured against live data 2026-09-11: **157 rows, 157 distinct keys, zero
+collisions** — it builds as-is. All three worries from the earlier write-up
+turned out not to apply:
 
-1. Must run AFTER the Duplicate species tile is cleared — it fails if a pair exists.
-2. Must be **partial** (`WHERE genus IS NOT NULL AND genus <> ''`), or every
-   `working_label`-only taxon composes to `''` and they all collide.
-3. The five bare-genus placeholders collide with each other by design. Probably
-   right — two bare `Echeveria` rows are the same placeholder — but Amanda's call.
+1. Duplicates cleared first — `findDuplicateTaxaGroups()` returns 0.
+2. The partial `where genus <> ''` excludes nothing today (all 157 have one);
+   kept as a guard for future `working_label`-only rows.
+3. Only **3** bare-genus placeholders, not 5, and all different genera.
+   `working_label` is in the key, so two genuinely different unknown Echeverias
+   stay distinct while two identical blank ones are refused.
 
-**Schema change. Ask first.**
+**Residual gap, stated not fixed:** a taxon created from a common name alone
+parses no genus, so the partial index does not cover that race.
 
 ### SQL — NOTHING OUTSTANDING
 
@@ -912,6 +912,21 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.38.0 — losing the taxon race is no longer an error
+
+`ensureTaxonForName()` is a check-then-act race and it lost one: two *Sedum
+adolphii* rows five seconds apart. With a unique index on `taxa` the loser now
+gets a 23505 — so it refreshes from the server (`state.taxa` is stale by
+definition at that point, the winner landed after the last `loadAll`) and
+resolves to the row that won. The specimen links to the same species either way.
+
+Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —
+a unique violation with no explanation is worth seeing, not swallowing.
+
+**Shipped before the index on purpose.** The other order means the first race
+after the index shows Amanda a raw Postgres error.
+
 
 ### v2.37.0 — NAME-3: two different crosses, two different signs
 

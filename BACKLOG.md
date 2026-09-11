@@ -596,24 +596,6 @@ site-side). A per-species San Marcos link belongs on that page too.
 Everything below is either **waiting on Amanda** or **decided but unbuilt**.
 Nothing here is blocked on code that has not shipped.
 
-### TAXA-IDX — unique index on the composed taxon name — `SQL awaiting Amanda`
-
-Code half shipped v2.38.0. The index itself is one statement, still to run.
-
-Measured against live data 2026-09-11: **157 rows, 157 distinct keys, zero
-collisions** — it builds as-is. All three worries from the earlier write-up
-turned out not to apply:
-
-1. Duplicates cleared first — `findDuplicateTaxaGroups()` returns 0.
-2. The partial `where genus <> ''` excludes nothing today (all 157 have one);
-   kept as a guard for future `working_label`-only rows.
-3. Only **3** bare-genus placeholders, not 5, and all different genera.
-   `working_label` is in the key, so two genuinely different unknown Echeverias
-   stay distinct while two identical blank ones are refused.
-
-**Residual gap, stated not fixed:** a taxon created from a common name alone
-parses no genus, so the partial index does not cover that race.
-
 ### SQL — NOTHING OUTSTANDING
 
 Both jobs done 2026-08-28. The **SPECIES-1 column drop** ran (see v2.6.0) and
@@ -912,6 +894,38 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
+
+`taxa_identity_uniq` is live. Identity is
+`(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
+and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
+157 rows, 157 distinct keys.
+
+Three paths can now hit it, and `restPost("taxa")` was only one of them:
+
+- **The create race** — resolves to the winner (v2.38.0).
+- **Edit species** — renaming onto another species' identity now says so and
+  points at Merge, instead of printing a Postgres body.
+- **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
+  with the same identity under a different id would have died mid-restore on a
+  raw error. It now names what is in the way. **It does not skip the row:**
+  the plants referencing that `taxa_id` would fail the FK next and take the
+  rest of the restore with them.
+
+`isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
+`taxa` may grow another unique index, and bare 23505 would then send her to
+Merge over something unrelated.
+
+**Testing note worth keeping:** the first version of its SQLSTATE test used a
+message containing the word "duplicate", and a mutant matching only that word
+survived it. The test now carries neither the name nor the prose, so it can
+only pass through the branch it is testing. A test that cannot fail the mutation
+it was written for is not evidence.
+
+**Residual gap:** a taxon created from a common name alone parses no genus and
+is outside the partial index. Unchanged, and still not covered.
+
 
 ### v2.38.0 — losing the taxon race is no longer an error
 

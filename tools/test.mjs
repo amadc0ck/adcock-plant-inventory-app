@@ -373,5 +373,31 @@ t("an interspecific sign mid-name is still folded, not stripped", () => {
   eq(ctx.nameKey("Kalanchoe \u00D7 houghtonii"), ctx.nameKey("Kalanchoe x houghtonii"));
 });
 
+/* ---------- isTaxonIdentityClash (TAXA-IDX, v2.39.0) ----------
+
+   Three paths now depend on telling this one constraint from everything else:
+   the create race, a rename in Edit species, and the backup restore. Getting it
+   wrong sends her to Merge over an unrelated failure. */
+
+t("the named constraint is recognised", () => {
+  ok(ctx.isTaxonIdentityClash(new Error('duplicate key value violates unique constraint "taxa_identity_uniq"')));
+});
+t("a bare SQLSTATE still counts, with no constraint name and no prose", () => {
+  /* The whole reason the 23505 fallback exists. Deliberately carries NEITHER
+     the constraint name NOR the word "duplicate", so this case can only pass
+     via the SQLSTATE branch — an earlier version of this test said
+     "duplicate key" and a mutant that matched only that word survived it. */
+  ok(ctx.isTaxonIdentityClash(new Error('{"code":"23505","details":"Key already exists."}')));
+});
+t("an unrelated failure is not a name clash", () => {
+  // The case that would tell her to merge over a dropped column.
+  no(ctx.isTaxonIdentityClash(new Error("PGRST204 Column 'origin' of relation 'taxa' does not exist")));
+  no(ctx.isTaxonIdentityClash(new Error('{"code":"42703","message":"column does not exist"}')));
+});
+t("no error at all is not a clash", () => {
+  no(ctx.isTaxonIdentityClash(null));
+  no(ctx.isTaxonIdentityClash(undefined));
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

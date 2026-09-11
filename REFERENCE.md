@@ -707,8 +707,9 @@ is created silently.
 **`taxa` identity (TAXA-IDX).** A species is identified by
 `(genus, species_epithet, infraspecific, cultivar, working_label)`, lowercased
 and trimmed, with quoting stripped from the cultivar — not by `botanical_name`,
-which is free text and often absent since v1.65.0. A unique partial index
-enforces this where `genus` is present. `working_label` is in the key so two
+which is free text and often absent since v1.65.0. The unique partial index
+`taxa_identity_uniq` enforces this where `genus` is present (created
+2026-09-11). `working_label` is in the key so two
 genuinely different unidentified plants of one genus stay distinct, while two
 identical blank placeholders are refused. `ensureTaxonForName()` catches the
 23505 and resolves to the winning row — see v2.38.0.

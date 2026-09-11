@@ -940,7 +940,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.38.0";
+const APP_VERSION = "2.39.0";
 const APP_UPDATED = "2026-09-11";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1285,6 +1285,14 @@ async function restoreUpsert(table, rows, conflictCol = "id") {
       // PostgREST names the offending column in single quotes; Postgres 42703
       // uses double. Accept either, and only retry when a name was actually
       // found — otherwise this would swallow unrelated failures.
+      /* A backup row carrying a species that already exists here under a
+         different id. Skipping it is not an option — its plants' `taxa_id`
+         would then fail the FK and take the rest of the restore with it — so
+         stop and say which thing is in the way. Same spirit as the column
+         stripping above: a restore that dies must say what it died on. */
+      if (table === "taxa" && isTaxonIdentityClash(e)) {
+        throw new Error("Restore stopped: this backup holds a species that already exists here under a different id. Merge or delete the live one first \u2014 To Do \u203A Duplicate species.");
+      }
       const m = /column ['"]([^'"]+)['"] of relation|column ['"]([^'"]+)['"] does not exist/i.exec(String(e.message || ""));
       const col = m && (m[1] || m[2]);
       if (!col || dropped.includes(col)) throw e;
@@ -2921,6 +2929,17 @@ const TAXON_NOTHOGENERA = new Set([
   "graptoveria", "graptosedum", "pachyveria", "sedeveria", "cremneria",
   "mangave", "gasteraloe", "gastrolea", "alworthia",
 ]);
+/* TAXA-IDX, v2.39.0. The unique index `taxa_identity_uniq` refuses a second
+   row with the same (genus, epithet, infraspecific, cultivar, working_label).
+   Matched by CONSTRAINT NAME first: `taxa` could grow another unique index
+   later, and the bare SQLSTATE would then catch the wrong thing and tell her
+   to merge over something unrelated. 23505 stays as a fallback because
+   PostgREST does not always surface the name. */
+function isTaxonIdentityClash(e) {
+  const m = String((e && e.message) || "");
+  return m.includes("taxa_identity_uniq") || m.includes("23505");
+}
+
 function taxonLooksHybrid(t) {
   const g = String(t.genus || "").trim();
   if (t.is_hybrid === true) return true;
@@ -13070,7 +13089,7 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
   try {
     [created] = await restPost("taxa", body);
   } catch (e) {
-    if (!String(e.message).includes("23505")) throw e;
+    if (!isTaxonIdentityClash(e)) throw e;
     state.taxa = await restGetAll("taxa", "?select=*");
     const won = findTaxonByName(name, common);
     if (won) return won.id;
@@ -13311,6 +13330,14 @@ function wireModalForms() {
         try {
           await restPatch("taxa", `id=eq.${state.modal.data.taxonId}`, body);
         } catch (err) {
+          /* Renaming a species onto another one's identity. The index is right
+             to refuse — they would be duplicates — but the raw Postgres body is
+             not an answer. Merge is the thing she actually wants, and since
+             v2.35.0 it exists. */
+          if (isTaxonIdentityClash(err)) {
+            toast("Another species already has that name. Merge the two instead \u2014 To Do \u203A Duplicate species.", true);
+            return;
+          }
           if (!/PGRST204/.test(err.message) || !("frost_tender" in body)) throw err;
           delete body.frost_tender;
           await restPatch("taxa", `id=eq.${state.modal.data.taxonId}`, body);

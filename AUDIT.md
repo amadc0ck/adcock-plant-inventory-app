@@ -268,6 +268,37 @@ account — flagged, not urgent.
 
 ---
 
+### F7 · The palette has no legible mid-tone on the dark ground · MEDIUM · effort S
+
+**What.** Of ten ink variables, **only three reach WCAG AA (4.5:1) against
+`--bg` #243E36** — and two of those are near-white.
+
+| Variable | on `--bg` | on `--bg-raised` |
+| --- | --- | --- |
+| `--cream` #F5EFE3 | 10.09 | 8.49 |
+| `--parchment-dim` #E8E0D0 | 8.81 | 7.41 |
+| `--orange` #F2A65A | 5.71 | 4.80 |
+| `--blue` #7CA7A1 | 4.35 | 3.66 |
+| `--pink` #D67A9A | 3.91 | 3.29 |
+| `--terracotta` #D97474 | 3.69 | 3.10 |
+| `--moss` #70866B | **2.92** | 2.46 |
+| `--ink-soft` #5A6B5D | **2.03** | 1.71 |
+| `--ink` #252925 | **1.28** | 1.52 |
+
+**Cost.** Secondary text on a dark screen must either shout (near-white) or be
+unreadable. There is nothing in between, so components built for the cream panel
+invert when moved — which has now happened three times: `.action-row`
+(v2.27.3), `.attn-row` icon sizing (v2.26.2), `.attn-row` colours (v2.32.1, at
+1.28:1 and 2.03:1).
+
+**The palette is fixed by CLAUDE.md**, so this needs a decision rather than a
+fix. The in-family candidate is Aloe Green tinted toward Warm Cream —
+**#B2BAA7 reaches 5.76:1 on `--bg` and 4.85:1 on `--bg-raised`**, passing AA on
+both while still reading as muted. `tools/palette.mjs` renders the whole matrix.
+
+**Also measured:** Cactus Flower Pink is used **4 times** in 12,911 lines, the
+least-used brand colour by a wide margin.
+
 ## What is already good
 
 Stated plainly because the prompt asks for it and because it is true:

@@ -1,0 +1,203 @@
+<!doctype html><meta charset="utf-8"><title>ABG palette</title>
+<style>
+  :root{--bg:#243E36;--bg-raised:#2C4A40;--parchment:#F5EFE3;--parchment-dim:#E8E0D0;--ink:#252925;--ink-soft:#5A6B5D;--cream:#F5EFE3;--moss:#70866B;--moss-dim:#576B53;--blue:#7CA7A1;--orange:#F2A65A;--terracotta:#D97474;--pink:#D67A9A;--line:rgba(245,239,227,0.14);}
+  body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#1b2e28;color:#F5EFE3;padding:32px;}
+  h1{font:600 24px/1.2 Georgia,serif;margin:0 0 4px;}
+  h2{font:500 17px/1.2 Georgia,serif;margin:36px 0 12px;color:#9fb8a8;letter-spacing:.3px;}
+  p.note{color:#9fb8a8;margin:0 0 8px;max-width:70ch;}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid rgba(245,239,227,.12);}
+  th{color:#9fb8a8;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.4px;}
+  .sw{width:34px;height:22px;border-radius:5px;display:inline-block;vertical-align:middle;border:1px solid rgba(0,0,0,.25);}
+  .bar{height:7px;border-radius:4px;background:#7CA7A1;display:inline-block;vertical-align:middle;}
+  .pass{color:#8fd6a8;} .warn{color:#F2A65A;} .fail{color:#ff9c9c;font-weight:600;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:12px;}
+  .card{border-radius:10px;padding:12px 14px;border:1px solid rgba(245,239,227,.14);}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;}
+  .spec{border-radius:10px;padding:14px 16px;margin-bottom:10px;}
+</style>
+<h1>Adcock Botanical Garden — palette</h1>
+<p class="note">Generated from <span class="mono">index.html</span> on 2026-09-11.
+Regenerate with <span class="mono">node tools/palette.mjs</span>. Every number here is measured, not asserted.</p>
+
+<h2>Brand palette · what the app actually uses</h2>
+<table><tr><th>Brand colour</th><th>Hex</th><th>CSS variable</th><th>Uses in index.html</th></tr>
+<tr><td><span class="sw" style="background:#243E36"></span> Deep Garden Green</td><td class="mono">#243E36</td>
+    <td class="mono">--bg</td>
+    <td><span class="bar" style="width:33px"></span> 13</td></tr><tr><td><span class="sw" style="background:#70866B"></span> Aloe Green</td><td class="mono">#70866B</td>
+    <td class="mono">--moss</td>
+    <td><span class="bar" style="width:70px"></span> 28</td></tr><tr><td><span class="sw" style="background:#D97474"></span> Terra Cotta</td><td class="mono">#D97474</td>
+    <td class="mono">--terracotta</td>
+    <td><span class="bar" style="width:108px"></span> 43</td></tr><tr><td><span class="sw" style="background:#F2A65A"></span> Aloe Bloom Orange</td><td class="mono">#F2A65A</td>
+    <td class="mono">--orange</td>
+    <td><span class="bar" style="width:40px"></span> 16</td></tr><tr><td><span class="sw" style="background:#D67A9A"></span> Cactus Flower Pink</td><td class="mono">#D67A9A</td>
+    <td class="mono">--pink</td>
+    <td><span class="bar" style="width:10px"></span> 4</td></tr><tr><td><span class="sw" style="background:#7CA7A1"></span> Agave Blue</td><td class="mono">#7CA7A1</td>
+    <td class="mono">--blue</td>
+    <td><span class="bar" style="width:105px"></span> 42</td></tr><tr><td><span class="sw" style="background:#F5EFE3"></span> Warm Cream</td><td class="mono">#F5EFE3</td>
+    <td class="mono">--parchment, --cream</td>
+    <td><span class="bar" style="width:120px"></span> 48</td></tr><tr><td><span class="sw" style="background:#252925"></span> Charcoal</td><td class="mono">#252925</td>
+    <td class="mono">--ink</td>
+    <td><span class="bar" style="width:78px"></span> 31</td></tr></table>
+
+<h2>Contrast · every ink on every ground</h2>
+<p class="note"><strong>WCAG AA is 4.5:1 for body text, 3:1 for large text.</strong>
+A cell that fails is a component that will be unreadable if it is ever placed on that ground —
+which is exactly how three components ended up invisible after being moved.</p>
+<table><tr><th>Ink</th><th>--bg<br><span class="mono">#243E36</span></th><th>--bg-raised<br><span class="mono">#2C4A40</span></th><th>--parchment<br><span class="mono">#F5EFE3</span></th><th>--parchment-dim<br><span class="mono">#E8E0D0</span></th></tr>
+<tr><td><span class="sw" style="background:#252925"></span> <span class="mono">--ink</span></td>
+  <td data-c='#252925|#243E36'></td><td data-c='#252925|#2C4A40'></td><td data-c='#252925|#F5EFE3'></td><td data-c='#252925|#E8E0D0'></td></tr><tr><td><span class="sw" style="background:#5A6B5D"></span> <span class="mono">--ink-soft</span></td>
+  <td data-c='#5A6B5D|#243E36'></td><td data-c='#5A6B5D|#2C4A40'></td><td data-c='#5A6B5D|#F5EFE3'></td><td data-c='#5A6B5D|#E8E0D0'></td></tr><tr><td><span class="sw" style="background:#F5EFE3"></span> <span class="mono">--cream</span></td>
+  <td data-c='#F5EFE3|#243E36'></td><td data-c='#F5EFE3|#2C4A40'></td><td data-c='#F5EFE3|#F5EFE3'></td><td data-c='#F5EFE3|#E8E0D0'></td></tr><tr><td><span class="sw" style="background:#70866B"></span> <span class="mono">--moss</span></td>
+  <td data-c='#70866B|#243E36'></td><td data-c='#70866B|#2C4A40'></td><td data-c='#70866B|#F5EFE3'></td><td data-c='#70866B|#E8E0D0'></td></tr><tr><td><span class="sw" style="background:#576B53"></span> <span class="mono">--moss-dim</span></td>
+  <td data-c='#576B53|#243E36'></td><td data-c='#576B53|#2C4A40'></td><td data-c='#576B53|#F5EFE3'></td><td data-c='#576B53|#E8E0D0'></td></tr><tr><td><span class="sw" style="background:#7CA7A1"></span> <span class="mono">--blue</span></td>
+  <td data-c='#7CA7A1|#243E36'></td><td data-c='#7CA7A1|#2C4A40'></td><td data-c='#7CA7A1|#F5EFE3'></td><td data-c='#7CA7A1|#E8E0D0'></td></tr><tr><td><span class="sw" style="background:#F2A65A"></span> <span class="mono">--orange</span></td>
+  <td data-c='#F2A65A|#243E36'></td><td data-c='#F2A65A|#2C4A40'></td><td data-c='#F2A65A|#F5EFE3'></td><td data-c='#F2A65A|#E8E0D0'></td></tr><tr><td><span class="sw" style="background:#D97474"></span> <span class="mono">--terracotta</span></td>
+  <td data-c='#D97474|#243E36'></td><td data-c='#D97474|#2C4A40'></td><td data-c='#D97474|#F5EFE3'></td><td data-c='#D97474|#E8E0D0'></td></tr><tr><td><span class="sw" style="background:#D67A9A"></span> <span class="mono">--pink</span></td>
+  <td data-c='#D67A9A|#243E36'></td><td data-c='#D67A9A|#2C4A40'></td><td data-c='#D67A9A|#F5EFE3'></td><td data-c='#D67A9A|#E8E0D0'></td></tr>
+</table>
+
+<h2>Specimens · the same component on both grounds</h2>
+<p class="note">If a block below is hard to read, that pairing exists somewhere in the app.</p>
+<div class="grid">
+<div>
+  <div class="mono" style="color:#9fb8a8;margin-bottom:6px;">--bg</div>
+  <div class="spec" style="background:#243E36;color:#252925;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--ink</div></div><div class="spec" style="background:#243E36;color:#5A6B5D;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--ink-soft</div></div><div class="spec" style="background:#243E36;color:#F5EFE3;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--cream</div></div><div class="spec" style="background:#243E36;color:#70866B;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--moss</div></div><div class="spec" style="background:#243E36;color:#576B53;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--moss-dim</div></div><div class="spec" style="background:#243E36;color:#7CA7A1;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--blue</div></div><div class="spec" style="background:#243E36;color:#F2A65A;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--orange</div></div><div class="spec" style="background:#243E36;color:#D97474;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--terracotta</div></div>
+</div><div>
+  <div class="mono" style="color:#9fb8a8;margin-bottom:6px;">--bg-raised</div>
+  <div class="spec" style="background:#2C4A40;color:#252925;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--ink</div></div><div class="spec" style="background:#2C4A40;color:#5A6B5D;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--ink-soft</div></div><div class="spec" style="background:#2C4A40;color:#F5EFE3;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--cream</div></div><div class="spec" style="background:#2C4A40;color:#70866B;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--moss</div></div><div class="spec" style="background:#2C4A40;color:#576B53;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--moss-dim</div></div><div class="spec" style="background:#2C4A40;color:#7CA7A1;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--blue</div></div><div class="spec" style="background:#2C4A40;color:#F2A65A;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--orange</div></div><div class="spec" style="background:#2C4A40;color:#D97474;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--terracotta</div></div>
+</div><div>
+  <div class="mono" style="color:#9fb8a8;margin-bottom:6px;">--parchment</div>
+  <div class="spec" style="background:#F5EFE3;color:#252925;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--ink</div></div><div class="spec" style="background:#F5EFE3;color:#5A6B5D;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--ink-soft</div></div><div class="spec" style="background:#F5EFE3;color:#F5EFE3;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--cream</div></div><div class="spec" style="background:#F5EFE3;color:#70866B;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--moss</div></div><div class="spec" style="background:#F5EFE3;color:#576B53;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--moss-dim</div></div><div class="spec" style="background:#F5EFE3;color:#7CA7A1;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--blue</div></div><div class="spec" style="background:#F5EFE3;color:#F2A65A;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--orange</div></div><div class="spec" style="background:#F5EFE3;color:#D97474;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--terracotta</div></div>
+</div><div>
+  <div class="mono" style="color:#9fb8a8;margin-bottom:6px;">--parchment-dim</div>
+  <div class="spec" style="background:#E8E0D0;color:#252925;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--ink</div></div><div class="spec" style="background:#E8E0D0;color:#5A6B5D;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--ink-soft</div></div><div class="spec" style="background:#E8E0D0;color:#F5EFE3;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--cream</div></div><div class="spec" style="background:#E8E0D0;color:#70866B;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--moss</div></div><div class="spec" style="background:#E8E0D0;color:#576B53;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--moss-dim</div></div><div class="spec" style="background:#E8E0D0;color:#7CA7A1;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--blue</div></div><div class="spec" style="background:#E8E0D0;color:#F2A65A;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--orange</div></div><div class="spec" style="background:#E8E0D0;color:#D97474;">
+    <div style="font-weight:600;">Worked recently</div>
+    <div style="font-size:11.5px;">245 plants · 242 with no note</div>
+    <div class="mono" style="font-size:10px;opacity:.8;">--terracotta</div></div>
+</div>
+</div>
+
+<h2>All variables</h2>
+<table><tr><th>Variable</th><th>Value</th><th>Uses</th></tr>
+<tr><td><span class="sw" style="background:#576B53"></span> <span class="mono">--moss-dim</span></td>
+  <td class="mono">#576B53</td><td>44</td></tr><tr><td><span class="sw" style="background:#D97474"></span> <span class="mono">--terracotta</span></td>
+  <td class="mono">#D97474</td><td>43</td></tr><tr><td><span class="sw" style="background:#7CA7A1"></span> <span class="mono">--blue</span></td>
+  <td class="mono">#7CA7A1</td><td>42</td></tr><tr><td><span class="sw" style="background:#5A6B5D"></span> <span class="mono">--ink-soft</span></td>
+  <td class="mono">#5A6B5D</td><td>39</td></tr><tr><td><span class="sw" style="background:#F5EFE3"></span> <span class="mono">--cream</span></td>
+  <td class="mono">#F5EFE3</td><td>34</td></tr><tr><td><span class="sw" style="background:#252925"></span> <span class="mono">--ink</span></td>
+  <td class="mono">#252925</td><td>31</td></tr><tr><td><span class="sw" style="background:#70866B"></span> <span class="mono">--moss</span></td>
+  <td class="mono">#70866B</td><td>28</td></tr><tr><td><span class="sw" style="background:rgba(245,239,227,0.14)"></span> <span class="mono">--line</span></td>
+  <td class="mono">rgba(245,239,227,0.14)</td><td>23</td></tr><tr><td><span class="sw" style="background:#E8E0D0"></span> <span class="mono">--parchment-dim</span></td>
+  <td class="mono">#E8E0D0</td><td>18</td></tr><tr><td><span class="sw" style="background:#F2A65A"></span> <span class="mono">--orange</span></td>
+  <td class="mono">#F2A65A</td><td>16</td></tr><tr><td><span class="sw" style="background:#F5EFE3"></span> <span class="mono">--parchment</span></td>
+  <td class="mono">#F5EFE3</td><td>14</td></tr><tr><td><span class="sw" style="background:#243E36"></span> <span class="mono">--bg</span></td>
+  <td class="mono">#243E36</td><td>13</td></tr><tr><td><span class="sw" style="background:#2C4A40"></span> <span class="mono">--bg-raised</span></td>
+  <td class="mono">#2C4A40</td><td>10</td></tr><tr><td><span class="sw" style="background:#D67A9A"></span> <span class="mono">--pink</span></td>
+  <td class="mono">#D67A9A</td><td>4</td></tr></table>
+
+<script>
+  const lum = (h) => { const c = h.replace("#",""); const [r,g,b] = [0,2,4].map(i => parseInt(c.substr(i,2),16)/255);
+    const f = (x) => x <= 0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055, 2.4);
+    return 0.2126*f(r) + 0.7152*f(g) + 0.0722*f(b); };
+  for (const td of document.querySelectorAll("[data-c]")) {
+    const [ink, ground] = td.dataset.c.split("|");
+    const [a,b] = [lum(ink), lum(ground)].sort((x,y)=>y-x);
+    const r = (a + 0.05) / (b + 0.05);
+    td.textContent = r.toFixed(2) + ":1";
+    td.className = r >= 4.5 ? "pass" : r >= 3 ? "warn" : "fail";
+  }
+</script>

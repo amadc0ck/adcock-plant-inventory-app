@@ -660,6 +660,20 @@
     border-bottom:1px solid rgba(37,41,37,0.12);padding:14px 16px;text-align:left;cursor:pointer;font-family:inherit;color:var(--ink);}
   .attn-row:last-child{border-bottom:none;}
   .attn-row:active{background:rgba(36,62,54,0.06);}
+  /* Third time a component built for the cream panel was put on the dark page
+     and inverted — after .action-row (v2.27.3) and this same class's icon
+     sizing (v2.26.2). Measured: --ink on --bg is 1.28:1 and --ink-soft is
+     2.03:1, against a WCAG AA floor of 4.5. Both were effectively invisible.
+     `node tools/palette.mjs` renders the whole matrix; check a pairing there
+     before moving a component across grounds. */
+  .attn-row.on-dark{color:var(--cream);border-bottom-color:var(--line);}
+  /* --parchment-dim (8.81:1), not --blue (4.35) or --moss (2.92). Brighter than
+     a subtitle wants, and deliberate: the palette has NO muted tone that passes
+     AA on this ground — only --cream, --parchment-dim and --orange do, and two
+     of those are near-white. Legibility first; see AUDIT.md for the gap. */
+  .attn-row.on-dark .attn-sub{color:var(--parchment-dim);opacity:0.8;}
+  .attn-row.on-dark svg{color:var(--blue);}
+  .attn-row.on-dark:active{background:rgba(245,239,227,0.07);}
   /* .attn-row sized only .action-chevron, because until v2.24.0 no attn-row had
      ever carried a leading icon. The coffin was the first, and with no width it
      grew to fill the row and crushed the label into a one-word column.
@@ -836,7 +850,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.32.0";
+const APP_VERSION = "2.32.1";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -6707,7 +6721,7 @@ function wishGroup() {
       const unnoted = recent.filter((r) => !hasNoteSince(r.pl.id, r.when)).length;
       return `
       <div class="queue-group" style="margin-top:18px;">
-        <button class="attn-row" onclick="state.reportView='recentlyWorked';render()">
+        <button class="attn-row on-dark" onclick="state.reportView='recentlyWorked';render()">
           ${icon("clipboard")}
           <div style="flex:1;min-width:0;">
             <div class="attn-title">Worked recently</div>
@@ -6733,7 +6747,7 @@ function wishGroup() {
         return got.length ? `<p class="subtle" style="font-size:11.5px;margin:8px 0 0;">${countLabel(got.length, "wish", "wishes")} granted &mdash; ${escapeHtml(got.slice(0, 3).map(wishlistName).join(", "))}${got.length > 3 ? ` and ${got.length - 3} more` : ""}.</p>` : "";
       })()}
       ${gone.length ? `
-        <button class="attn-row" style="margin-top:12px;" onclick="state.reportView='graveyard';render()">
+        <button class="attn-row on-dark" style="margin-top:12px;" onclick="state.reportView='graveyard';render()">
           ${icon("coffin")}
           <div style="flex:1;min-width:0;">
             <div class="attn-title">In memoriam</div>

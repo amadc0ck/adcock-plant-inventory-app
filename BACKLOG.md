@@ -529,29 +529,31 @@ order by location_count desc;
 
 ## Open — verified 2026-08-28, end of session
 
-### Data-quality findings, separate from PROF-3 — `ready`
+### NAME-3 — the data-quality pass, audited 2026-09-11 — `SQL awaiting Amanda`
 
-Visible in the 2026-09-08 epithet audit. All small, one pass:
+Audit run against live data. **Two of the four findings were not defects.**
 
-- **`is_hybrid = false` on records that state a cross.** *Echeveria* 'Lola',
-  ‘Perle von Nurnberg’, *Graptosedum* ‘Francesco Baldi’ all carry parentage
-  naming two parents. Does not affect counting (`taxonLooksHybrid()` triggers on
-  the cultivar alone) but REFERENCE says **`is_hybrid` carries the `×`** in
-  composed names, so all three display without it.
-- **`xPachyveria` has the hybrid sign inside `genus`.** Compare
-  `×Graptosedum 'California Sunset'`, correctly stored as genus `Graptosedum`
-  with `is_hybrid = true`. `xPachyveria` will not group with `Pachyveria`.
-- **Cultivars stored with quotes baked in** — `'Lola'`, `'Orange Glow'`, curly
-  quotes on `‘Perle von Nurnberg’`. REFERENCE: *"Cultivar is stored bare,
-  without quotes; the display layer adds them."* These render double-quoted.
-- **`Echeveria cv. 'Raindrops'`** uses the deprecated `cv.` notation in
-  `botanical_name`.
+- **Cultivar quotes (3 rows).** Real in storage, but `cultivarLabel()` already
+  strips quotes before adding its own, so nothing ever rendered double-quoted.
+  Hygiene, not a bug.
+- **`cv.` notation (1 row).** Only in `botanical_name`, which the parts
+  outrank — never displayed. Cosmetic.
+- **`xPachyveria` (1 row, 3 specimens).** Real and consequential: it will not
+  group with `Pachyveria 'Haagei'`, which exists separately.
+- **`is_hybrid = false` on 5 records stating a cross — DECLINED, see below.**
 
-**Whatever is chosen must be mirrored in `suggest-species`.** `TAXON_PROFILE_FIELDS`,
-`TAXON_SENTINELS` and `TAXON_HYBRID_ONLY` in `index.html` are a deliberate port
-of `FIELDS`, `SENTINELS` and `HYBRID_ONLY` in the Edge Function — counting a
-field Claude is never asked for puts a permanent floor under the number, which
-is the whole reason PROF-1 was built as a port. **Two halves of one rule.**
+**Do not "fix" the five.** `is_hybrid` means *the × goes between genus and
+epithet*. Four of the five have no epithet, so it draws nothing. The fifth,
+*Opuntia basilaris* 'Baby Rita', would render `Opuntia × basilaris 'Baby Rita'`
+— asserting *O. basilaris* is a hybrid species, which is false. All four
+records where `is_hybrid` is true AND an epithet exists are correct
+interspecific hybrids; the flag is doing its job 4 for 4.
+
+**The × actually missing was the nothogenus one**, shipped in v2.37.0 — 12
+records across Graptosedum, Graptoveria, Pachyveria and Sedeveria, all of which
+dropped their sign. Derived from `TAXON_NOTHOGENERA`, never stored.
+
+SQL touches 9 rows across 9 distinct taxa, each hit by exactly one CTE.
 
 ### AI-4 — cite San Marcos Growers when researching a species — `ready`
 
@@ -910,6 +912,21 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.37.0 — NAME-3: two different crosses, two different signs
+
+`is_hybrid` puts the × between genus and epithet. A **nothogenus** wears it
+before the genus, and that is derivable from the name — `TAXON_NOTHOGENERA`
+already listed all of them for `taxonLooksHybrid()`. Twelve records were
+silently dropping the sign; they now render `×Graptoveria 'Debbie'`.
+
+**The near-miss worth keeping:** rendering the × moved those records' `nameKey`,
+so `findTaxonByName()` would have stopped matching them and typing the name
+again would have created a SECOND species row — the exact failure nameKey
+exists to prevent. Caught by adding the test before believing the change was
+cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
+so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
+
 
 ### v2.36.0 — MERGE-2: merge from anywhere, and merge locations
 

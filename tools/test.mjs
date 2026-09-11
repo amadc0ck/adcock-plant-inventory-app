@@ -324,5 +324,54 @@ t("descendantLocationIds reaches more than one level down", () => {
   ok(ctx.descendantLocationIds("top").includes("leaf"));
 });
 
+/* ---------- NAME-3: two different crosses, two different signs (v2.37.0) ----------
+
+   `is_hybrid` means the \u00D7 goes BETWEEN genus and epithet (a cross between two
+   species). A nothogenus wears it BEFORE the genus (a genus that is itself a
+   cross between two genera) and is looked up from TAXON_NOTHOGENERA, never
+   stored. Conflating them is what made the 2026-09-11 audit ask for is_hybrid
+   on five cultivars where four render nothing and the fifth renders a lie. */
+
+t("a nothogenus wears its sign before the genus", () => {
+  eq(ctx.taxonDisplayName({ genus: "Graptosedum", cultivar: "California Sunset" }),
+     "\u00D7Graptosedum 'California Sunset'");
+});
+t("an ordinary genus does not", () => {
+  eq(ctx.taxonDisplayName({ genus: "Echeveria", cultivar: "Lola" }), "Echeveria 'Lola'");
+});
+t("is_hybrid puts the sign between genus and epithet, not before", () => {
+  // The four records where is_hybrid is true AND an epithet exists are all
+  // correct interspecific hybrids; this is the notation they depend on.
+  eq(ctx.taxonDisplayName({ genus: "Kalanchoe", species_epithet: "houghtonii", is_hybrid: true }),
+     "Kalanchoe \u00D7 houghtonii");
+});
+t("is_hybrid on a cultivar with no epithet renders nothing at all", () => {
+  /* Why the audit's "set is_hybrid on records that state a cross" was declined
+     for four of five rows: the flag has nowhere to draw. */
+  eq(ctx.taxonDisplayName({ genus: "Agave", cultivar: "Blue Glow", is_hybrid: true }),
+     "Agave 'Blue Glow'");
+});
+t("is_hybrid on a cultivar that HAS an epithet renders a false claim", () => {
+  /* The fifth row. Opuntia basilaris is a good species, not a hybrid one, so
+     setting is_hybrid on 'Baby Rita' would assert something untrue. Pinned so
+     nobody sets that flag later without seeing what it prints. */
+  eq(ctx.taxonDisplayName({ genus: "Opuntia", species_epithet: "basilaris", cultivar: "Baby Rita", is_hybrid: true }),
+     "Opuntia \u00D7 basilaris 'Baby Rita'");
+});
+
+t("the nothogenus sign does not change the matching key", () => {
+  /* The regression this shipped within inches of. Rendering \u00D7Graptoveria
+     would have moved its nameKey, findTaxonByName() would have missed it, and
+     typing the name again would silently create a SECOND species row. */
+  eq(ctx.nameKey("\u00D7Graptoveria 'Debbie'"), ctx.nameKey("Graptoveria Debbie"));
+});
+t("Xerosicyos survives the leading-x strip", () => {
+  // ^x\s+ requires whitespace precisely so a genus that begins with x is safe.
+  eq(ctx.nameKey("Xerosicyos danguyi"), "xerosicyos danguyi");
+});
+t("an interspecific sign mid-name is still folded, not stripped", () => {
+  eq(ctx.nameKey("Kalanchoe \u00D7 houghtonii"), ctx.nameKey("Kalanchoe x houghtonii"));
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

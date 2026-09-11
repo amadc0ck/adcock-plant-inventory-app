@@ -940,7 +940,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.36.0";
+const APP_VERSION = "2.37.0";
 const APP_UPDATED = "2026-09-11";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2743,7 +2743,16 @@ function taxonNameParts(t) {
   // Only meaningful below a species, so it rides along with the epithet.
   const infra = epithet ? (t.infraspecific || "").trim() : "";
   if (!genus || (!epithet && !cultivar)) return null; // not enough to beat the free text
-  return { genus, epithet, cultivar, infra, hybrid: !!t.is_hybrid };
+  /* NAME-3, v2.37.0. **Two different crosses wear the same sign and they are
+     not the same fact.** `is_hybrid` puts the \u00D7 BETWEEN genus and epithet —
+     *Kalanchoe* \u00D7 *houghtonii*, a cross between two species. A nothogenus
+     wears it BEFORE the genus — \u00D7Graptosedum, a genus that is itself a cross
+     between two genera — and that one is derivable from the name, so it is
+     looked up rather than stored. All four records where is_hybrid is true AND
+     an epithet exists are correct interspecific hybrids; every one of the
+     twelve nothogenus records was silently dropping its sign. */
+  return { genus, epithet, cultivar, infra, hybrid: !!t.is_hybrid,
+           nothogenus: TAXON_NOTHOGENERA.has(genus.toLowerCase()) };
 }
 
 function taxonDisplayName(t) {
@@ -2751,6 +2760,8 @@ function taxonDisplayName(t) {
   const p = taxonNameParts(t);
   if (p) {
     let sci = p.epithet ? `${p.genus} ${p.hybrid ? "\u00D7 " : ""}${p.epithet}` : p.genus;
+    // No space after it: \u00D7Graptosedum is one word, unlike the interspecific sign.
+    if (p.nothogenus) sci = `\u00D7${sci}`;
     // Before v1.83.0 the variety was silently dropped here: composition prefers
     // the parts, and the parts had nowhere to hold it.
     if (p.infra && infraspecificLabel(p.infra)) sci += ` ${infraspecificLabel(p.infra)}`;
@@ -2768,7 +2779,8 @@ function taxonDisplayName(t) {
 function taxonDisplayHtml(t) {
   const p = taxonNameParts(t);
   if (!p) return escapeHtml(taxonDisplayName(t));
-  let html = `<i>${escapeHtml(p.genus)}</i>`;
+  // Upright and outside the <i> — the sign is notation, not part of the name.
+  let html = `${p.nothogenus ? "\u00D7" : ""}<i>${escapeHtml(p.genus)}</i>`;
   if (p.epithet) html += `${p.hybrid ? " \u00D7" : ""} <i>${escapeHtml(p.epithet)}</i>`;
   const ip = p.infra ? infraspecificParts(p.infra) : null;
   if (ip && ip.epithet) html += ` ${escapeHtml(ip.rank)} <i>${escapeHtml(ip.epithet)}</i>`;
@@ -2789,6 +2801,14 @@ function nameKey(raw) {
     .toLowerCase()
     .replace(/[\u2018\u2019'"]/g, "")          // quoting around cultivars varies
     .replace(/\u00D7\s*/g, "x ")               // × and a bare x are the same claim
+    /* A LEADING sign is the nothogenus mark, and it is not identity: typing
+       "Graptoveria Debbie" must still find ×Graptoveria 'Debbie'. Without this
+       line, v2.37.0's rendering change would have altered the key for all
+       twelve nothogenus records and findTaxonByName() would have missed them —
+       silently creating a second species row, which is the exact failure
+       nameKey was built for. Anchored, and requiring whitespace, so Xerosicyos
+       is untouched. */
+    .replace(/^x\s+/, "")
     .replace(/\b(var|subsp|ssp|f|subvar|subf)\.?\s+/g, "")  // rank words are not identity
     .replace(/[^a-z0-9 ]+/g, " ")
     .replace(/\s+/g, " ")

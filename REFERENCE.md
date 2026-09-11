@@ -693,6 +693,17 @@ a merge re-points them rather than dropping them — "watered in Bucket 40" stay
 true when Bucket 40 is absorbed. Verified by probing the database 2026-09-11,
 not from this document.
 
+**The two hybrid signs (NAME-3, v2.37.0).** They are different facts and must
+not be conflated. `taxa.is_hybrid` means *this is a cross between two species*
+and renders the × **between genus and epithet** — *Kalanchoe* × *houghtonii*. A
+**nothogenus** is a genus that is itself an intergeneric cross, wears the ×
+**before the genus** — ×Graptosedum — and is **never stored**: it is looked up
+in `TAXON_NOTHOGENERA` by genus name. Do not set `is_hybrid` on a hybrid
+cultivar: with no epithet it draws nothing, and with one it asserts the species
+is a hybrid. `nameKey()` strips a leading `x ` so the rendered sign cannot move
+a matching key — without that, `findTaxonByName()` misses and a duplicate taxon
+is created silently.
+
 **Deletion / merge cleanup order** — any function deleting or merging a plant must handle, in order. **Corrected 2026-09-08 (MERGE-1): five of these were missing and `mergePlants()` was built from the short list, so every merge silently destroyed the merged plant's watering and bloom history.**
 
 1. `photos.plant_id` — unassign on delete, reassign on merge. Do not delete the photo.

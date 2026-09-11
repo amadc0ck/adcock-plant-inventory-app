@@ -940,7 +940,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.35.0";
+const APP_VERSION = "2.36.0";
 const APP_UPDATED = "2026-09-11";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -961,6 +961,7 @@ const state = {
   taskSubjects: [],
   plantLocationHistory: [],
   moveTarget: "",          // location picked in the Move modal
+  mergeLocationChoice: "", // MERGE-2: which of two merging plants' locations survives
   batchRows: [],           // BATCH-1: [{ taxaId, newName, qty }]
   batchSearch: "",
   // Newest first by default: the plants you are filing photos to are almost
@@ -2366,6 +2367,12 @@ function locationField(prefix, opts) {
 function locationPicker(onPick, opts) {
   const o = opts || {};
   const q = (state.locPickerSearch || "").trim().toLowerCase();
+  // excludeIds, matching plantPicker's contract. Added for MERGE-2, which must
+  // keep a location's own subtree off the list: merging into something inside
+  // yourself detaches the whole branch. Applied to every route into the list —
+  // search hits, the drill-down and recents — since one unfiltered route is the
+  // same bug as no filter at all.
+  const allowed = (l) => !o.excludeIds || !o.excludeIds.includes(l.id);
   const pick = (l) => onPick.replace(/\{id\}/g, l.id);
   const row = (l, showPath) => {
     const kids = pickableChildren(l.id);
@@ -2388,7 +2395,7 @@ function locationPicker(onPick, opts) {
 
   if (q) {
     const hits = state.locations
-      .filter((l) => !l.archived && (l.name.toLowerCase().includes(q) || locationPath(l).toLowerCase().includes(q)))
+      .filter((l) => !l.archived && allowed(l) && (l.name.toLowerCase().includes(q) || locationPath(l).toLowerCase().includes(q)))
       .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 40);
     return `
@@ -2401,8 +2408,8 @@ function locationPicker(onPick, opts) {
   }
 
   const here = state.locPickerParent ? locationById(state.locPickerParent) : null;
-  const kids = pickableChildren(state.locPickerParent);
-  const recents = state.locPickerParent ? [] : recentLocationIds().map(locationById).filter(Boolean);
+  const kids = pickableChildren(state.locPickerParent).filter(allowed);
+  const recents = state.locPickerParent ? [] : recentLocationIds().map(locationById).filter(Boolean).filter(allowed);
   const crumbs = [];
   for (let n = here; n; n = n.parent_location_id ? locationById(n.parent_location_id) : null) crumbs.unshift(n);
 
@@ -4555,6 +4562,10 @@ function openModal(type, data = {}) {
   }
   if (type === "batchAdd") state.locField.ba = "";
   if (type === "movePlant") { state.moveTarget = ""; locPickerReset(); }
+  // MERGE-2. A picker opened with the last screen's search still in it looks
+  // like it is hiding most of the collection.
+  if (type === "mergePlantPick") clearPlantPicker();
+  if (type === "mergeLocationPick") locPickerReset();
   if (type === "batchAdd") { state.batchRows = []; state.batchSearch = ""; }
   if (type === "newTask" || type === "editTask") {
     state.taskSubjectSearch = "";
@@ -5829,6 +5840,13 @@ function screenPlantDetail() {
             <button class="action-row" onclick="openModal('movePlant',{plantId:'${pl.id}'})">${icon("pin")}<span class="action-label">Move to another location</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="moveToHospital('${pl.id}')">${icon("ambulance")}<span class="action-label">Move to Plant Hospital</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             <button class="action-row" onclick="openModal('propagatePlant',{parentId:'${pl.id}'})">${icon("seedling")}<span class="action-label">Propagate from this plant</span><span class="action-chevron">${icon("chevronRight")}</span></button>
+            ${/* MERGE-2. Merge was reachable only from the Duplicate plants
+                 tile, which finds one shape of duplicate: same species, same
+                 location. Two rows for one plant that drifted apart \u2014 a
+                 re-entry after a move, a specimen added twice under different
+                 names \u2014 were unmergeable from anywhere. The page you are ON
+                 is always the survivor, matching "Keep this" on that tile. */""}
+            <button class="action-row" onclick="openModal('mergePlantPick',{plantId:'${pl.id}'})">${icon("link")}<span class="action-label">Merge another plant into this one</span><span class="action-chevron">${icon("chevronRight")}</span></button>
             ${/* GRAVE-1. Status was reachable ONLY through Edit full record's
                  dropdown, buried in a long form — which is why the 2026-09-08
                  audit found 231 of 231 plants still reading "active". Plants
@@ -6256,6 +6274,7 @@ function screenLocationDetail() {
 
           <div style="margin-top:14px;">
             <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
+            <button class="btn-ghost" style="padding:0 0 0 14px;font-size:12.5px;" onclick="openModal('mergeLocationPick',{locationId:'${l.id}'})">Merge another in</button>
             <button class="btn-ghost" style="padding:0 0 0 14px;font-size:12.5px;color:var(--ink);font-weight:600;" onclick="openModal('removeLocation',{locationId:'${l.id}'})">Archive or delete</button>
           </div>`;
         })()}
@@ -8795,6 +8814,77 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="state.dupeSelected=new Set();closeModal()">Done</button>`;
   }
 
+  if (type === "mergePlantPick") {
+    const keep = state.plants.find((x) => x.id === data.plantId);
+    if (!keep) return `<p class="subtle">This plant no longer exists.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Merge into ${escapeHtml(plantDisplayName(keep))}</h3>
+      <p class="subtle" style="margin:0 0 14px;">Pick the record that should go away. <strong>${escapeHtml(keep.accession_number)} survives</strong> and keeps its own details; everything on the other one \u2014 photos, tags, care notes, watering, blooms, move history, tasks \u2014 moves across.</p>
+      ${plantPicker(`openMergePlantConfirm('${keep.id}','{id}')`, { excludeIds: [keep.id] })}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "mergePlantConfirm") {
+    const keep = state.plants.find((x) => x.id === data.keepId);
+    const remove = state.plants.find((x) => x.id === data.removeId);
+    if (!keep || !remove) return `<p class="subtle">One of these no longer exists.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
+    const keepLoc = keep.location_id ? locationById(keep.location_id) : null;
+    const removeLoc = remove.location_id ? locationById(remove.location_id) : null;
+    /* The one question a merge cannot answer from the data. Two rows for one
+       plant disagree about where it is standing, and only Amanda knows which
+       is true today. Asked ONLY when they differ: a pointless question on the
+       duplicates-in-one-bucket case would train her to click past it. */
+    const mustChoose = !!(keepLoc && removeLoc && keepLoc.id !== removeLoc.id);
+    const opt = (loc, from) => `
+      <label class="row" style="gap:10px;padding:10px 12px;cursor:pointer;">
+        <input type="radio" name="mergeloc" value="${loc.id}" style="width:auto;flex-shrink:0;"
+               ${state.mergeLocationChoice === loc.id ? "checked" : ""}
+               onchange="state.mergeLocationChoice=this.value" />
+        <span style="flex:1;min-width:0;font-size:13.5px;">${escapeHtml(locationPath(loc))}
+          <span class="subtle" style="font-size:11px;display:block;">where ${escapeHtml(from)} is filed</span></span>
+      </label>`;
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Merge these two?</h3>
+      <div class="stack" style="margin:12px 0;">
+        <div class="surface" style="padding:12px 14px;">
+          <span class="pill pill-orange">Survives</span>
+          <div style="font-size:14px;margin-top:6px;">${plantDisplayHtml(keep)}</div>
+          <div class="mono subtle" style="font-size:11px;">${escapeHtml(keep.accession_number)}${keepLoc ? ` \u00B7 ${escapeHtml(keepLoc.name)}` : ""}</div>
+        </div>
+        <div class="surface" style="padding:12px 14px;">
+          <span class="pill">Merged away</span>
+          <div style="font-size:14px;margin-top:6px;">${plantDisplayHtml(remove)}</div>
+          <div class="mono subtle" style="font-size:11px;">${escapeHtml(remove.accession_number)}${removeLoc ? ` \u00B7 ${escapeHtml(removeLoc.name)}` : ""}</div>
+        </div>
+      </div>
+      ${mustChoose ? `
+        <div class="surface" style="padding:4px 0;margin-bottom:12px;">
+          <div style="padding:10px 12px 4px;font-weight:600;font-size:13px;">These are in two different places. Where is it now?</div>
+          ${opt(keepLoc, keep.accession_number)}
+          ${opt(removeLoc, remove.accession_number)}
+        </div>` : ""}
+      <button class="btn btn-primary btn-block" onclick="mergePlants('${keep.id}','${remove.id}',{locationId:state.mergeLocationChoice})">Merge</button>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="openModal('mergePlantPick',{plantId:'${keep.id}'})">Pick a different plant</button>
+      <button class="btn-ghost" style="margin-top:4px;" onclick="closeModal()">Cancel</button>`;
+  }
+
+  if (type === "mergeLocationPick") {
+    const keep = locationById(data.locationId);
+    if (!keep) return `<p class="subtle">This location no longer exists.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
+    // Its own descendants are excluded: merging a location into something
+    // inside it would detach the subtree. mergeLocations() refuses anyway —
+    // this keeps the impossible choice off the screen.
+    const forbidden = [keep.id, ...descendantLocationIds(keep.id)];
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Merge into ${escapeHtml(keep.name)}</h3>
+      <p class="subtle" style="margin:0 0 14px;">Pick the location that should go away. Its plants, photos, anything nested inside it and all its recorded history move here, then it is deleted. Use this for a container entered twice \u2014 not for tidying, where <strong>Archive</strong> is the right answer.</p>
+      ${locationPicker(`mergeLocations('${keep.id}','{id}')`, { excludeIds: forbidden })}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
+  }
+
   if (type === "duplicateTaxa") {
     const groups = findDuplicateTaxaGroups();
     return `
@@ -10409,11 +10499,27 @@ async function deleteCareNote(noteId) {
   } catch (e) { toast(e.message, true); }
 }
 
-async function mergePlants(keepId, removeId) {
+/* MERGE-2 (v2.36.0) added `opts.locationId`. Before it, the survivor's own
+   location simply won, which is right when merging two rows standing in one
+   bucket — the case Duplicate plants finds — and wrong everywhere else. Merging
+   from a plant's own page means the two may be in different places, and which
+   place the one remaining plant is actually standing in is a fact only Amanda
+   has. Omitted, the old behaviour is unchanged. */
+async function mergePlants(keepId, removeId, opts) {
   const keep = state.plants.find((p) => p.id === keepId);
   const remove = state.plants.find((p) => p.id === removeId);
+  if (!keep || !remove) return;
+  const o = opts || {};
   if (!confirm(`Merge "${plantDisplayName(remove)}" (${remove.accession_number}) into "${plantDisplayName(keep)}" (${keep.accession_number})? Everything on it moves over \u2014 photos, tags, care notes, watering, blooms, move history and any task naming it \u2014 then ${remove.accession_number} is deleted. This can't be undone.`)) return;
   try {
+    /* Patched FIRST, before anything is destroyed. The trigger on
+       plants.location_id opens a move-history row, and doing it here means that
+       row exists before the removed plant's history is reassigned onto this
+       plant — so the timeline reads in order rather than ending on a move that
+       precedes entries above it. */
+    if (o.locationId && o.locationId !== keep.location_id) {
+      await restPatch("plants", `id=eq.${keepId}`, { location_id: o.locationId });
+    }
     // Move photos primarily attached to the removed plant
     await restPatch("photos", `plant_id=eq.${removeId}`, { plant_id: keepId });
 
@@ -10683,6 +10789,19 @@ async function acquireWishlistEntry(id) {
    unfinished" queue, costing another AI call to learn what was already known.
    Filling only blanks can never surprise: the record she chose to keep still
    wins every field it actually has. */
+/* Seeds the location radio before the confirm screen renders. The survivor's
+   own location is the default, so accepting without reading changes nothing —
+   the pre-MERGE-2 behaviour. */
+function openMergePlantConfirm(keepId, removeId) {
+  const keep = state.plants.find((x) => x.id === keepId);
+  const remove = state.plants.find((x) => x.id === removeId);
+  // Falls back to the other plant's location when the survivor has none. That
+  // is not a choice worth asking about — one answer exists — and it quietly
+  // fixes a record that was missing a location before the merge.
+  state.mergeLocationChoice = (keep && keep.location_id) || (remove && remove.location_id) || "";
+  openModal("mergePlantConfirm", { keepId, removeId });
+}
+
 async function mergeTaxa(keepId, removeId) {
   const keep = taxonById(keepId), remove = taxonById(removeId);
   if (!keep || !remove) return;
@@ -11260,6 +11379,95 @@ async function archiveLocation(locationId) {
 // deleting a location destroys its history. The confirm says how many rows that
 // is rather than doing it quietly — that visibility is what made the call
 // obvious the last time this was done by hand.
+/* MERGE-2, v2.36.0. **No merge code existed for locations at all** — the
+   nearest thing was deleteLocation(), which UNASSIGNS everything filed here.
+   That is the opposite of a merge: it empties a duplicate bucket instead of
+   pouring it into the real one.
+
+   The table list below was built by probing the database column by column, not
+   from REFERENCE — MERGE-1 destroyed months of watering history because it was
+   written from a prose list that predated the table. Every column carrying a
+   `location_id` is here: plants, photos, photo_locations, plant_location_history,
+   watering_events, bloom_events, task_subjects, plus locations.parent_location_id
+   for anything nested underneath. **Adding a table with a location means adding
+   it here, to deleteLocation() and to REFERENCE 6.**
+
+   Children are REPARENTED rather than refused. deleteLocation refuses, because
+   deleting a parent would orphan them; a merge has an obvious right answer —
+   they move with everything else. */
+async function mergeLocations(keepId, removeId) {
+  const keep = locationById(keepId), remove = locationById(removeId);
+  if (!keep || !remove || keepId === removeId) return;
+
+  /* Merging a location into its own descendant would reparent the descendant to
+     itself and detach the whole subtree from the tree. Cheap to check, and the
+     failure would be silent and very hard to undo. */
+  if (descendantLocationIds(removeId).includes(keepId)) {
+    toast(`${keep.name} is inside ${remove.name} — merge the other way round`, true);
+    return;
+  }
+
+  const plants = plantsEverAtLocation(removeId).length;
+  const photos = photosAtLocation(removeId).length;
+  const kids = directChildLocations(removeId).length;
+  const consequences = [
+    plants ? `${countLabel(plants, "plant moves", "plants move")} here` : "",
+    photos ? `${countLabel(photos, "photo moves", "photos move")} here` : "",
+    kids ? `${countLabel(kids, "location nested inside it moves", "locations nested inside it move")} here` : "",
+    "its move history, waterings and blooms are re-pointed, not destroyed",
+  ].filter(Boolean);
+  if (!confirm(`Merge "${remove.name}" into "${keep.name}"?`
+    + `\n\n${consequences.join("\n")}`
+    + `\n\n"${remove.name}" is then deleted. This can't be undone.`)) return;
+
+  try {
+    await restPatch("plants", `location_id=eq.${removeId}`, { location_id: keepId });
+    await restPatch("photos", `location_id=eq.${removeId}`, { location_id: keepId });
+    await restPatch("locations", `parent_location_id=eq.${removeId}`, { parent_location_id: keepId });
+
+    /* photo_locations is UNIQUE on (photo_id, location_id), so a photo tagged
+       into BOTH buckets — the normal case for two rows describing one shelf —
+       would fail the reassign partway. Drop the colliding tags first: the
+       survivor's row already records that the photo is there. Same shape as
+       photo_plants in mergePlants(). */
+    const keepTagged = new Set(
+      state.photoLocations.filter((pl) => pl.location_id === keepId).map((pl) => pl.photo_id));
+    for (const pl of state.photoLocations.filter((pl) => pl.location_id === removeId && keepTagged.has(pl.photo_id))) {
+      await restDelete("photo_locations", `id=eq.${pl.id}`);
+    }
+    await restPatch("photo_locations", `location_id=eq.${removeId}`, { location_id: keepId });
+
+    /* These three are SNAPSHOTS of where something happened, and the place has
+       not stopped existing — it has been renamed to the survivor. Re-pointing
+       keeps "watered in Bucket 40" true; deleting would lose the event. */
+    await restPatch("plant_location_history", `location_id=eq.${removeId}`, { location_id: keepId });
+    await restPatch("watering_events", `location_id=eq.${removeId}`, { location_id: keepId });
+    await restPatch("bloom_events", `location_id=eq.${removeId}`, { location_id: keepId });
+
+    // task_subjects is CHECK-constrained to exactly one subject, so a task
+    // naming both locations would end up holding the survivor twice.
+    const keepTasks = new Set(
+      state.taskSubjects.filter((ts) => ts.location_id === keepId).map((ts) => ts.task_id));
+    for (const ts of state.taskSubjects.filter((ts) => ts.location_id === removeId)) {
+      if (keepTasks.has(ts.task_id)) await restDelete("task_subjects", `id=eq.${ts.id}`);
+      else await restPatch("task_subjects", `id=eq.${ts.id}`, { location_id: keepId });
+    }
+
+    // The survivor inherits a cover only if it has none of its own.
+    if (!keep.primary_photo_id && remove.primary_photo_id) {
+      await restPatch("locations", `id=eq.${keepId}`, { primary_photo_id: remove.primary_photo_id });
+    }
+    // Clear its own cover before deleting: locations.primary_photo_id is a hard
+    // FK and the photo itself is staying.
+    await restPatch("locations", `id=eq.${removeId}`, { primary_photo_id: null });
+    await restDelete("locations", `id=eq.${removeId}`);
+
+    toast(`Merged into ${keep.name}`);
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function deleteLocation(locationId) {
   const l = locationById(locationId);
   if (!l) return;

@@ -522,21 +522,6 @@ order by location_count desc;
 
 ## Open — verified 2026-08-28, end of session
 
-### MERGE-2 — merge from anywhere, and merge child locations — `ready`
-
-Blocked on MERGE-1: widening access to a lossy merge makes it worse. Amanda's
-ask, 2026-09-08:
-
-- **Plants.** Pick any plant, choose another to merge into it. Surviving plant
-  wins on metadata; she chooses which location survives; photos, tags, notes and
-  events all combine. Today merge is reachable only from Duplicate plants.
-- **Locations (child only).** Viewing a location, merge another child into it:
-  move every plant up, then delete the merged-away location. **No merge code
-  exists for locations at all** — `deleteLocation()` is the nearest thing and it
-  *unassigns* plants rather than moving them.
-- **Duplicate detection stays as-is.** She confirmed the existing name+location
-  auto-flag needs no change.
-
 ### Data-quality findings, separate from PROF-3 — `ready`
 
 Visible in the 2026-09-08 epithet audit. All small, one pass:
@@ -918,6 +903,22 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.36.0 — MERGE-2: merge from anywhere, and merge locations
+
+**Plants.** "Merge another plant into this one" on Plant Detail. The page you
+are on survives, matching "Keep this" on the duplicates tile. `mergePlants()`
+gained `opts.locationId`, asked for **only when the two are in different
+places** — the duplicates-in-one-bucket case must not learn her to click past a
+question. A survivor with no location silently inherits the other's.
+
+**Locations.** `mergeLocations()` is entirely new; `deleteLocation()`
+*unassigns*, which is the opposite. Children reparent rather than being refused.
+Its table list was built by probing the database column by column, not from
+REFERENCE — that shortcut is what MERGE-1 cost. Refuses to merge a location into
+its own descendant, and `locationPicker()` gained `excludeIds` so the subtree is
+never offered. Two tests, mutation-verified.
+
 
 ### v2.35.0 — two species-hygiene tiles, and mergeTaxa
 

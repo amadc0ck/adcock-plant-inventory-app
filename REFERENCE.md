@@ -682,6 +682,17 @@ and adding a table means adding it to both. `mergeTaxa` additionally fills only
 **blank** fields on the survivor from the record being merged away — never
 overwriting, so `false` and `0` survive as the answers they are.
 
+**Everything carrying a `location_id`** — `plants`, `photos`, `photo_locations`
+(unique on `photo_id, location_id`), `plant_location_history`, `watering_events`,
+`bloom_events`, `task_subjects`, plus `locations.parent_location_id` for the
+tree and `locations.primary_photo_id`, a hard FK that must be cleared before a
+delete. `mergeLocations()` and `deleteLocation()` both walk this list and they
+mean **opposite** things: merge re-points every row at the survivor, delete
+unassigns. The three event tables are snapshots of where something happened, so
+a merge re-points them rather than dropping them — "watered in Bucket 40" stays
+true when Bucket 40 is absorbed. Verified by probing the database 2026-09-11,
+not from this document.
+
 **Deletion / merge cleanup order** — any function deleting or merging a plant must handle, in order. **Corrected 2026-09-08 (MERGE-1): five of these were missing and `mergePlants()` was built from the short list, so every merge silently destroyed the merged plant's watering and bloom history.**
 
 1. `photos.plant_id` — unassign on delete, reassign on merge. Do not delete the photo.

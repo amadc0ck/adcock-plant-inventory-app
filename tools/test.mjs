@@ -298,5 +298,31 @@ t("unnamed taxa do not all group together", () => {
   eq(ctx.findDuplicateTaxaGroups(), []);
 });
 
+/* ---------- MERGE-2 guards (v2.36.0) ---------- */
+
+t("a location's own descendants are excluded from its merge picker", () => {
+  /* Merging a location into something nested inside it would reparent that
+     subtree to itself and detach the branch from the tree. mergeLocations()
+     refuses, and the picker never offers it — this pins the id list the modal
+     builds, which is what both depend on. */
+  setState(ctx, { locations: [
+    { id: "top", name: "Front Yard", parent_location_id: null },
+    { id: "mid", name: "Below Wall", parent_location_id: "top" },
+    { id: "leaf", name: "Bucket 40", parent_location_id: "mid" },
+    { id: "other", name: "Backyard", parent_location_id: null }] });
+  const forbidden = ["top", ...ctx.descendantLocationIds("top")];
+  eq(forbidden.sort(), ["leaf", "mid", "top"]);
+  ok(!forbidden.includes("other"), "an unrelated location stays pickable");
+});
+t("descendantLocationIds reaches more than one level down", () => {
+  // A one-level check would leave the grandchild pickable, which is the same
+  // detached subtree by a longer route.
+  setState(ctx, { locations: [
+    { id: "top", parent_location_id: null },
+    { id: "mid", parent_location_id: "top" },
+    { id: "leaf", parent_location_id: "mid" }] });
+  ok(ctx.descendantLocationIds("top").includes("leaf"));
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -162,5 +162,55 @@ t("a living plant on watch does", () => {
   ok(ctx.needsAttention({ status: "active", health_status: "watch" }));
 });
 
+/* ---------- plantsWorkedRecently (WORK-1, v2.32.0) ---------- */
+const NOW = new Date().toISOString();
+const OLD = "2020-01-01T00:00:00.000Z";
+const blank = { plants: [], photos: [], photoPlants: [], careNotes: [],
+  wateringEvents: [], bloomEvents: [], plantLocationHistory: [] };
+
+t("a photo filed yesterday puts the plant on the list", () => {
+  // The whole point: filing the photo is what removed it from the check-in
+  // list, so this is the only way back to it.
+  setState(ctx, { ...blank,
+    plants: [{ id: "a", updated_at: OLD }],
+    photos: [{ id: "p", plant_id: "a", uploaded_at: NOW }] });
+  const r = ctx.plantsWorkedRecently(7);
+  eq(r.length, 1); ok(r[0].what.includes("photo"));
+});
+t("a photo attached only via photo_plants still counts", () => {
+  setState(ctx, { ...blank,
+    plants: [{ id: "a", updated_at: OLD }],
+    photos: [{ id: "p", plant_id: null, uploaded_at: NOW }],
+    photoPlants: [{ photo_id: "p", plant_id: "a" }] });
+  eq(ctx.plantsWorkedRecently(7).length, 1);
+});
+t("old activity falls outside the window", () => {
+  setState(ctx, { ...blank,
+    plants: [{ id: "a", updated_at: OLD }],
+    photos: [{ id: "p", plant_id: "a", uploaded_at: OLD }] });
+  eq(ctx.plantsWorkedRecently(7).length, 0);
+});
+t("a watering counts as working on it", () => {
+  setState(ctx, { ...blank,
+    plants: [{ id: "a", updated_at: OLD }],
+    wateringEvents: [{ plant_id: "a", created_at: NOW }] });
+  ok(ctx.plantsWorkedRecently(7)[0].what.includes("watered"));
+});
+t("several kinds of work on one plant collapse to one row", () => {
+  setState(ctx, { ...blank,
+    plants: [{ id: "a", updated_at: NOW }],
+    photos: [{ id: "p", plant_id: "a", uploaded_at: NOW }],
+    wateringEvents: [{ plant_id: "a", created_at: NOW }] });
+  const r = ctx.plantsWorkedRecently(7);
+  eq(r.length, 1); eq(r[0].what.length, 3);
+});
+t("hasNoteSince is false when the only note predates the work", () => {
+  setState(ctx, { ...blank,
+    plants: [{ id: "a" }],
+    careNotes: [{ plant_id: "a", created_at: OLD }] });
+  no(ctx.hasNoteSince("a", NOW));
+  ok(ctx.hasNoteSince("a", OLD));
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -945,6 +945,25 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.32.0 — WORK-1, "worked recently"
+
+Amanda, working the check-in list: she photographs a plant, files the photo, and
+**filing it is what removes the plant from the list.** Doing the work destroys
+her place in it, so the care note afterwards meant remembering all sixteen or
+going back and forth between the camera roll and the app.
+
+Derived from the DATABASE, not `recentPlantIds()` — that is localStorage,
+per-device and capped, which is right for a picker's "recently used" and wrong
+for "what did I do yesterday" on a phone when yesterday was on the iPad.
+
+Counts photos, care notes, waterings, blooms, moves and edits: all of them mean
+"I worked on this". Grouped by day, each row saying what happened and flagging
+**no note yet**, with Add a note and Make a task inline.
+
+An entry ROW on To Do, not a counted tile — "plants I touched" is not
+outstanding work and a number there could never reach zero (the v2.6.0 fault).
+The no-note-yet count is the part that is actionable, so the subtitle carries it.
+
 ### v2.31.1 — the app did not boot from v2.30.0 to v2.31.1
 
 `SEASON_MONTHS` was declared beside `BLOOM_SEASON_LABELS`, 400 lines below

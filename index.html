@@ -836,7 +836,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.31.1";
+const APP_VERSION = "2.32.0";
 const APP_UPDATED = "2026-09-08";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -928,6 +928,7 @@ const state = {
   taxaSearch: "",
   taxaOnlySuggestions: false,
   taxaNoCoverOnly: false,     // COVER-1 filter on the Plants tab
+  recentDays: 7,              // WORK-1 window
   wishTaxon: "",              // WISH-1: optional species link on a new entry
   wishSearch: "",
   taxaOnlyMissingParts: false,
@@ -6695,6 +6696,28 @@ function wishGroup() {
   const open = wishlistOpen();
   const gone = graveyardPlants();
   return `
+    ${(() => {
+      // WORK-1 entry. A ROW, not a counted tile: "plants I touched" is not
+      // outstanding work, and a number here would be one nobody can drive to
+      // zero — the fault that retired "In bloom now" in v2.6.0. The count of
+      // those with no note yet is the part that IS actionable, so that is what
+      // the subtitle says.
+      const recent = plantsWorkedRecently(state.recentDays || 7);
+      if (!recent.length) return "";
+      const unnoted = recent.filter((r) => !hasNoteSince(r.pl.id, r.when)).length;
+      return `
+      <div class="queue-group" style="margin-top:18px;">
+        <button class="attn-row" onclick="state.reportView='recentlyWorked';render()">
+          ${icon("clipboard")}
+          <div style="flex:1;min-width:0;">
+            <div class="attn-title">Worked recently</div>
+            <div class="attn-sub">${countLabel(recent.length, "plant", "plants")} in the last ${state.recentDays || 7} days${unnoted ? ` &middot; ${unnoted} with no note yet` : ""}</div>
+          </div>
+          <span class="action-chevron">${icon("chevronRight")}</span>
+        </button>
+      </div>`;
+    })()}
+
     <div class="queue-group" style="margin-top:18px;">
       <div class="queue-head">
         <h3>Wish list</h3>
@@ -6754,6 +6777,52 @@ function workQueueDetail() {
      it — "the one that died the winter before last" — not by species or bed.
      Every record keeps its photos, notes and move history; this is a view, not
      a second store. */
+  /* WORK-1. Retracing yesterday. Grouped by day because that is how she
+     remembers it — "the sixteen I did yesterday" — and each row says what
+     happened and whether anything has been written down since. */
+  if (state.reportView === "recentlyWorked") {
+    const days = state.recentDays || 7;
+    const rows = plantsWorkedRecently(days);
+    const byDay = new Map();
+    rows.forEach((r) => {
+      const d = String(r.when).slice(0, 10);
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d).push(r);
+    });
+    const WHAT = { photo: "photographed", note: "note added", watered: "watered", bloom: "bloom recorded", moved: "moved", edited: "edited" };
+    const chip = (d, label) => `<button class="btn btn-sm ${days === d ? "btn-primary" : "btn-secondary"}" onclick="state.recentDays=${d};render()">${label}</button>`;
+    return `
+      <div class="screen">
+        <div class="container">
+          <button class="back-link" onclick="state.reportView=null;render()">${icon("back")}<span class="back-label">To Do</span></button>
+          <h2 class="display" style="font-size:22px;font-weight:600;margin:0 0 2px;">Worked recently</h2>
+          <p class="subtle" style="margin:0 0 12px;">${countLabel(rows.length, "plant", "plants")} touched in the last ${days} days &mdash; photographed, watered, moved or edited. Filing a photo takes a plant off the check-in list, so this is how you find your way back to it.</p>
+          <div class="wrap-gap" style="margin-bottom:16px;">${chip(2, "2 days")}${chip(7, "A week")}${chip(30, "A month")}</div>
+          ${rows.length === 0 ? `<div class="empty" style="padding:40px 20px;"><div>Nothing touched in the last ${days} days.</div></div>` : [...byDay].map(([d, list]) => `
+            <div class="section-label" style="margin-top:18px;">${escapeHtml(fmtDate(d))} &middot; ${countLabel(list.length, "plant", "plants")}</div>
+            <div class="stack">
+              ${list.map(({ pl, when, what }) => {
+                const noted = hasNoteSince(pl.id, when);
+                return `
+                <div class="tag-card plant-list-card" onclick="openPlant('${pl.id}')">
+                  <div class="plant-list-thumb">
+                    ${plantCoverPhoto(pl) ? photoImg(plantCoverPhoto(pl)) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
+                  </div>
+                  <div style="flex:1;min-width:0;">
+                    <div class="mono tag-id">${pl.accession_number}</div>
+                    <div style="font-size:13.5px;margin-top:1px;">${plantDisplayHtml(pl)}</div>
+                    <div class="subtle" style="font-size:11.5px;margin-top:2px;">
+                      ${what.map((w) => escapeHtml(WHAT[w] || w)).join(" &middot; ")}${noted ? "" : ` &middot; <span style="color:var(--orange);">no note yet</span>`}
+                    </div>
+                    <div class="wrap-gap" style="margin-top:6px;">${reportRowActions(pl)}</div>
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>`).join("")}
+        </div>
+      </div>`;
+  }
+
   if (state.reportView === "graveyard") {
     const gone = graveyardPlants();
     const years = [...new Set(gone.map((p) => String(p.date_removed || "").slice(0, 4) || "Undated"))];
@@ -7022,6 +7091,54 @@ function reportLocationItem(l) {
 
    Every view also offers "Make a task", so a row can be dealt with honestly
    even when the answer is "not today". */
+/* WORK-1. Amanda, 2026-09-11: working the check-in list, she photographs a
+   plant, files the photo — and **filing it is what removes the plant from the
+   list**. The act of doing the work destroys her place in it, so adding the
+   care note afterwards meant remembering all sixteen, or going back and forth
+   between the camera roll and the app to reconstruct them.
+
+   Derived from the DATABASE, not from `recentPlantIds()`. That one is
+   localStorage — per-device, capped, and only fires when a plant is committed
+   onto a photo, which is right for a picker's "recently used" and wrong here.
+   She uses an iPad and a phone; a list of what she did yesterday must not
+   depend on which one she held.
+
+   Deliberately NOT just photos: a move, a watering, a note or an edit are all
+   "I worked on this plant", and the point is to find your way back. */
+function plantsWorkedRecently(days) {
+  const cutoff = new Date(Date.now() - (days || 7) * 86400000).toISOString();
+  const touched = new Map();
+  const mark = (plantId, when, what) => {
+    if (!plantId || !when || String(when) < cutoff.slice(0, String(when).length)) return;
+    const cur = touched.get(plantId) || { when: "", what: new Set() };
+    if (String(when) > cur.when) cur.when = String(when);
+    cur.what.add(what);
+    touched.set(plantId, cur);
+  };
+
+  state.photos.forEach((ph) => {
+    const when = ph.uploaded_at;
+    if (ph.plant_id) mark(ph.plant_id, when, "photo");
+    state.photoPlants.filter((pp) => pp.photo_id === ph.id).forEach((pp) => mark(pp.plant_id, when, "photo"));
+  });
+  state.careNotes.forEach((c) => mark(c.plant_id, c.created_at || c.noted_on, "note"));
+  state.wateringEvents.forEach((w) => mark(w.plant_id, w.created_at || w.watered_on, "watered"));
+  state.bloomEvents.forEach((b) => mark(b.plant_id, b.created_at || b.started_on, "bloom"));
+  state.plantLocationHistory.forEach((h) => mark(h.plant_id, h.started_at, "moved"));
+  state.plants.forEach((pl) => mark(pl.id, pl.updated_at, "edited"));
+
+  return [...touched.entries()]
+    .map(([id, v]) => ({ pl: state.plants.find((p) => p.id === id), when: v.when, what: [...v.what] }))
+    .filter((x) => x.pl)
+    .sort((a, b) => b.when.localeCompare(a.when));
+}
+
+// Has this plant been written about SINCE the work happened? That is the gap
+// the list exists to close — a photo taken and no observation recorded.
+function hasNoteSince(plantId, when) {
+  return state.careNotes.some((c) => c.plant_id === plantId && String(c.created_at || c.noted_on) >= String(when).slice(0, 10));
+}
+
 function reportRowActions(pl) {
   const v = state.reportView;
   const btn = (label, onclick) =>
@@ -7049,6 +7166,8 @@ function reportRowActions(pl) {
   // Moving it out of staging is what clears it — there is no flag to unset.
   if (v === "plantsStaging") out.push(btn("Plant it — move", `openModal('movePlant',{plantId:'${pl.id}'})`));
 
+  // The two things she wants to do while retracing yesterday's work.
+  if (v === "recentlyWorked") out.push(btn("Add a note", `openModal('addCareNote',{plantId:'${pl.id}'})`));
   out.push(btn("Make a task", `openModal('newTask',{subject:{kind:'plant',id:'${pl.id}'}})`));
   return out.join("");
 }

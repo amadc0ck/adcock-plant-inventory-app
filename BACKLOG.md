@@ -602,27 +602,23 @@ site-side). A per-species San Marcos link belongs on that page too.
 Everything below is either **waiting on Amanda** or **decided but unbuilt**.
 Nothing here is blocked on code that has not shipped.
 
-### Code, ready to build — reopened 2026-08-29
+### TAXA-IDX — unique index on the composed taxon name — `needs a decision`
 
-Three tools the taxa cleanup proved are missing. None urgent; all three will be
-wanted again.
+All three tools in the old "Code, ready to build" shipped (v2.35.0 and the
+earlier `deleteTaxon`). What is left is the fix rather than the workaround.
 
-1. **Delete a species.** There is no `deleteTaxon` in the app at all. Must refuse
-   while specimens exist, and clear `suggestions` and `task_subjects` first
-   (both carry a `taxa_id` FK). Model it on `deleteLocation`.
-2. **"Species with no specimens" tile.** Empty taxa are invisible, so they
-   accumulate silently — `ensureTaxonForName` creates the taxon BEFORE linking
-   the specimen, so a failed link orphans one.
-3. **Duplicate-species detection.** Same shape as the Duplicate plants check.
-   Two *Sedum adolphii* rows were found 2026-08-29, created **five seconds
-   apart**, and merged by hand.
+`ensureTaxonForName()` reads then inserts, and `taxa` has no unique constraint,
+so two rapid creates both miss — that is how two *Sedum adolphii* rows appeared
+five seconds apart. The composed name is computed in JS, not stored, so this
+needs an expression index or a generated column. **Three decisions:**
 
-**The cause behind #3 is a check-then-act race.** `ensureTaxonForName()` calls
-`findTaxonByName()` and then inserts; two rapid creates both miss the existing
-row, and `taxa` has **no unique constraint** to catch it. Detection is a
-workaround — the fix is a unique index on the composed name. Not designed yet:
-the composed name is computed in JS, not stored, so it needs a generated column
-or an expression index. **Schema change — ask first.**
+1. Must run AFTER the Duplicate species tile is cleared — it fails if a pair exists.
+2. Must be **partial** (`WHERE genus IS NOT NULL AND genus <> ''`), or every
+   `working_label`-only taxon composes to `''` and they all collide.
+3. The five bare-genus placeholders collide with each other by design. Probably
+   right — two bare `Echeveria` rows are the same placeholder — but Amanda's call.
+
+**Schema change. Ask first.**
 
 ### SQL — NOTHING OUTSTANDING
 
@@ -922,6 +918,22 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.35.0 — two species-hygiene tiles, and mergeTaxa
+
+**Species with no specimens.** `ensureTaxonForName()` writes the taxon before
+linking the specimen, so a failed link orphans one that no screen can reach.
+Wished-for species are excluded: having no specimen is what a wish is.
+
+**Duplicate species**, grouped on `nameKey()` of the composed name only.
+Common names are deliberately out — two unrelated plants are both "Ghost
+Plant", and a tile that cries wolf stops being read.
+
+`mergeTaxa()` moves specimens, suggestions (`taxa_id` AND `value_id`), wishes
+and task subjects, then **fills only BLANK fields** on the survivor from the
+loser — discarding a filled-in `soil` would undo PROF work and buy another AI
+call. Six tests, mutation-verified.
+
 
 ### v2.34.0 — DEDUPE-1: three renders stopped hand-rolling "which plants does this photo show"
 

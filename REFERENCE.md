@@ -674,6 +674,14 @@ Plants, locations, and photos all support many-to-many **on top of** a fast-path
 
 **Deleting a photo** must clear four references first, all hard FKs that block the delete: `plants.primary_photo_id`, `locations.primary_photo_id`, `taxa.primary_photo_id`, plus rows in `photo_plants` and `photo_locations`. `deletePhotosByIds()` is the single path for this — before v1.52.0 the delete cleared only plants and `photo_plants`, so removing a location's hero or a species' cover photo failed outright. `taxa.primary_photo_id` arrived with the species split and was never added until that bug was found.
 
+**Everything carrying a `taxa_id`** — `plants`, `suggestions` (`taxa_id` *and*
+`value_id`), `task_subjects`, `wishlist` (`on delete set null`). `identifications`
+does **not**: it names a species by string, being the Pl@ntNet audit trail.
+`mergeTaxa()` and `deleteTaxon()` are the two paths that must walk this list,
+and adding a table means adding it to both. `mergeTaxa` additionally fills only
+**blank** fields on the survivor from the record being merged away — never
+overwriting, so `false` and `0` survive as the answers they are.
+
 **Deletion / merge cleanup order** — any function deleting or merging a plant must handle, in order. **Corrected 2026-09-08 (MERGE-1): five of these were missing and `mergePlants()` was built from the short list, so every merge silently destroyed the merged plant's watering and bloom history.**
 
 1. `photos.plant_id` — unassign on delete, reassign on merge. Do not delete the photo.

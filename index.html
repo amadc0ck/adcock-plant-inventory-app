@@ -940,7 +940,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.34.0";
+const APP_VERSION = "2.35.0";
 const APP_UPDATED = "2026-09-11";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3036,6 +3036,47 @@ function rootSpecimensOfTaxon(taxonId) {
 }
 function offspringOf(plantId, taxonId) {
   return specimensOfTaxon(taxonId).filter((p) => p.parent_plant_id === plantId);
+}
+
+/* ---------- Species hygiene (v2.35.0) ---------- */
+
+/* Taxa that nothing points at. `ensureTaxonForName()` writes the species row
+   BEFORE it links the specimen, so a failed link leaves a taxon behind with
+   nothing to reach it by — every screen arrives at a species through its
+   plants, which is exactly why these accumulate unseen. This tile is the only
+   place they surface.
+
+   **A taxon on the wish list is excluded on purpose.** Having no specimen yet
+   is what a wish IS. Deleting it would drop the entry back to the free text it
+   was typed with, which is the drift `wishlist.taxa_id` exists to prevent. */
+function taxaWithNoSpecimens() {
+  const wished = new Set(state.wishlist.filter((w) => w.taxa_id).map((w) => w.taxa_id));
+  return state.taxa
+    .filter((t) => !wished.has(t.id) && !state.plants.some((p) => p.taxa_id === t.id))
+    .sort((a, b) => taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
+}
+
+/* findDuplicatePlantGroups, one level up. Two *Sedum adolphii* rows were found
+   2026-08-29 created **five seconds apart**: `ensureTaxonForName()` calls
+   `findTaxonByName()` and then inserts, and `taxa` carries no unique
+   constraint, so two rapid creates both miss and both write. Detection is the
+   workaround — the fix is a unique index on the composed name, which cannot be
+   added until the existing pairs are gone. See BACKLOG.
+
+   Grouped on `nameKey()` of the COMPOSED name only, never on common_name.
+   nameKey already folds quoting, the hybrid sign and rank words together, so
+   `Echeveria 'Lola'` and `Echeveria Lola` land in one group. Common names were
+   deliberately left out: two unrelated species share "Ghost Plant", and
+   flagging those as duplicates would teach her to ignore the tile. */
+function findDuplicateTaxaGroups() {
+  const groups = new Map();
+  state.taxa.forEach((t) => {
+    const key = nameKey(taxonDisplayName(t));
+    if (!key || key === "unnamed taxon" || key === "unknown") return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  });
+  return [...groups.values()].filter((g) => g.length > 1);
 }
 // The taxon's own profile photo, else the newest photo from any of its
 // specimens. Once GAL-1 lands this becomes the favourited photos.
@@ -6766,6 +6807,10 @@ function workQueue() {
       sect("emptyLocations"),
       tile(dupPhotos.length, "Duplicate photos", `Same capture time — ${countLabel(dupExtras, "extra copy", "extra copies")}`, "openModal('duplicatePhotos')"),
       tile(duplicateGroups.length, "Duplicate plants", "Same species, same location", "openModal('duplicatePlants')"),
+      tile(findDuplicateTaxaGroups().length, "Duplicate species", "The same name recorded twice", "openModal('duplicateTaxa')"),
+      // Not a gap in a record — a record with nothing behind it. See
+      // taxaWithNoSpecimens() for why a wished-for species is not one of these.
+      tile(taxaWithNoSpecimens().length, "Species with no specimens", "Nothing in the collection is one \u2014 delete, or add one", "openModal('taxaNoSpecimens')"),
       // "In bloom now" used to sit here. It is not a record to finish — nor work
       // of any kind. It is a status, and To Do is for things that need doing,
       // which was the principle of the whole rebuild. The Gallery's In Bloom row
@@ -8750,6 +8795,55 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:16px;" onclick="state.dupeSelected=new Set();closeModal()">Done</button>`;
   }
 
+  if (type === "duplicateTaxa") {
+    const groups = findDuplicateTaxaGroups();
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Possible duplicate species</h3>
+      <p class="subtle" style="margin:0 0 14px;">The same name recorded twice \u2014 two records that should be one. "Keep this" moves every specimen, wish and task onto it and fills its blank fields in from the other, then deletes the other.</p>
+      ${groups.length === 0 ? `<p class="subtle">No duplicates found.</p>` : `
+        <div class="stack">
+          ${groups.map((group) => `
+            <div class="surface" style="padding:14px;">
+              ${group.map((t) => {
+                const n = specimensOfTaxon(t.id).length;
+                return `
+                <div class="row" style="margin-top:6px;">
+                  <div style="cursor:pointer;min-width:0;" onclick="closeModal();openTaxon('${t.id}')">
+                    <span style="font-size:13.5px;">${taxonDisplayHtml(t)}</span>
+                    <span class="subtle" style="font-size:11px;margin-left:6px;">${countLabel(n, "specimen", "specimens")}</span>
+                  </div>
+                  <div style="display:flex;gap:6px;flex-shrink:0;">
+                    ${group.filter((o) => o.id !== t.id).map((o) => `
+                      <button class="btn btn-secondary btn-sm" onclick="mergeTaxa('${t.id}','${o.id}')" title="Keep this record, merge the other into it">Keep this</button>`).join("")}
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>`).join("")}
+        </div>`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
+  }
+
+  if (type === "taxaNoSpecimens") {
+    const orphans = taxaWithNoSpecimens();
+    return `
+      <div class="modal-handle"></div>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Species with no specimens</h3>
+      <p class="subtle" style="margin:0 0 14px;">Nothing in the collection is recorded as these, and nothing on the wish list wants them \u2014 so no screen can reach them. Usually a specimen that failed to link when the species was created. Delete, or add a specimen.</p>
+      ${orphans.length === 0 ? `<p class="subtle">Every species has at least one specimen or a wish list entry.</p>` : `
+        <div class="stack">
+          ${orphans.map((t) => `
+            <div class="row surface" style="padding:12px 14px;">
+              <div style="cursor:pointer;min-width:0;" onclick="closeModal();openTaxon('${t.id}')">
+                <span style="font-size:13.5px;">${taxonDisplayHtml(t)}</span>
+                ${t.common_name ? `<span class="subtle" style="font-size:11px;margin-left:6px;">${escapeHtml(t.common_name)}</span>` : ""}
+              </div>
+              <button class="btn btn-secondary btn-sm" style="flex-shrink:0;" onclick="deleteTaxon('${t.id}')">Delete</button>
+            </div>`).join("")}
+        </div>`}
+      <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
+  }
+
   if (type === "duplicatePlants") {
     const groups = findDuplicatePlantGroups();
     return `
@@ -10574,6 +10668,74 @@ async function acquireWishlistEntry(id) {
    REFERENCE was wrong. I claimed to be building from the FK list rather than
    the note, and then built from a different document — **the only list that is
    not a document is the database**, which answers in one request per column. */
+/* Merge two species records into one. The counterpart to mergePlants(), and it
+   inherits that function's hard-won lesson: **the table list is the whole
+   correctness argument.** Everything carrying a `taxa_id` must be named here or
+   the merge either fails on an FK or silently orphans a row. Verified against
+   the FK list, not against a prose note — MERGE-1 was built from REFERENCE 6
+   and destroyed watering history for months because that list predated the
+   table. `identifications` is deliberately absent: it has NO taxa_id and
+   references a species by name (verified 2026-09-09, after a 42703).
+
+   **Blank fields on the survivor are filled from the loser, and nothing else
+   is overwritten.** A merge that discarded a filled-in `soil` or `feeding`
+   would quietly undo PROF work and put the species back in the "profiles
+   unfinished" queue, costing another AI call to learn what was already known.
+   Filling only blanks can never surprise: the record she chose to keep still
+   wins every field it actually has. */
+async function mergeTaxa(keepId, removeId) {
+  const keep = taxonById(keepId), remove = taxonById(removeId);
+  if (!keep || !remove) return;
+  const specs = specimensOfTaxon(removeId).length;
+  const wishes = state.wishlist.filter((w) => w.taxa_id === removeId).length;
+  const consequences = [
+    specs ? `${countLabel(specs, "specimen moves", "specimens move")} across` : "",
+    wishes ? `${countLabel(wishes, "wish list entry points", "wish list entries point")} at the survivor` : "",
+    "blank fields on the survivor are filled in from it",
+  ].filter(Boolean);
+  if (!confirm(`Merge "${taxonDisplayName(remove)}" into "${taxonDisplayName(keep)}"?`
+    + `\n\n${consequences.join("\n")}`
+    + `\n\nThe merged record is then deleted. This can't be undone.`)) return;
+  try {
+    await restPatch("plants", `taxa_id=eq.${removeId}`, { taxa_id: keepId });
+    await restPatch("suggestions", `taxa_id=eq.${removeId}`, { taxa_id: keepId });
+    // `value_id` is where a new_specimen suggestion holds the taxon it proposes
+    // — a different column, and the same orphan if it is left behind.
+    await restPatch("suggestions", `value_id=eq.${removeId}`, { value_id: keepId });
+    await restPatch("wishlist", `taxa_id=eq.${removeId}`, { taxa_id: keepId });
+
+    /* task_subjects is CHECK-constrained to exactly one of plant/location/taxa,
+       so a task naming BOTH species would end up with two identical subject
+       rows. Deduped the same way mergePlants dedupes photo_plants. */
+    const keepTasks = new Set(
+      state.taskSubjects.filter((ts) => ts.taxa_id === keepId).map((ts) => ts.task_id));
+    for (const ts of state.taskSubjects.filter((ts) => ts.taxa_id === removeId)) {
+      if (keepTasks.has(ts.task_id)) await restDelete("task_subjects", `id=eq.${ts.id}`);
+      else await restPatch("task_subjects", `id=eq.${ts.id}`, { taxa_id: keepId });
+    }
+
+    /* Keys come from the row PostgREST returned, so every one is a real column
+       — this is not the blind row-spread that broke every backup in v2.21.1.
+       A value is "blank" only if null or empty string: `false` and `0` are
+       answers, and overwriting them would be exactly the loss this avoids. */
+    const SKIP = new Set(["id", "created_at", "updated_at"]);
+    const fill = {};
+    Object.keys(remove).forEach((k) => {
+      if (SKIP.has(k)) return;
+      const kv = keep[k], rv = remove[k];
+      const keepBlank = kv === null || kv === undefined || kv === "";
+      const removeHas = rv !== null && rv !== undefined && rv !== "";
+      if (keepBlank && removeHas) fill[k] = rv;
+    });
+    if (Object.keys(fill).length) await restPatch("taxa", `id=eq.${keepId}`, fill);
+
+    await restDelete("taxa", `id=eq.${removeId}`);
+    toast(`Merged into ${taxonDisplayName(keep)}`);
+    closeModal();
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
 async function deleteTaxon(taxaId) {
   const t = taxonById(taxaId);
   if (!t) return;

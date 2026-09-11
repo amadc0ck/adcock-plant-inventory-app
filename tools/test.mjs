@@ -249,5 +249,54 @@ t("an unassigned photo shows nobody", () => {
   eq(ctx.plantsAssignedToPhoto("p"), []);
 });
 
+/* ---------- Species hygiene (v2.35.0) ---------- */
+
+t("a taxon nothing is recorded as is an orphan", () => {
+  // ensureTaxonForName() writes the taxon BEFORE linking the specimen, so a
+  // failed link leaves exactly this — reachable from no screen in the app.
+  setState(ctx, { taxa: [{ id: "t1", genus: "Sedum", species_epithet: "adolphii" }],
+    plants: [], wishlist: [] });
+  eq(ctx.taxaWithNoSpecimens().map((x) => x.id), ["t1"]);
+});
+t("a wished-for species is not an orphan", () => {
+  // Having no specimen yet is what a wish IS. Deleting it would drop the entry
+  // back to its typed free text, the drift wishlist.taxa_id exists to prevent.
+  setState(ctx, { taxa: [{ id: "t1", genus: "Sedum", species_epithet: "adolphii" }],
+    plants: [], wishlist: [{ id: "w", taxa_id: "t1" }] });
+  eq(ctx.taxaWithNoSpecimens(), []);
+});
+t("a species whose only specimen died is not an orphan", () => {
+  // GRAVE-1 keeps the plant row and only changes status, so the species still
+  // has something behind it — the Graveyard is where it is now reached from.
+  setState(ctx, { taxa: [{ id: "t1", genus: "Sedum", species_epithet: "adolphii" }],
+    plants: [{ id: "p", taxa_id: "t1", status: "dead" }], wishlist: [] });
+  eq(ctx.taxaWithNoSpecimens(), []);
+});
+
+t("quoting does not hide a duplicate species", () => {
+  // The whole point of grouping on nameKey(): 'Lola' with the quotes baked into
+  // the cultivar and Lola without them are one species entered twice.
+  setState(ctx, { taxa: [
+    { id: "a", genus: "Echeveria", cultivar: "'Lola'" },
+    { id: "b", genus: "Echeveria", cultivar: "Lola" }] });
+  eq(ctx.findDuplicateTaxaGroups().length, 1);
+});
+t("two species sharing a common name are not duplicates", () => {
+  // Grouping on common_name would flag these, and a tile that cries wolf stops
+  // being read — the reason nameKey is fed the composed name only.
+  setState(ctx, { taxa: [
+    { id: "a", genus: "Graptopetalum", species_epithet: "paraguayense", common_name: "Ghost Plant" },
+    { id: "b", genus: "Monotropa", species_epithet: "uniflora", common_name: "Ghost Plant" }] });
+  eq(ctx.findDuplicateTaxaGroups(), []);
+});
+t("unnamed taxa do not all group together", () => {
+  // They compose to the same placeholder string, so a naive key would report
+  // every unidentified record as one enormous duplicate group.
+  setState(ctx, { taxa: [
+    { id: "a", working_label: "the spiky one" },
+    { id: "b", working_label: "the other spiky one" }] });
+  eq(ctx.findDuplicateTaxaGroups(), []);
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

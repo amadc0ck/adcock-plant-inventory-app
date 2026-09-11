@@ -26,7 +26,11 @@ Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
 
 ### OUTSTANDING SQL — one statement, held deliberately
 
-**AWAITING RESULTS, 2026-09-11.** A read-only audit for the four data-quality
+**NOTHING OUTSTANDING.** Both 2026-09-11 statements ran and were verified: the
+NAME-3 data fix (9 rows, all four audit checks now return 0) and
+`taxa_identity_uniq` (read back from `pg_indexes`).
+
+**Superseded — AWAITING RESULTS, 2026-09-11.** A read-only audit for the four data-quality
 findings — quotes baked into `cultivar`, the hybrid sign inside `genus`,
 `is_hybrid = false` on records whose parentage names a cross, and `cv.` notation
 in `botanical_name`. It is a SELECT; nothing is written until the rows come back
@@ -897,7 +901,8 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
 
-`taxa_identity_uniq` is live. Identity is
+`taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
+five key expressions and the partial predicate intact. Identity is
 `(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
 and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
 157 rows, 157 distinct keys.

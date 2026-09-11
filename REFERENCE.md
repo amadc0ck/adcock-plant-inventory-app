@@ -708,8 +708,22 @@ is created silently.
 `(genus, species_epithet, infraspecific, cultivar, working_label)`, lowercased
 and trimmed, with quoting stripped from the cultivar — not by `botanical_name`,
 which is free text and often absent since v1.65.0. The unique partial index
-`taxa_identity_uniq` enforces this where `genus` is present (created
-2026-09-11). `working_label` is in the key so two
+`taxa_identity_uniq` enforces this where `genus` is present. **Created and
+verified present against the live database 2026-09-11:**
+
+```sql
+CREATE UNIQUE INDEX taxa_identity_uniq ON public.taxa USING btree (
+  lower(btrim(genus)),
+  lower(COALESCE(btrim(species_epithet), ''::text)),
+  lower(COALESCE(btrim(infraspecific), ''::text)),
+  lower(regexp_replace(COALESCE(cultivar, ''::text), '[''"‘’“”]'::text, ''::text, 'g'::text)),
+  lower(COALESCE(btrim(working_label), ''::text)))
+WHERE ((genus IS NOT NULL) AND (btrim(genus) <> ''::text));
+```
+
+Read it back with `select indexdef from pg_indexes where indexname =
+'taxa_identity_uniq';` — and re-read it rather than trusting this block. A
+dated all-clear is a statement about a moment, not a property of the schema. `working_label` is in the key so two
 genuinely different unidentified plants of one genus stay distinct, while two
 identical blank placeholders are refused. `ensureTaxonForName()` catches the
 23505 and resolves to the winning row — see v2.38.0.

@@ -660,8 +660,26 @@ actual problem. **Do not build without asking.**
 
 Raised in session and recorded so they survive it. None is blocking.
 
-1. **CACHE-1 — the Claude prompt cache is probably never hitting.** Three
-   defects, one fix each. Do them together; they are one job.
+1. **CACHE-1 — all three fixes DEPLOYED 2026-09-11, not yet MEASURED.**
+   `suggest-photo` and `suggest-species` both redeployed (both import the
+   changed `_shared/abg-context.ts`). Commit `c0d88b2` in the functions repo.
+
+   **The measurement is the open half**, and it is the whole point of (c):
+   until a real batch is run, the numbers below are still inferred. Read it in
+   the Dashboard — Edge Functions → suggest-photo → Logs — filtering for
+   `claude_usage`. This CLI (v2.115.0) has no `functions logs` subcommand.
+
+   **What a healthy batch looks like:** one line with a non-zero `cache_write`
+   on the first call, then `cache_read` non-zero and `cache_write` 0 on every
+   call after. Two consecutive writes means the prefix still changed between
+   them and a defect remains.
+
+   **Unfixed and worth knowing:** the cached block's TTL is **5 minutes**, not
+   the hour the old comment claimed. It refreshes on every read, so a
+   continuous sweep is fine; a gap over 5 minutes re-pays. A 1-hour TTL exists
+   but costs 2x to write instead of 1.25x — not obviously a win, not changed.
+
+   The original write-up, for reference:
 
    The catalogue `buildContext()` assembles — every taxon, active specimen and
    location, ~460 rows and roughly **15,000 tokens**, mostly UUIDs — is sent as

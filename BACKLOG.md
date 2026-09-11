@@ -312,22 +312,17 @@ a Workspace-owned Anthropic account would be the moment to do it.
 
 ## Earlier — state as of 2026-08-30
 
-### `watering_events` exists — RLS state UNVERIFIED
+### `watering_events` — RLS VERIFIED 2026-09-11
 
-Amanda ran the `create table watering_events` block on **2026-08-30**, from a
-plan sketch rather than a finished migration. Verified present via PostgREST:
-`id`, `plant_id`, `watered_on`, `location_id`, `batch_id`, `notes`, `created_at`.
-**`method` did not land** — no matter, W-1/W-2 do not use it.
+Read from `pg_class` / `pg_policies`, not probed. Identical to `plants`,
+`care_notes` and `bloom_events`: `relrowsecurity = true`, one policy
+`watering_events_all`, `ALL` to `{authenticated}`, `using` and `with check`
+both `true`. The 2026-08-30 follow-up block ran.
 
-**The sketch omitted the RLS policy**, and an anonymous probe cannot tell
-"RLS on with no policy" from "RLS off" — both return `[]` on an empty table, and
-every other table in this project returns `[]` to anon as well. A follow-up
-block (enable RLS + policy + indexes, all idempotent) was handed over the same
-day. **Confirm it ran before building W-1**, or the table will read back empty
-and the symptom will look like a broken feature rather than a missing policy.
-
-**The lesson worth keeping:** a fenced ```sql block in a *proposal* gets run
-immediately. Never post illustrative SQL that is not safe and complete.
+**Read three known-good tables alongside the one in question.** "Does it have
+RLS" is unanswerable in isolation — the useful question is whether it matches
+everything else, and an anon probe cannot tell "RLS on, no policy" from "RLS
+off" because both return `[]`.
 
 ### Weather is live as of v2.11.0
 

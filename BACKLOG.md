@@ -945,6 +945,48 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.33.0 — THEME-1, a daylight theme and the token layer under it
+
+Amanda reads the app on an iPad **in the garden, in direct sun**, where a dark
+screen washes out. Different problem from "light mode"; the answer is contrast.
+
+Two layers. **Brand** holds the eight logo colours, fixed. **Semantic** says what
+a colour is FOR — `--ground`, `--on-ground`, `--panel`, `--on-panel` — the
+permanent fix for the bug that shipped three times: a component naming `--ink`
+rather than "text on whatever I am on" inverts when moved. Old names stay as
+aliases so ~500 references keep working and migrate gradually.
+
+`--on-ground-muted` (#B2BAA7) is new and had to be — AUDIT F7: nothing reached
+AA on the dark ground but two near-whites and orange. Daylight accents are
+darkened to 4.6–6.2:1.
+
+**Two traps, both caught by LOOKING, not reasoning.** `--bg:var(--ground)`
+resolves AT `:root`, so theming the semantic name alone left every component on
+night values — light page, dark cards. Both layers must be themed until
+migration finishes. And `.on-dark` is now a lie: it means "on the page ground",
+which is only dark at night.
+
+`tools/theme-preview.mjs` renders real components in both themes from the app's
+own stylesheet, and found both faults in one screenshot. **The app needs a
+session, so it cannot be inspected locally — this is how to see UI first.**
+
+**First pass:** only `.attn-row` and `.action-card` use semantic tokens.
+Everything else themes through the aliases and is unverified screen by screen.
+
+### v2.32.1 — the dark-page rows were unreadable, and a palette page to see why
+
+`.attn-row` sets `color:var(--ink)` — charcoal on dark green is **1.28:1**, and
+`.attn-sub` was 2.03:1, against an AA floor of 4.5. Both new uses sit on the
+dark page. Third time a component built for the cream panel inverted when moved,
+after `.action-row` and this class's own icon sizing.
+
+`tools/palette.mjs` generates a page from `index.html`: brand-colour usage, the
+full ink×ground contrast matrix, and one component rendered on every ground. It
+would have caught all three at a glance. **Cactus Flower Pink is used 4 times**
+in 12,911 lines — the least-used brand colour by a wide margin.
+
+Recorded the gap as AUDIT F7.
+
 ### v2.32.0 — WORK-1, "worked recently"
 
 Amanda, working the check-in list: she photographs a plant, files the photo, and

@@ -940,8 +940,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.39.0";
-const APP_UPDATED = "2026-09-11";
+const APP_VERSION = "2.40.0";
+const APP_UPDATED = "2026-09-12";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -1852,7 +1852,13 @@ async function loadAll() {
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
       restGet("google_auth_tokens", "?select=expires_at&limit=1"),
       restGetAll("photo_plants", "?select=*"),
-      restGetAll("identifications", "?select=*&order=created_at.desc"),
+      /* EGRESS-1. Every column EXCEPT raw_response, the full Pl@ntNet / Claude
+         answer. It was 2.7 MB of this table's 2.7 MB and 416 KB of every ~950 KB
+         reload, yet only the identificationDetail modal reads it — so it is
+         fetched per row when that opens (ensureIdentificationRaw). A column
+         added to identifications later must be added here too. The backup
+         export still selects * and stays complete. */
+      restGetAll("identifications", "?select=id,photo_id,source,suggested_name,confidence,status,confirmed_name,created_at&order=created_at.desc"),
       restGetAll("photo_locations", "?select=*"),
       restGetAll("care_notes", "?select=*&order=noted_on.desc,created_at.desc"),
       restGetAll("taxa", "?select=*&order=botanical_name.asc"),
@@ -1919,6 +1925,24 @@ async function loadAll() {
   // itself on a 3-hour staleness check, so calling it from every loadAll is
   // self-limiting rather than a request per save.
   loadWeather();
+}
+
+/* EGRESS-1. loadAll re-downloads every table (~550 KB compressed even after
+   raw_response came out), and it was the tail of nearly every save: 22 full
+   reloads in 13 minutes of photo filing on 2026-09-12, most of a 5 GB free
+   egress allowance in three weeks. restPatch already returns the updated rows
+   (Prefer: return=representation), so a write that touches ONLY `photos` can
+   put those rows straight into state instead.
+
+   Only safe where nothing else changes as a side effect. `photos` has no
+   triggers (checked against the live DB, 2026-09-12); a function that also
+   writes photo_plants, plants or anything else must keep calling loadAll. */
+function mergeRows(stateKey, rows) {
+  const list = state[stateKey];
+  for (const row of rows || []) {
+    const i = list.findIndex((x) => x.id === row.id);
+    if (i >= 0) list[i] = { ...list[i], ...row };
+  }
 }
 
 /* ============================================================
@@ -3380,14 +3404,15 @@ async function fileGroupTo(field, photoIds, value) {
   try {
     for (let i = 0; i < photoIds.length; i += DELETE_CHUNK) {
       const slice = photoIds.slice(i, i + DELETE_CHUNK);
-      await restPatch("photos", `id=in.(${slice.join(",")})`, { [field]: value });
+      mergeRows("photos", await restPatch("photos", `id=in.(${slice.join(",")})`, { [field]: value }));
       done += slice.length;
     }
     toast(`${countLabel(done, "photo", "photos")} filed`);
-    await loadAll();
+    render();
   } catch (e) {
     toast(done ? `Stopped after ${done} — ${e.message}` : e.message, true);
-    if (done) await loadAll();
+    // Chunks that succeeded are already merged; nothing to reload.
+    if (done) render();
   }
 }
 const fileGroupToPlant = (ids, plantId) => fileGroupTo("plant_id", ids, plantId);
@@ -4552,26 +4577,24 @@ function clearActiveBulkSelection() {
 async function bulkAttachToPlant(plantId) {
   const ids = Array.from(activeBulkSelection());
   for (const id of ids) {
-    try { await restPatch("photos", `id=eq.${id}`, { plant_id: plantId }); }
+    try { mergeRows("photos", await restPatch("photos", `id=eq.${id}`, { plant_id: plantId })); }
     catch (e) { toast(`Failed on one photo: ${e.message}`, true); }
   }
   notePlantUse(plantId);
   toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} attached`);
-  closeModal();
   clearActiveBulkSelection();
-  await loadAll();
+  closeModal();
 }
 async function bulkAttachToLocation(locationId) {
   if (!locationId) { toast("Choose a location first", true); return; }
   const ids = Array.from(activeBulkSelection());
   for (const id of ids) {
-    try { await restPatch("photos", `id=eq.${id}`, { location_id: locationId }); }
+    try { mergeRows("photos", await restPatch("photos", `id=eq.${id}`, { location_id: locationId })); }
     catch (e) { toast(`Failed on one photo: ${e.message}`, true); }
   }
   toast(`${ids.length} photo${ids.length === 1 ? "" : "s"} attached to container`);
-  closeModal();
   clearActiveBulkSelection();
-  await loadAll();
+  closeModal();
 }
 function openModal(type, data = {}) {
   // Paging resets per open, so the picker never starts mid-list.
@@ -4638,10 +4661,28 @@ function openModal(type, data = {}) {
       state.pickerLocation = ph.location_id;
     }
   }
+  if (type === "identificationDetail") ensureIdentificationRaw(data.identificationId);
   state.modal = { type, data };
   render();
 }
 function closeModal() { state.modal = null; render(); }
+/* EGRESS-1. loadAll leaves raw_response out of the bulk fetch. A row that has
+   it already (identifyPhoto unshifts the full row from the function, or it was
+   fetched before) is left alone; otherwise one small request, then a re-render
+   if the modal is still showing this suggestion. `undefined` means "not
+   fetched yet" and `null` means "fetched, and there is none". */
+async function ensureIdentificationRaw(id) {
+  const row = state.identifications.find((i) => i.id === id);
+  if (!row || row.raw_response !== undefined) return;
+  try {
+    const rows = await restGet("identifications", `?id=eq.${id}&select=raw_response`);
+    row.raw_response = rows[0] ? rows[0].raw_response : null;
+  } catch (e) {
+    row.raw_response = null;
+    toast(e.message, true);
+  }
+  if (state.modal && state.modal.type === "identificationDetail" && state.modal.data.identificationId === id) render();
+}
 // Work that survives its modal needs a home. Without this, dismissing the
 // import dialog — including by tapping the backdrop — leaves the import running
 // with nothing on screen to say so.
@@ -8162,6 +8203,14 @@ function modalContent() {
     const photo = state.photos.find((p) => p.id === suggestion.photo_id);
     const photoBlock = photo ? `<div style="border-radius:8px;overflow:hidden;margin-bottom:16px;">${photoImg(photo, "max-height:220px;")}</div>` : "";
 
+    if (suggestion.raw_response === undefined) {
+      return `
+        <div class="modal-handle"></div>
+        ${photoBlock}
+        <p class="subtle">Loading suggestion details…</p>
+        <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Close</button>`;
+    }
+
     if (suggestion.source === "Claude") {
       const r = suggestion.raw_response || {};
       return `
@@ -11546,10 +11595,10 @@ async function deleteLocation(locationId) {
 
 async function fileToArchiveLocation(photoId, locationId) {
   try {
-    await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId });
+    mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId }));
     const loc = locationById(locationId);
     toast(`Filed to ${loc ? loc.name : "archive"}`);
-    await loadAll();
+    render();
   } catch (e) { toast(e.message, true); }
 }
 
@@ -11638,20 +11687,18 @@ async function makePrimaryPlantForPhoto(photoId, plantId) {
 async function savePhotoNote(photoId) {
   const text = document.getElementById("edit-note-text").value;
   try {
-    await restPatch("photos", `id=eq.${photoId}`, { notes: text || null });
+    mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, { notes: text || null }));
     toast("Note saved");
     closeModal();
-    await loadAll();
   } catch (e) { toast(e.message, true); }
 }
 
 async function attachPhotoToLocation(photoId, locationId) {
   if (!locationId) { toast("Choose a location first", true); return; }
   try {
-    await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId });
+    mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId }));
     toast("Photo attached to container");
     closeModal();
-    await loadAll();
     /* Filing a photo to a bucket and naming the plant in it are one job, and
        the second half used to mean reopening the photo and finding the picker
        yourself — with the plants standing in that very bucket nowhere in
@@ -11852,11 +11899,11 @@ async function assignPhotosToPlant(plantId) {
   if (!ids.length) { toast("Pick some photos first", true); return; }
   const plant = state.plants.find((p) => p.id === plantId);
   try {
-    await restPatch("photos", `id=in.(${ids.join(",")})`, { plant_id: plantId });
+    mergeRows("photos", await restPatch("photos", `id=in.(${ids.join(",")})`, { plant_id: plantId }));
     notePlantUse(plantId);
     toast(`${countLabel(ids.length, "photo", "photos")} attached to ${plant ? plant.accession_number : "plant"}`);
     state.assignSelected = new Set();
-    await loadAll();
+    render();
   } catch (e) { toast(e.message, true); }
 }
 
@@ -11869,10 +11916,10 @@ async function attachInboxPhotoToPlant(photoId, plantId) {
     // Snapshot the plant's location, never a live link: a photo records where
     // it was taken, so it must not follow the plant when the plant later moves.
     if (!photo.location_id && plant.location_id) body.location_id = plant.location_id;
-    await restPatch("photos", `id=eq.${photoId}`, body);
+    mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, body));
     notePlantUse(plantId);
     toast("Photo attached");
-    await loadAll();
+    render();
   } catch (e) { toast(e.message, true); }
 }
 
@@ -12353,7 +12400,7 @@ async function backfillPhotoDates() {
         // still verifies the JPEG SOI marker and returns null for non-JPEGs.
         const taken = await extractExifDate({ type: "image/jpeg", slice: (a, b) => blob.slice(a, b) });
         if (taken) {
-          await restPatch("photos", `id=eq.${photo.id}`, { taken_at: taken });
+          mergeRows("photos", await restPatch("photos", `id=eq.${photo.id}`, { taken_at: taken }));
           state.backfill.found++;
         }
       } catch (e) {
@@ -12372,7 +12419,7 @@ async function backfillPhotoDates() {
     toast(e.message, true);
   } finally {
     state.backfill = null;
-    await loadAll();
+    render();
   }
 }
 
@@ -12535,9 +12582,10 @@ async function toggleFavorite(photoId) {
   const p = state.photos.find((x) => x.id === photoId);
   if (!p) return;
   try {
-    await restPatch("photos", `id=eq.${photoId}`, { is_favorite: !p.is_favorite });
+    mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, { is_favorite: !p.is_favorite }));
+    // p is the pre-merge object, so is_favorite here is still the OLD value.
     toast(p.is_favorite ? "Removed from favourites" : "Added to favourites");
-    await loadAll();
+    render();
   } catch (e) { toast(e.message, true); }
 }
 function favoritePhotos() {

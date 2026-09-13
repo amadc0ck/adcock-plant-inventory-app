@@ -36,6 +36,14 @@ Deliberate simplicity constraints, still honored:
 - No external JS libraries — not even for EXIF parsing, which is hand-rolled.
 - Everything directly editable, no bundler or transpiler in the loop.
 
+**Egress budget (EGRESS-1, v2.40.0).** Supabase free egress is 5 GB/month for the
+whole org, shared with the RBG Plant Collection Manager project. `loadAll()`
+re-downloads every table (~550 KB compressed), so do not add new `await loadAll()`
+tails to cheap writes: a write that changes only `photos` merges restPatch's
+returned rows with `mergeRows()`. Heavy columns stay out of bulk selects and are
+fetched on demand (`identifications.raw_response` → `ensureIdentificationRaw`).
+Long-term plan: BACKLOG EGRESS-2.
+
 ---
 
 ## 3. Database Schema

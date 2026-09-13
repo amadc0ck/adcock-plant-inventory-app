@@ -7,7 +7,17 @@ Item IDs are permanent. Never renumber.
 
 ---
 
-## Picking this up cold — state as of 2026-09-08
+## Picking this up cold — state as of 2026-09-12
+
+### EGRESS-2 — cache + change-only sync, the long-term egress fix — `ready`
+Supabase free egress is 5 GB/month **shared with the RBG project** (same org); 4.54 GB used by 2026-09-12.
+v2.40.0 (EGRESS-1) cut the two worst costs; ~80 `loadAll()` call sites still reload ~550 KB compressed each.
+Next: IndexedDB cache + fetch rows where `updated_at > last_sync`. Needs `updated_at` + touch trigger on
+every table (`photos` has none — see 2026-09-08 note below), and deletions detected via `select=id`.
+Convert call sites by table touched; the Edit Photo form (writes photo_plants too) is the next-heaviest path.
+Measure before/after in Dashboard → Usage → Egress, and via edge_logs (Management API logs.all, 1-day retention).
+
+## Earlier — state as of 2026-09-08
 
 ### Amanda's issue list, 2026-09-08 — triaged, one ship done
 
@@ -885,6 +895,13 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
+Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
+(A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
+(B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
+Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
+Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
 
 ### NAME-5 — data-quality pass, RAN 2026-09-11
 

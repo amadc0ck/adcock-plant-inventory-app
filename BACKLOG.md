@@ -17,7 +17,7 @@ every table (`photos` has none — see 2026-09-08 note below), and deletions det
 Convert call sites by table touched; the Edit Photo form (writes photo_plants too) is the next-heaviest path.
 Measure before/after in Dashboard → Usage → Egress, and via edge_logs (Management API logs.all, 1-day retention).
 
-## Earlier — state as of 2026-09-08
+### Carried over from 2026-09-08
 
 ### Amanda's issue list, 2026-09-08 — triaged, one ship done
 

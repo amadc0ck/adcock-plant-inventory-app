@@ -908,6 +908,12 @@ Gotcha: other `onchange="...render()"` fields can still eat the next click; conv
 Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
 
 ### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
+### v2.45.0 — FILE-1: File photos, one at a time
+To Do → "File one by one": one photo shown whole, numbered quick picks (Claude's suggestion, plants here, recents), full
+pickers behind them, auto-advance; keys 1–9 / → skip / ← back / Esc. Filed = location AND plant (Amanda, 2026-10-04) —
+stricter than the To Do count; overview/progress/historical need only a location ("Overview shot" button sets the type).
+Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
+
 ### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
 Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
 `renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
@@ -931,18 +937,6 @@ Verify: suggestion details still show candidates; a photo note saves without the
 *(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
 the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
 permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
-five key expressions and the partial predicate intact. Identity is
-`(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
-and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
-157 rows, 157 distinct keys.
-
-Three paths can now hit it, and `restPost("taxa")` was only one of them:
-
-- **The create race** — resolves to the winner (v2.38.0).
-- **Edit species** — renaming onto another species' identity now says so and
-  points at Merge, instead of printing a Postgres body.
-- **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
-  with the same identity under a different id would have died mid-restore on a
 claiming one. The v2.37.0 commit message still says NAME-3.)*
 
 9 rows across 9 taxa. All four audit checks now return 0 against live data.
@@ -967,6 +961,18 @@ Merge over something unrelated.
 message containing the word "duplicate", and a mutant matching only that word
 survived it. The test now carries neither the name nor the prose, so it can
 only pass through the branch it is testing. A test that cannot fail the mutation
+five key expressions and the partial predicate intact. Identity is
+`(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
+and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
+157 rows, 157 distinct keys.
+
+Three paths can now hit it, and `restPost("taxa")` was only one of them:
+
+- **The create race** — resolves to the winner (v2.38.0).
+- **Edit species** — renaming onto another species' identity now says so and
+  points at Merge, instead of printing a Postgres body.
+- **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
+  with the same identity under a different id would have died mid-restore on a
 it was written for is not evidence.
 
 **Residual gap:** a taxon created from a common name alone parses no genus and

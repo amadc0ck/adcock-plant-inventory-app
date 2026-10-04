@@ -399,5 +399,44 @@ t("no error at all is not a clash", () => {
   no(ctx.isTaxonIdentityClash(undefined));
 });
 
+/* ---------- FILE-1: the File photos queue (v2.45.0) ---------- */
+// Her rule: filed = a location AND a plant. Place / historical photos need
+// only a location. A wrong rule here either strands photos in the queue
+// forever or lets unfiled ones vanish from it.
+const seedFiling = () => setState(ctx, {
+  locations: [{ id: "L", name: "Bucket", type: "container", holds_plants: true }],
+  plants: [{ id: "P", location_id: "L" }],
+  photoPlants: [{ id: "j", photo_id: "tagged", plant_id: "P" }],
+  inboxYear: "", inboxSort: "newest", filingSkipped: new Set(),
+  photos: [
+    { id: "bare",    taken_at: "2026-09-05" },
+    { id: "locOnly", taken_at: "2026-09-04", location_id: "L" },
+    { id: "plantOnly", taken_at: "2026-09-03", plant_id: "P" },
+    { id: "both",    taken_at: "2026-09-02", plant_id: "P", location_id: "L" },
+    { id: "tagged",  taken_at: "2026-09-01", location_id: "L" },
+    { id: "overview", taken_at: "2026-08-31", location_id: "L", photo_type: "overview" },
+    { id: "overviewNoLoc", taken_at: "2026-08-30", photo_type: "overview" },
+    { id: "historical", taken_at: "2026-08-29", location_id: "L", historical: true },
+  ],
+});
+t("filing queue holds exactly the photos missing a plant or a location", () => {
+  seedFiling();
+  eq(ctx.filingPhotos().map((p) => p.id), ["bare", "locOnly", "plantOnly", "overviewNoLoc"]);
+});
+t("a photo_plants tag counts as a plant", () => {
+  seedFiling();
+  no(ctx.photoNeedsFiling(ctx.__eval("state").photos.find((p) => p.id === "tagged")));
+});
+t("next after a filed photo resumes where it would have sat", () => {
+  seedFiling();
+  // "locOnly" is the 2nd; once filed it leaves the queue, and next is "plantOnly".
+  eq(ctx.filingNextAfter("locOnly", ["bare", "plantOnly", "overviewNoLoc"]), "plantOnly");
+});
+t("next skips skipped photos and wraps to the start", () => {
+  seedFiling();
+  ctx.__eval("state").filingSkipped = new Set(["overviewNoLoc"]);
+  eq(ctx.filingNextAfter("plantOnly", ["bare", "locOnly", "plantOnly", "overviewNoLoc"]), "bare");
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

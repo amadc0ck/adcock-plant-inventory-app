@@ -404,6 +404,13 @@
   .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parchment);padding:10px 18px;border-radius:8px;font-size:13.5px;z-index:120;box-shadow:0 8px 20px rgba(0,0,0,0.4);}
   .toast.error{background:#5A2A20;color:#F5D5C6;}
   .error-row{border-bottom:1px solid var(--line);padding:8px 0;}
+  /* FILE-1. The whole frame, letterboxed — this is where she decides what the
+     photo shows, so nothing may be cropped away. Fixed box so the controls do
+     not jump while the image loads. */
+  .filing-stage{aspect-ratio:3/4;max-height:72vh;margin:0 auto;background:#0B1410;border-radius:12px;overflow:hidden;line-height:0;}
+  .filing-stage .photo-img{object-fit:contain;object-position:center;}
+  .filing-pick{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 11px;border:none;cursor:pointer;}
+  .filing-key{font-family:'JetBrains Mono',monospace;font-size:11px;min-width:18px;height:18px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;background:var(--parchment-dim);color:var(--ink-soft);flex-shrink:0;}
   .error-row summary{cursor:pointer;list-style:none;}
 
   .photo-row{display:flex;gap:12px;align-items:flex-start;}
@@ -947,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.44.0";
+const APP_VERSION = "2.45.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1048,6 +1055,10 @@ const state = {
   settingsOpen: {},       // which Settings sections are expanded
   errorLog: null,          // LOG-1: rows from app_errors, fetched when its Settings section opens
   batchFailures: [],       // BATCH-2: [{ name, error }] from the last createBatch()
+  filingId: null,          // FILE-1: the photo on the File photos page
+  filingSkipped: new Set(),// FILE-1: skipped this visit; back in the queue next visit
+  filingHistory: [],       // FILE-1: ids already shown, for Back
+  filingLocOpen: false,    // FILE-1: full location picker expanded
   navStack: [],           // NAV-1: where you came from, with the filter intact
   inboxLimit: 20,
   inboxSort: "newest",
@@ -4614,6 +4625,7 @@ function viewLabel() {
     return pl ? pl.accession_number : "Specimen";
   }
   if (state.tab === "settings") return "Settings";
+  if (state.tab === "filing") return "File photos";
   return "Back";
 }
 
@@ -5264,6 +5276,340 @@ function inboxCompactRow(p, selectMode) {
     </div>`;
 }
 
+/* ---------- FILE-1: File photos, one at a time ----------
+   Amanda, 2026-10-04: a separate page for photo assignment. Filing from the To
+   Do grid meant a full-page rebuild per action across 20–250 cards, and the
+   card had to be found again afterwards. Here there is one photo, shown whole,
+   and filing it moves straight on to the next.
+
+   "Filed" is HER rule, and stricter than the To Do count: a photo is done when
+   it has a location AND a plant. To Do drops a photo once it has either, so
+   this queue also holds photos sitting at a location with no plant named, and
+   photos with a plant but no location. The one exception is the app's own
+   rule for place photos — overview / progress shots and historical photos
+   show a space, not a specimen, so a location is enough (photoAwaitsPlant()
+   and the gap counts already treat them so). "Overview shot" is offered here
+   for exactly that. */
+function photoNeedsFiling(p) {
+  if (!p) return false;
+  if (!p.location_id) return true;
+  return !photoHasAnyPlant(p) && !isPlacePhoto(p) && !isHistoricalPhoto(p);
+}
+// Same year filter and sort as To Do, so "2018, oldest first" carries over.
+function filingPhotos() {
+  let list = state.photos.filter(photoNeedsFiling);
+  if (state.inboxYear) list = list.filter((p) => String(photoDate(p) || "").slice(0, 4) === state.inboxYear);
+  const dir = state.inboxSort === "oldest" ? -1 : 1;
+  return list.sort((a, b) => dir * (new Date(photoDate(b)) - new Date(photoDate(a))));
+}
+function filingCurrent() {
+  const list = filingPhotos();
+  // The current photo stays on screen even once filed — Back returns to one
+  // filed a moment ago, and the assign / new-plant modals file it without
+  // moving on. The page then offers Next instead of guessing.
+  const cur = state.photos.find((p) => p.id === state.filingId);
+  if (cur) return { list, photo: cur };
+  const first = list.find((p) => !state.filingSkipped.has(p.id)) || null;
+  state.filingId = first ? first.id : null;
+  return { list, photo: first };
+}
+// The next photo AFTER this one in the order she was working through, not the
+// first in the queue — otherwise skipping round the end would loop on photos
+// she already passed.
+function filingNextAfter(id, beforeIds) {
+  const live = new Set(filingPhotos().map((p) => p.id));
+  const ok = (x) => x !== id && live.has(x) && !state.filingSkipped.has(x);
+  let i = beforeIds.indexOf(id);
+  if (i < 0) {
+    // Already filed, so no longer in the queue: resume where it WOULD sit.
+    const ph = state.photos.find((x) => x.id === id);
+    const dir = state.inboxSort === "oldest" ? -1 : 1;
+    const t = ph ? new Date(photoDate(ph)) : 0;
+    i = beforeIds.findIndex((x) => dir * (new Date(photoDate(state.photos.find((y) => y.id === x))) - t) < 0) - 1;
+    if (i < -1) i = beforeIds.length - 1;
+  }
+  return beforeIds.slice(i + 1).find(ok) || beforeIds.slice(0, Math.max(i + 1, 0)).find(ok) || null;
+}
+
+function openFiling() {
+  navPush();
+  state.tab = "filing";
+  state.filingId = null;
+  state.filingSkipped = new Set();
+  state.filingHistory = [];
+  state.filingLocOpen = false;
+  clearPlantPicker();
+  locPickerReset();
+  render();
+  window.scrollTo(0, 0);
+}
+
+// The numbered one-tap choices for the current photo. One function, used by
+// both the screen and the keyboard handler, so key 3 is always the third
+// button on screen. Location first when there is none — a plant's location
+// cannot be trusted for an old photo, and the location narrows the plants.
+function filingQuickPicks(p) {
+  if (!p) return [];
+  const picks = [];
+  const sgs = suggestionsForPhoto(p.id);
+  if (!p.location_id) {
+    const seen = new Set();
+    sgs.filter((sg) => sg.kind === "location_tag" && locationById(sg.value_id)).forEach((sg) => {
+      seen.add(sg.value_id);
+      picks.push({ kind: "location", id: sg.value_id, sg: sg.id, label: locationById(sg.value_id).name, note: "Claude suggests" });
+    });
+    recentLocationIds().map(locationById).filter((l) => l && !seen.has(l.id)).slice(0, 5).forEach((l) => {
+      picks.push({ kind: "location", id: l.id, label: l.name, note: l.parent_location_id && locationById(l.parent_location_id) ? locationById(l.parent_location_id).name : "Recent" });
+    });
+  } else if (!photoHasAnyPlant(p)) {
+    const seen = new Set();
+    sgs.filter((sg) => sg.kind === "plant_tag" && state.plants.some((x) => x.id === sg.value_id)).forEach((sg) => {
+      seen.add(sg.value_id);
+      picks.push({ kind: "plant", id: sg.value_id, sg: sg.id, note: "Claude suggests" });
+    });
+    plantsAtLocation(p.location_id).filter((pl) => !seen.has(pl.id)).slice(0, 8).forEach((pl) => {
+      seen.add(pl.id);
+      picks.push({ kind: "plant", id: pl.id, note: "Here" });
+    });
+    recentPlantIds().filter((id) => !seen.has(id)).map((id) => state.plants.find((x) => x.id === id)).filter(Boolean).slice(0, 3)
+      .forEach((pl) => picks.push({ kind: "plant", id: pl.id, note: "Recent" }));
+  }
+  return picks.slice(0, 9);
+}
+function filingPickHtml(pick, i, photoId) {
+  const n = i + 1;
+  if (pick.kind === "location") {
+    return `
+      <button class="tag-card filing-pick" onclick="filingSetLocation('${photoId}','${pick.id}'${pick.sg ? `,'${pick.sg}'` : ""})">
+        <span class="filing-key">${n}</span>
+        <span style="flex:1;min-width:0;"><span style="font-size:13.5px;font-weight:600;">${escapeHtml(pick.label)}</span>
+          <span class="subtle" style="display:block;font-size:11.5px;">${escapeHtml(pick.note || "")}</span></span>
+        ${icon("pin")}
+      </button>`;
+  }
+  const pl = state.plants.find((x) => x.id === pick.id);
+  if (!pl) return "";
+  const nm = plantPickerName(pl);
+  const cover = plantCoverPhoto(pl);
+  return `
+    <button class="tag-card filing-pick" data-plant-card="${pl.id}" onclick="filingSetPlant('${photoId}','${pl.id}'${pick.sg ? `,'${pick.sg}'` : ""})">
+      <span class="filing-key">${n}</span>
+      <div class="plant-list-thumb" style="width:30px;height:40px;">${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}</div>
+      <span style="flex:1;min-width:0;"><span style="font-size:13.5px;font-weight:600;">${escapeHtml(nm.primary)}</span>
+        <span class="mono" style="display:block;font-size:10.5px;color:var(--moss-dim);">${pl.accession_number} &middot; ${escapeHtml(pick.note || "")}</span></span>
+    </button>`;
+}
+
+function screenFiling() {
+  const { list, photo: p } = filingCurrent();
+  const left = list.filter((x) => !state.filingSkipped.has(x.id)).length;
+  const back = `<button class="back-link" onclick="navBack()">${icon("back")}<span class="back-label">${escapeHtml(navBackLabel("To Do"))}</span></button>`;
+  if (!p) {
+    return `
+    <div class="screen"><div class="container">
+      ${back}
+      ${screenHeader("File photos", state.filingSkipped.size ? `${countLabel(state.filingSkipped.size, "photo", "photos")} skipped this time.` : "")}
+      <div class="empty" style="padding:40px 20px;"><div>${state.filingSkipped.size ? "Nothing left except what you skipped." : "Everything here has a plant and a location."}</div>
+        ${state.filingSkipped.size ? `<button class="btn btn-secondary btn-sm" style="margin-top:14px;" onclick="state.filingSkipped=new Set();state.filingId=null;render()">Go through the skipped ones</button>` : ""}
+      </div>
+    </div></div>`;
+  }
+  // Fetch the next one now, so it is already there when this one is filed.
+  const nextId = filingNextAfter(p.id, list.map((x) => x.id));
+  const next = nextId && state.photos.find((x) => x.id === nextId);
+  if (next && next.drive_file_id) ensurePhotoLoaded(next.drive_file_id);
+
+  const loc = p.location_id ? locationById(p.location_id) : null;
+  const plants = plantsAssignedToPhoto(p.id);
+  const picks = filingQuickPicks(p);
+  const needsPlant = !!loc && !photoHasAnyPlant(p) && !isPlacePhoto(p) && !isHistoricalPhoto(p);
+  const pos = list.findIndex((x) => x.id === p.id) + 1;
+  const done = !photoNeedsFiling(p);
+
+  return `
+  <div class="screen"><div class="container">
+    ${back}
+    ${screenHeader("File photos", `${countLabel(left, "photo", "photos")} still need a plant and a location${state.inboxYear ? ` &middot; ${state.inboxYear}` : ""}`)}
+    <div class="detail-split" style="gap:18px;">
+      <div class="detail-media">
+        <div class="filing-stage">${photoImg(p)}</div>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn btn-secondary btn-sm" ${state.filingHistory.length ? "" : "disabled"} onclick="filingBack()" title="Previous photo (←)">${icon("back")} Back</button>
+          <span class="mono subtle" style="font-size:11.5px;">${done ? "Filed" : `${pos} of ${list.length}`}</span>
+          <button class="btn btn-secondary btn-sm" onclick="filingSkip()" title="Skip for now (→)">Skip &rarr;</button>
+        </div>
+      </div>
+      <div class="detail-body" style="padding:0;flex:1;">
+        ${done ? `
+          <div class="surface" style="padding:12px 14px;margin-bottom:14px;border:1px solid var(--moss);">
+            <div class="row"><span style="font-weight:600;font-size:13.5px;">${icon("check")} Filed &mdash; it has a plant and a location</span>
+              <button class="btn btn-accent btn-sm" onclick="filingNext()" title="Next photo (→)">Next &rarr;</button></div>
+          </div>` : ""}
+        <div class="tag-id">Photo &middot; ${fmtDate(photoDate(p))}${p.photo_type && p.photo_type !== "general" ? ` &middot; ${escapeHtml(PHOTO_TYPE_LABELS[p.photo_type] || p.photo_type)}` : ""}</div>
+        <div style="font-size:13.5px;margin:2px 0 12px;color:var(--ink-soft);cursor:pointer;" onclick="openModal('editPhotoNote',{photoId:'${p.id}'})">${p.notes ? escapeHtml(p.notes) : "No notes — tap to add"}</div>
+
+        <div class="section-label">Location</div>
+        <div class="row" style="margin-bottom:8px;">
+          <div style="font-size:14px;${loc ? "font-weight:600;" : ""}">${loc ? escapeHtml(loc.name) : `<span class="value-blank">None yet</span>`}
+            ${loc && loc.parent_location_id && locationById(loc.parent_location_id) ? `<span class="subtle" style="font-size:12px;font-weight:400;"> &middot; ${escapeHtml(locationPath(locationById(loc.parent_location_id)))}</span>` : ""}</div>
+          <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="state.filingLocOpen=!state.filingLocOpen;locPickerReset();render()">${state.filingLocOpen ? "Close" : loc ? "Change" : "Choose"}</button>
+        </div>
+        ${state.filingLocOpen ? `<div style="margin-bottom:14px;">${locationPicker(`filingSetLocation('${p.id}','{id}')`, { onCreatePick: "filingSetLocationActive" })}</div>` : ""}
+
+        ${!loc && picks.length ? `<div class="stack" style="margin-bottom:14px;">${picks.map((k, i) => filingPickHtml(k, i, p.id)).join("")}</div>` : ""}
+
+        <div class="section-label" style="margin-top:6px;">Plant</div>
+        ${plants.length ? `
+          <div style="font-size:14px;font-weight:600;margin-bottom:6px;">${plants.map((pl) => escapeHtml(plantPickerName(pl).primary)).join(", ")}</div>
+          <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="openModal('assignPlants',{photoId:'${p.id}'${loc ? `, locationId:'${loc.id}'` : ""}})">Add or change plants</button>`
+        : isPlacePhoto(p) || isHistoricalPhoto(p) ? `<p class="subtle" style="font-size:12.5px;">${isPlacePhoto(p) ? "An overview or progress shot" : "A historical photo"} needs only a location.</p>`
+        : !loc ? `<p class="subtle" style="font-size:12.5px;margin-bottom:8px;">Choose the location first and the plants there are offered here. Or pick the plant now &mdash; its current location is used if this photo has none.</p>
+            ${plantPicker(`filingSetPlant('${p.id}','{id}')`, { onNew: `openModal('newPlantFromPhoto',{photoId:'${p.id}'})` })}`
+        : `
+          ${picks.length ? `<div class="stack" style="margin-bottom:12px;">${picks.map((k, i) => filingPickHtml(k, i, p.id)).join("")}</div>` : `<p class="subtle" style="font-size:12.5px;">No plants recorded at ${escapeHtml(loc.name)} yet.</p>`}
+          <details style="margin-top:4px;" ${state.pickerSearch ? "open" : ""}>
+            <summary class="btn-ghost" style="cursor:pointer;font-size:12.5px;padding:0;">Somewhere else in the collection&hellip;</summary>
+            <div style="margin-top:8px;">${plantPicker(`filingSetPlant('${p.id}','{id}')`, { onNew: `openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${loc.id}'})` })}</div>
+          </details>`}
+
+        <div class="wrap-gap" style="margin-top:16px;">
+          ${needsPlant || (!loc && !plants.length) ? `<button class="btn btn-secondary btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'${loc ? `, locationId:'${loc.id}'` : ""}})">New plant from this photo</button>` : ""}
+          ${!isPlacePhoto(p) && !plants.length ? `<button class="btn btn-secondary btn-sm" onclick="filingMarkOverview('${p.id}')" title="A shot of the space, not one plant — needs only a location">Overview shot</button>` : ""}
+        </div>
+        <p class="subtle" style="font-size:11.5px;margin-top:16px;">Keys: <span class="mono">1&ndash;9</span> pick &middot; <span class="mono">&rarr;</span> skip &middot; <span class="mono">&larr;</span> back &middot; <span class="mono">Esc</span> leave</p>
+      </div>
+    </div>
+  </div></div>`;
+}
+
+// One place that decides whether to move on. `beforeIds` is the queue as it
+// stood before the write, so "next" means next in her order.
+function filingAfterChange(photoId, beforeIds) {
+  const ph = state.photos.find((x) => x.id === photoId);
+  if (ph && !photoNeedsFiling(ph)) {
+    state.filingHistory.push(photoId);
+    state.filingId = filingNextAfter(photoId, beforeIds);
+    clearPlantPicker();
+    toast("Filed");
+    render();
+    window.scrollTo(0, 0);
+    return;
+  }
+  render();
+}
+// Marks a Claude suggestion used once the write it proposed is done, the same
+// order acceptSuggestion() keeps: a failed write leaves it pending.
+async function filingMarkSuggestion(sgId) {
+  if (!sgId) return;
+  try {
+    await restPatch("suggestions", `id=eq.${sgId}`, { status: "accepted" });
+    state.suggestions = state.suggestions.filter((x) => x.id !== sgId);
+  } catch (e) { /* the filing itself succeeded; a stale suggestion is harmless */ }
+}
+
+async function filingSetLocation(photoId, locationId, sgId) {
+  if (!locationId) return;
+  const beforeIds = filingPhotos().map((x) => x.id);
+  try {
+    mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId }));
+    noteRecentLocation(locationId);
+    await filingMarkSuggestion(sgId);
+    state.filingLocOpen = false;
+    locPickerReset();
+    filingAfterChange(photoId, beforeIds);
+  } catch (e) { toast(readableError(e), true); }
+}
+// locationPicker's "create new" hands back the new location's id by name.
+function filingSetLocationActive(locationId) {
+  if (state.filingId) filingSetLocation(state.filingId, locationId);
+}
+
+async function filingSetPlant(photoId, plantId, sgId) {
+  const ph = state.photos.find((x) => x.id === photoId);
+  const plant = state.plants.find((x) => x.id === plantId);
+  if (!ph || !plant) return;
+  const beforeIds = filingPhotos().map((x) => x.id);
+  try {
+    if (!ph.plant_id) {
+      const body = { plant_id: plantId };
+      // Snapshot, never a live link — same rule as attachInboxPhotoToPlant().
+      if (!ph.location_id && plant.location_id) body.location_id = plant.location_id;
+      mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, body));
+    } else if (ph.plant_id !== plantId && !state.photoPlants.some((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
+      const rows = await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
+      state.photoPlants.push(...(rows || []));
+    }
+    notePlantUse(plantId);
+    await filingMarkSuggestion(sgId);
+    filingAfterChange(photoId, beforeIds);
+  } catch (e) { toast(readableError(e), true); }
+}
+
+async function filingMarkOverview(photoId) {
+  const beforeIds = filingPhotos().map((x) => x.id);
+  try {
+    mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, { photo_type: "overview" }));
+    filingAfterChange(photoId, beforeIds);
+  } catch (e) { toast(readableError(e), true); }
+}
+
+// Move on from a photo that is already filed (no skip mark: it is done).
+function filingNext() {
+  const { list, photo } = filingCurrent();
+  if (!photo) return;
+  if (!state.filingHistory.includes(photo.id)) state.filingHistory.push(photo.id);
+  state.filingId = filingNextAfter(photo.id, list.map((x) => x.id));
+  clearPlantPicker();
+  state.filingLocOpen = false;
+  render();
+  window.scrollTo(0, 0);
+}
+function filingSkip() {
+  const { list, photo } = filingCurrent();
+  if (!photo) return;
+  if (!photoNeedsFiling(photo)) { filingNext(); return; }
+  state.filingSkipped.add(photo.id);
+  state.filingHistory.push(photo.id);
+  state.filingId = filingNextAfter(photo.id, list.map((x) => x.id));
+  clearPlantPicker();
+  state.filingLocOpen = false;
+  render();
+  window.scrollTo(0, 0);
+}
+function filingBack() {
+  const prev = state.filingHistory.pop();
+  if (!prev) return;
+  state.filingSkipped.delete(prev);
+  // A photo filed a moment ago is no longer in the queue; Back still shows it
+  // so a wrong pick can be corrected — it rejoins the queue only if unfiled.
+  state.filingId = prev;
+  clearPlantPicker();
+  render();
+}
+
+// Attached once, at boot, from document — survives every render. Inert unless
+// the File photos page is showing with no modal and no field focused, so
+// typing a search never triggers a pick.
+function wireFilingKeys() {
+  document.addEventListener("keydown", (e) => {
+    if (state.tab !== "filing" || state.modal || state.lightbox) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); filingSkip(); return; }
+    if (e.key === "ArrowLeft") { e.preventDefault(); filingBack(); return; }
+    if (e.key === "Escape") { e.preventDefault(); navBack(); return; }
+    if (/^[1-9]$/.test(e.key)) {
+      const { photo } = filingCurrent();
+      const pick = filingQuickPicks(photo)[Number(e.key) - 1];
+      if (!pick || !photo) return;
+      e.preventDefault();
+      if (pick.kind === "location") filingSetLocation(photo.id, pick.id, pick.sg);
+      else filingSetPlant(photo.id, pick.id, pick.sg);
+    }
+  });
+}
+
 function screenInbox() {
   if (state.reportView) return workQueueDetail();
   const pageSize = state.inboxPageSize || 20;
@@ -5332,6 +5678,8 @@ function screenInbox() {
                selecting and `unassigned.length` is 0, which would take Cancel
                away and leave no way out of select mode — the bulk bar only
                appears once something is selected. */""}
+          ${!selectMode && filingPhotos().length ? `
+            <button class="btn btn-secondary btn-sm" onclick="openFiling()" title="One photo at a time until it has a plant and a location">File one by one</button>` : ""}
           ${unassigned.length || selectMode ? `
             <button class="btn ${selectMode ? "btn-accent" : "btn-secondary"} btn-sm" onclick="toggleInboxSelectMode()">
               ${selectMode ? "Cancel" : "Select"}
@@ -12858,7 +13206,7 @@ function escapeHtml(str) {
 
 function navBtn(t) {
   return `
-    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && (state.tab === "plantDetail" || state.tab === "taxonDetail")) || (t.id === "locations" && state.tab === "locationDetail") || (t.id === "inbox" && state.tab === "reports") ? "active" : ""}" onclick="goTab('${t.id}')">
+    <button class="navbtn ${state.tab === t.id || (t.id === "plants" && (state.tab === "plantDetail" || state.tab === "taxonDetail")) || (t.id === "locations" && state.tab === "locationDetail") || (t.id === "inbox" && (state.tab === "reports" || state.tab === "filing")) ? "active" : ""}" onclick="goTab('${t.id}')">
       ${icon(t.icon)}<span>${t.label}</span>${t.badge ? `<span class="badge">${t.badge}</span>` : ""}
     </button>`;
 }
@@ -13177,6 +13525,7 @@ function render() {
   else if (state.tab === "reports") { state.tab = "inbox"; screen = screenInbox(); }
   else if (state.tab === "gallery") screen = screenGallery();
   else if (state.tab === "settings") screen = screenSettings();
+  else if (state.tab === "filing") screen = screenFiling();
 
   const html = `
     ${topBar()}
@@ -13891,6 +14240,7 @@ async function boot() {
   wireHoverCards();
   wireErrorLogging();
   wireRenderHold();
+  wireFilingKeys();
 
   // Not awaited: a slow or failed check must never delay the app starting.
   checkForNewVersion();

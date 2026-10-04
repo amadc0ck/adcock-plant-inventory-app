@@ -409,6 +409,33 @@ check (true)`, matching every other table. The table was created without it and
 read back empty until the policy was added; an anonymous probe cannot tell that
 state from RLS being off, because every table here returns `[]` to anon.
 
+### `app_errors` (LOG-1, v2.42.0)
+
+One row per error the app hit: every red toast (`kind = 'toast'`, which includes validation messages), and uncaught exceptions / unhandled rejections (`kind = 'crash'`).
+- `id` uuid pk · `occurred_at` timestamptz (client clock) · `created_at` timestamptz (server) · `app_version` · `kind` · `screen` (`tab / modal`) · `action` · `message` · `detail` jsonb (`request` {status, method, path, body} when a REST call failed in the 10s before, `stack`, `user_agent`, caller extras).
+
+**Queued in localStorage (`abg_error_queue`, cap 50) before it is sent**, so errors raised offline or on an expired session arrive on the next flush. Sent with plain `fetch`, never `authedFetch`, and a failed log write is never itself logged — logging must not recurse. **Not in `loadAll()`**: Settings → Error history fetches the last 50 when opened, so it costs no egress otherwise.
+
+**RLS:** `app_errors_all`, the blanket authenticated policy. **GUEST-1 must deny it** — request paths and bodies are in `detail`.
+
+```sql
+create table if not exists app_errors (
+  id uuid primary key default gen_random_uuid(),
+  occurred_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  app_version text,
+  kind text not null default 'error',
+  screen text,
+  action text,
+  message text not null default '',
+  detail jsonb not null default '{}'::jsonb
+);
+create index if not exists app_errors_occurred_idx on app_errors (occurred_at desc);
+alter table app_errors enable row level security;
+drop policy if exists app_errors_all on app_errors;
+create policy app_errors_all on app_errors for all to authenticated using (true) with check (true);
+```
+
 ### `bloom_events`
 When a specimen actually flowered. An event with a start and an end, not a flag — a plant blooms repeatedly and the history is the point.
 

@@ -403,6 +403,8 @@
   .btn-primary-dark{background:var(--bg);color:var(--parchment);}
   .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--parchment);padding:10px 18px;border-radius:8px;font-size:13.5px;z-index:120;box-shadow:0 8px 20px rgba(0,0,0,0.4);}
   .toast.error{background:#5A2A20;color:#F5D5C6;}
+  .error-row{border-bottom:1px solid var(--line);padding:8px 0;}
+  .error-row summary{cursor:pointer;list-style:none;}
 
   .photo-row{display:flex;gap:12px;align-items:flex-start;}
   .photo-icon{width:52px;height:52px;border-radius:6px;background:rgba(124,167,161,0.15);flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--blue);}
@@ -945,7 +947,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.41.0";
+const APP_VERSION = "2.42.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1044,6 +1046,8 @@ const state = {
   wishSearch: "",
   taxaOnlyMissingParts: false,
   settingsOpen: {},       // which Settings sections are expanded
+  errorLog: null,          // LOG-1: rows from app_errors, fetched when its Settings section opens
+  batchFailures: [],       // BATCH-2: [{ name, error }] from the last createBatch()
   navStack: [],           // NAV-1: where you came from, with the filter intact
   inboxLimit: 20,
   inboxSort: "newest",
@@ -1160,6 +1164,14 @@ async function authedFetch(url, makeInit) {
     try { text = await clone.text(); } catch (e) {}
     if (isExpiredAuth(res.status, text) && await forceRefreshSession()) {
       res = await fetch(url, makeInit());
+    }
+    // LOG-1. The error toast only ever shows res.text(); the table, method and
+    // status are what say WHY. Kept for logAppError() to attach.
+    if (!res.ok) {
+      lastRequestFailure = {
+        at: Date.now(), status: res.status, method: makeInit().method || "GET",
+        path: url.replace(CONFIG.SUPABASE_URL, "").slice(0, 300), body: text.slice(0, 1000),
+      };
     }
   }
   return res;
@@ -3702,12 +3714,143 @@ const BUILTIN_LISTS = {
 /* ============================================================
    UI HELPERS
    ============================================================ */
+/* ---------- LOG-1: error history ----------
+   An 11-plant batch saved 6 on 2026-10-03 and nothing recorded why: the reason
+   was a 3.2s toast. Every error toast, uncaught exception and unhandled
+   rejection is now written to `app_errors`.
+
+   Queued in localStorage FIRST and flushed after, so an error that happens
+   offline or with an expired session — exactly when errors cluster — is sent
+   on the next successful flush instead of lost. Capped at 50 so a loop cannot
+   fill storage. Plain fetch, never authedFetch: logging must not recurse into
+   the failure it is logging, and a log write is never itself logged. */
+const ERROR_QUEUE_KEY = "abg_error_queue";
+let lastRequestFailure = null;
+let errorFlushInFlight = false;
+
+function readErrorQueue() {
+  try { return JSON.parse(localStorage.getItem(ERROR_QUEUE_KEY) || "[]"); } catch (e) { return []; }
+}
+function writeErrorQueue(q) {
+  try { localStorage.setItem(ERROR_QUEUE_KEY, JSON.stringify(q.slice(-50))); } catch (e) {}
+}
+
+function logAppError(message, extra = {}) {
+  try {
+    // A request that failed in the last 10s is almost certainly the cause.
+    const req = lastRequestFailure && Date.now() - lastRequestFailure.at < 10000 ? lastRequestFailure : null;
+    const entry = {
+      occurred_at: new Date().toISOString(),
+      app_version: APP_VERSION,
+      kind: extra.kind || "error",
+      screen: (state.tab || "") + (state.modal ? " / " + state.modal.type : ""),
+      action: extra.action || null,
+      message: String(message || "").slice(0, 2000),
+      detail: {
+        ...(extra.detail || {}),
+        ...(req ? { request: { status: req.status, method: req.method, path: req.path, body: req.body } } : {}),
+        ...(extra.stack ? { stack: String(extra.stack).slice(0, 3000) } : {}),
+        user_agent: navigator.userAgent,
+      },
+    };
+    writeErrorQueue([...readErrorQueue(), entry]);
+    flushErrorQueue();
+  } catch (e) { /* logging must never throw into the caller */ }
+}
+
+async function flushErrorQueue() {
+  if (errorFlushInFlight || !state.session?.access_token) return;
+  const q = readErrorQueue();
+  if (!q.length) return;
+  errorFlushInFlight = true;
+  try {
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/app_errors`, {
+      method: "POST",
+      headers: apiHeaders({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+      body: JSON.stringify(q),
+    });
+    // Drop only what was sent — an error logged during the request stays queued.
+    if (res.ok) {
+      writeErrorQueue(readErrorQueue().slice(q.length));
+      if (state.errorLog) state.errorLog = null;   // stale; refetch if the panel is open
+    }
+  } catch (e) {} finally { errorFlushInFlight = false; }
+}
+
+async function loadErrorLog() {
+  state.errorLog = { loading: true, rows: [] };
+  try {
+    const rows = await restGet("app_errors", "select=*&order=occurred_at.desc&limit=50");
+    state.errorLog = { loading: false, rows };
+  } catch (e) {
+    state.errorLog = { loading: false, rows: [], failed: e.message };
+  }
+  render();
+}
+
+function errorLogPanel() {
+  const log = state.errorLog;
+  if (!log) { loadErrorLog(); return `<p class="subtle">Loading&hellip;</p>`; }
+  if (log.loading) return `<p class="subtle">Loading&hellip;</p>`;
+  const pending = readErrorQueue().length;
+  return `
+    ${log.failed ? `<p class="subtle" style="color:var(--terracotta);">Could not load the history: ${escapeHtml(log.failed)}</p>` : ""}
+    ${pending ? `<p class="subtle">${countLabel(pending, "error", "errors")} waiting to be sent from this device.</p>` : ""}
+    ${!log.rows.length && !log.failed ? `<p class="subtle">No errors recorded.</p>` : ""}
+    <div class="stack">
+      ${log.rows.map((r) => {
+        const req = r.detail && r.detail.request;
+        return `
+        <details class="error-row">
+          <summary>
+            <span class="mono subtle" style="font-size:11px;">${escapeHtml(new Date(r.occurred_at).toLocaleString())} &middot; v${escapeHtml(r.app_version || "")} &middot; ${escapeHtml(r.screen || "")}</span>
+            <div style="font-size:13px;margin-top:2px;">${escapeHtml(r.message || "")}</div>
+          </summary>
+          <div class="mono" style="font-size:11px;white-space:pre-wrap;word-break:break-word;margin-top:6px;color:var(--ink-soft);">${escapeHtml(
+            [r.action ? `action: ${r.action}` : "", req ? `${req.method} ${req.path} → ${req.status}\n${req.body || ""}` : "",
+             r.detail && r.detail.stack ? r.detail.stack : ""].filter(Boolean).join("\n\n") || "No further detail.")}</div>
+        </details>`;
+      }).join("")}
+    </div>
+    <button class="btn btn-secondary btn-sm" style="margin-top:10px;" onclick="loadErrorLog()">Refresh</button>`;
+}
+
+// Attached once, at boot. Catches what never reached a toast.
+function wireErrorLogging() {
+  window.addEventListener("error", (e) => logAppError(e.message, { kind: "crash", stack: e.error && e.error.stack }));
+  window.addEventListener("unhandledrejection", (e) => {
+    const r = e.reason;
+    logAppError(r && r.message ? r.message : String(r), { kind: "crash", stack: r && r.stack });
+  });
+}
+
+/* BATCH-2. A click is pointerdown → pointerup → click. If a scheduled repaint
+   lands between the first two, the button under the finger is replaced and
+   the click goes nowhere — a species "added" to the batch that never was. While
+   a pointer is down, scheduled repaints wait; the release is deferred a tick so
+   the click handler runs against the DOM the user actually pressed. */
+let pointerHeld = false;
+function wireRenderHold() {
+  document.addEventListener("pointerdown", () => { pointerHeld = true; }, true);
+  const release = () => setTimeout(() => { pointerHeld = false; }, 0);
+  document.addEventListener("pointerup", release, true);
+  document.addEventListener("pointercancel", release, true);
+}
+
 function toast(msg, isError = false) {
   const el = document.createElement("div");
   el.className = "toast" + (isError ? " error" : "");
   el.textContent = msg;
+  // LOG-1. A red toast was the only record an error ever happened, for 3.2
+  // seconds. Errors now stay 8s, dismiss on tap, and are logged — every
+  // handled failure in the app funnels through here.
+  if (isError) {
+    el.style.cursor = "pointer";
+    el.onclick = () => el.remove();
+    logAppError(msg, { kind: "toast" });
+  }
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 3200);
+  setTimeout(() => el.remove(), isError ? 8000 : 3200);
 }
 /* DATE-1. `new Date("2026-09-01")` is parsed by JS as UTC midnight and then
    rendered in local time, so every date-only value in this app displayed as
@@ -4633,7 +4776,7 @@ function openModal(type, data = {}) {
   // like it is hiding most of the collection.
   if (type === "mergePlantPick") clearPlantPicker();
   if (type === "mergeLocationPick") locPickerReset();
-  if (type === "batchAdd") { state.batchRows = []; state.batchSearch = ""; }
+  if (type === "batchAdd") { state.batchRows = []; state.batchSearch = ""; state.batchFailures = []; }
   if (type === "newTask" || type === "editTask") {
     state.taskSubjectSearch = "";
     if (type === "editTask") {
@@ -7981,6 +8124,8 @@ function screenSettings() {
         </div>
         <div class="divider"></div>` : ""}
 
+      ${settingsSection("errors", "Error history", "What failed, when, and why", errorLogPanel)}
+
       ${settingsSection("account", "Account", state.session?.email || "", () => `
         <button class="btn btn-danger btn-sm" onclick="logout()">Sign out</button>`)}
 
@@ -8018,6 +8163,12 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Add several plants</h3>
       <p class="subtle" style="margin:0 0 14px;">For a nursery trip or a box of offsets. Record them now, plant and photograph them later &mdash; each one gets its own accession number.</p>
+      ${state.batchFailures.length ? `
+        <div class="surface" style="padding:12px 14px;margin-bottom:14px;border:1px solid var(--terracotta);">
+          <div style="font-weight:600;font-size:13.5px;color:var(--terracotta);">${countLabel(state.batchFailures.length, "row", "rows")} did not save</div>
+          <div class="subtle" style="font-size:12.5px;margin:2px 0 8px;">Everything else was created. These are still below &mdash; press Create again to retry. Logged in Settings &rarr; Error history.</div>
+          ${state.batchFailures.map((f) => `<div style="font-size:12.5px;margin-top:4px;"><strong>${escapeHtml(f.name)}</strong> &mdash; ${escapeHtml(f.error)}</div>`).join("")}
+        </div>` : ""}
 
       ${state.batchRows.length ? `
         <div class="section-label">This batch &mdash; ${countLabel(total, "specimen", "specimens")}</div>
@@ -11334,7 +11485,9 @@ function removeBatchRow(i) { state.batchRows.splice(i, 1); render(); }
 function setBatchQty(i, v) {
   const n = Math.max(1, Math.min(99, parseInt(v, 10) || 1));
   state.batchRows[i].qty = n;
-  render();
+  // Scheduled, not immediate: onchange fires on blur, i.e. on the mousedown
+  // of the Create button — an immediate render replaced the button mid-click.
+  scheduleRender();
 }
 function batchTotal() {
   return state.batchRows.reduce((n, r) => n + (r.qty || 0), 0);
@@ -11349,12 +11502,21 @@ async function createBatch() {
   if (!confirm(`Create ${total} specimen${total === 1 ? "" : "s"}? Each gets its own accession number.`)) return;
   const btn = document.getElementById("ba-submit");
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Creating…'; }
+  /* BATCH-2. This said "a single failure should not cost the whole batch",
+     but the whole loop sat in one try — the first failure stopped everything
+     after it, and the reason was a 3.2s toast. 11 entered, 6 saved,
+     2026-10-03. Each row now fails alone; what failed stays in the form with
+     its reason, ready to retry, and every failure is logged (LOG-1). */
   let made = 0;
-  try {
-    for (const r of rows) {
+  const failed = [];
+  for (const r of rows) {
+    const name = r.taxaId ? taxonDisplayName(taxonById(r.taxaId) || {}) : r.newName.trim();
+    let taxaId = r.taxaId;
+    let rowMade = 0;
+    try {
       // A typed name creates or finds the taxon ONCE for the row, so five
       // offsets of a new species share one taxon rather than making five.
-      const taxaId = r.taxaId || await ensureTaxonForName(r.newName.trim(), "", {});
+      if (!taxaId) taxaId = await ensureTaxonForName(r.newName.trim(), "", {});
       const body = {
         taxa_id: taxaId || null,
         location_id: locationId,
@@ -11363,21 +11525,34 @@ async function createBatch() {
         collection_category: "current",
         status: "active",
       };
-      // Inserted one at a time: the accession trigger fires per row, and a
-      // single failure should not cost the whole batch.
+      // One at a time: the accession trigger fires per row.
       for (let k = 0; k < r.qty; k++) {
         await restPost("plants", body);
-        made++;
+        made++; rowMade++;
       }
+    } catch (e) {
+      const error = readableError(e);
+      failed.push({ name, error, row: { ...r, taxaId: taxaId || r.taxaId || null, qty: r.qty - rowMade } });
+      logAppError(`Batch add: "${name}" — ${error}`, { action: "createBatch", detail: { name, qty: r.qty, saved_of_row: rowMade } });
     }
+  }
+  if (made) await loadAll();
+  if (!failed.length) {
     state.batchRows = [];
     closeModal();
     toast(`Created ${countLabel(made, "specimen", "specimens")}`);
-    await loadAll();
-  } catch (e) {
-    toast(`Stopped after ${made} — ${e.message}`, true);
-    if (made) { closeModal(); await loadAll(); }
+    return;
   }
+  // Stay open on the failures. Logged above, so no red toast (it would log twice).
+  state.batchRows = failed.map((f) => f.row);
+  state.batchFailures = failed.map((f) => ({ name: f.name, error: f.error }));
+  render();
+}
+
+// PostgREST errors arrive as JSON text; the `message` is the readable part.
+function readableError(e) {
+  const raw = (e && e.message) || String(e);
+  try { const j = JSON.parse(raw); return j.message || j.error_description || j.msg || raw; } catch (x) { return raw; }
 }
 
 async function saveStayNote(stayId) {
@@ -12899,7 +13074,11 @@ function reapplyClampedScroll(snap) {
 let renderTimer = null;
 function scheduleRender(delay = 90) {
   if (renderTimer) clearTimeout(renderTimer);
-  renderTimer = setTimeout(() => { renderTimer = null; render(); }, delay);
+  renderTimer = setTimeout(() => {
+    renderTimer = null;
+    if (pointerHeld) { scheduleRender(delay); return; }   // BATCH-2
+    render();
+  }, delay);
 }
 
 function render() {
@@ -13672,6 +13851,8 @@ async function boot() {
 
   // Attached once — delegated from document, so it survives every re-render.
   wireHoverCards();
+  wireErrorLogging();
+  wireRenderHold();
 
   // Not awaited: a slow or failed check must never delay the app starting.
   checkForNewVersion();

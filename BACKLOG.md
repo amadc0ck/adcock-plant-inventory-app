@@ -908,6 +908,13 @@ Verify: suggestion details still show candidates; a photo note saves without the
 *(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
 the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
 permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
+### v2.42.0 — LOG-1 + BATCH-2: error history, batch rows fail alone
+LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
+BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
+failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
+Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
+Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
+
 ### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
 CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
 RENDER-1: each repaint destroyed the field being typed in, and `focus()` scrolled to it (and drops the iOS keyboard).

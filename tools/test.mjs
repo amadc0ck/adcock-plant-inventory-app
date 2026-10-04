@@ -497,5 +497,46 @@ t("NAME-6: fully read names are complete", () => {
   ok(ctx.parseBotanicalName("Echeveria").complete);
 });
 
+/* ---------- GAL-7 date range, GPS-0 parser (v2.54.0) ---------- */
+t("gallery date range is inclusive and sorts newest first", () => {
+  setState(ctx, {
+    plants: [], photoPlants: [], suggestions: [], locations: [],
+    photos: [
+      { id: "a", taken_at: "2026-01-01T09:00:00" }, { id: "b", taken_at: "2026-03-15T09:00:00" },
+      { id: "c", taken_at: "2026-06-30T23:00:00" }, { id: "d", taken_at: "2026-07-01T00:30:00" },
+    ],
+    galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", all: true, dateFrom: "2026-03-15", dateTo: "2026-06-30" },
+  });
+  eq(ctx.filteredGalleryPhotos().map((p) => p.id), ["c", "b"]);
+  ctx.__eval("state").galleryFilters.sort = "oldest";
+  eq(ctx.filteredGalleryPhotos().map((p) => p.id), ["b", "c"]);
+});
+t("GPS is read from a little-endian EXIF GPS IFD", () => {
+  const bytes = [];
+  const tiff = [];
+  const t16 = (v) => tiff.push(v & 255, (v >> 8) & 255);
+  const t32 = (v) => tiff.push(v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255);
+  tiff.push(0x49, 0x49); t16(42); t32(8);
+  t16(1); t16(0x8825); t16(4); t32(1); t32(26); t32(0);
+  t16(4);
+  t16(1); t16(2); t32(2); tiff.push(78, 0, 0, 0);
+  t16(2); t16(5); t32(3); t32(80);
+  t16(3); t16(2); t32(2); tiff.push(87, 0, 0, 0);
+  t16(4); t16(5); t32(3); t32(104);
+  t32(0);
+  while (tiff.length < 80) tiff.push(0);
+  [[37, 1], [58, 1], [4080, 100]].forEach(([n, d]) => { t32(n); t32(d); });
+  [[122, 1], [1, 1], [5280, 100]].forEach(([n, d]) => { t32(n); t32(d); });
+  bytes.push(0xff, 0xd8, 0xff, 0xe1);
+  const len = 2 + 6 + tiff.length;
+  bytes.push((len >> 8) & 255, len & 255);
+  bytes.push(0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff);
+  const g = ctx.parseExifGps(new Uint8Array(bytes).buffer);
+  eq([g.lat, g.lng], [37.978, -122.031333]);
+});
+t("no GPS IFD means no location", () => {
+  eq(ctx.parseExifGps(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer), null);
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

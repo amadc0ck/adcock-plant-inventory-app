@@ -908,23 +908,17 @@ Now `state.filingElsewhereOpen` (ontoggle) or any active filter holds it open, a
 `open` from a kept <details>. Rule: a <details> containing inputs must take its open state from `state`.
 
 ### v2.51.0 — NAME-6: "Echeveria Canadian" could not be created
+### v2.54.0 — GAL-7 all photos + date range, GPS-0 probe
+Gallery: "All N photos" button; results paged 60 at a time (was every match at once); newest/oldest toggle shared by
+grid and lightbox; Filters gains From/To date (photoDate, inclusive) plus Last 30 days / This year / year shortcuts.
+GPS-0: Edit photo → "Check for a location in the photo file" parses EXIF GPS from get-photo bytes. Nothing stored.
+**Open:** Amanda checks a few photos. If GPS is present → GPS-1: `photos.gps_lat/gps_lng`, backfill, read at upload; deny to guests.
+
 An unquoted cultivar parsed as genus only, so the row's identity key equalled the bare-Echeveria taxon; the unique
 index refused it and findTaxonByName() could not explain why. Failed in batch add (2026-10-03) and from File photos.
 `parseBotanicalName()` now returns `complete`; `ensureTaxonForName()` stores parts only from a complete parse, else the
 name alone (lands in "Names to split"). An unexplained clash now names the colliding species.
 
-### v2.48.0 — FILE-1: past nine picks
-A chip now lists its whole group (scrolls inside itself); only the first nine get a key. "Type to narrow" (/) filters the
-showing list by name, accession or common name — with All it searches every group — and renumbers; Enter takes the top.
-Gotcha: clearing the query must also clear the live box (`filingClearQuery`), since RENDER-1 keeps a focused field's value.
-
-### v2.47.0 — FILE-1: full-size view and pick filters
-Tap the photo (or F) opens it full size in a "filing" lightbox mode that holds only that photo.
-Chips filter the numbered picks: Suggested · This row · Check-ins · Recents (location) and Suggested · In this location ·
-Check-ins · Recents (plant). Filter persists per stage across photos; key numbers follow what is shown.
-
-### v2.46.0 — FILE-1 follow-up: smaller queue, row-aware location picks
-Queue was 2,000+: a plant is now required only where the location holds plants and is not an archive (or inside one).
 ### v2.50.0 — HOVER-2: plant preview card no longer sticks
 It hid only on mouseout, which never fires when render() removes the hovered element (next photo, narrowed list).
 Now tracks its target: drops after any render that disconnects it, on mousemove outside it, on any scroll (capture —
@@ -949,6 +943,18 @@ Writes merge into state (no loadAll) except via the assign / new-plant modals, a
 ### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
 Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
 `renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
+### v2.48.0 — FILE-1: past nine picks
+A chip now lists its whole group (scrolls inside itself); only the first nine get a key. "Type to narrow" (/) filters the
+showing list by name, accession or common name — with All it searches every group — and renumbers; Enter takes the top.
+Gotcha: clearing the query must also clear the live box (`filingClearQuery`), since RENDER-1 keeps a focused field's value.
+
+### v2.47.0 — FILE-1: full-size view and pick filters
+Tap the photo (or F) opens it full size in a "filing" lightbox mode that holds only that photo.
+Chips filter the numbered picks: Suggested · This row · Check-ins · Recents (location) and Suggested · In this location ·
+Check-ins · Recents (plant). Filter persists per stage across photos; key numbers follow what is shown.
+
+### v2.46.0 — FILE-1 follow-up: smaller queue, row-aware location picks
+Queue was 2,000+: a plant is now required only where the location holds plants and is not an archive (or inside one).
 compact rows carry `data-anchor`; add it to any other list whose upper content changes height on a toggle.
 
 ### v2.43.0 — LOC-10: add a location from inside a location
@@ -971,18 +977,6 @@ retry so far — not reproduced, needs a named screen if it persists.
 
 ### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
 Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
-9 rows across 9 taxa. All four audit checks now return 0 against live data.
-Two of the four original findings were **not defects** — the cultivar quotes
-never rendered double (`cultivarLabel()` already strips them), and setting
-`is_hybrid` on the five cross-parentage records would have been wrong, visibly
-so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
-missing. Do not reopen the is_hybrid half.
-
-### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
-
-`taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
-five key expressions and the partial predicate intact. Identity is
-`(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
 (A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
 (B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
 Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
@@ -1007,6 +1001,18 @@ Three paths can now hit it, and `restPost("taxa")` was only one of them:
   with the same identity under a different id would have died mid-restore on a
   raw error. It now names what is in the way. **It does not skip the row:**
   the plants referencing that `taxa_id` would fail the FK next and take the
+9 rows across 9 taxa. All four audit checks now return 0 against live data.
+Two of the four original findings were **not defects** — the cultivar quotes
+never rendered double (`cultivarLabel()` already strips them), and setting
+`is_hybrid` on the five cross-parentage records would have been wrong, visibly
+so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
+missing. Do not reopen the is_hybrid half.
+
+### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
+
+`taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
+five key expressions and the partial predicate intact. Identity is
+`(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
   rest of the restore with them.
 
 `isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
@@ -1035,18 +1041,6 @@ Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —
 a unique violation with no explanation is worth seeing, not swallowing.
 
 **Shipped before the index on purpose.** The other order means the first race
-again would have created a SECOND species row — the exact failure nameKey
-exists to prevent. Caught by adding the test before believing the change was
-cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
-so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
-
-
-### v2.36.0 — MERGE-2: merge from anywhere, and merge locations
-
-**Plants.** "Merge another plant into this one" on Plant Detail. The page you
-are on survives, matching "Keep this" on the duplicates tile. `mergePlants()`
-gained `opts.locationId`, asked for **only when the two are in different
-places** — the duplicates-in-one-bucket case must not learn her to click past a
 after the index shows Amanda a raw Postgres error.
 
 
@@ -1071,6 +1065,18 @@ never offered. Two tests, mutation-verified.
 
 ### v2.35.0 — two species-hygiene tiles, and mergeTaxa
 
+again would have created a SECOND species row — the exact failure nameKey
+exists to prevent. Caught by adding the test before believing the change was
+cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
+so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
+
+
+### v2.36.0 — MERGE-2: merge from anywhere, and merge locations
+
+**Plants.** "Merge another plant into this one" on Plant Detail. The page you
+are on survives, matching "Keep this" on the duplicates tile. `mergePlants()`
+gained `opts.locationId`, asked for **only when the two are in different
+places** — the duplicates-in-one-bucket case must not learn her to click past a
 **Species with no specimens.** `ensureTaxonForName()` writes the taxon before
 linking the specimen, so a failed link orphans one that no screen can reach.
 Wished-for species are excluded: having no specimen is what a wish is.
@@ -1089,18 +1095,6 @@ call. Six tests, mutation-verified.
 
 Plant Detail's *Also shows*, and both *Identified* / *Shows* lines on Location
 Detail, each built `[primary, ...tagged]` by hand and none deduped — a photo
-### v2.33.1 — daylight reworked as the logo sheet
-
-Amanda: *"I thought I would like the light mode. I dont."* The first attempt was
-#FBF9F4 on white — legible, clinical, and nothing like this garden. I had
-optimised entirely for glare and thrown the brand away doing it.
-
-Reworked to **Deep Garden Green on Warm Cream, which is how the wordmark is
-drawn.** It measures 10.09:1, so the most on-brand pairing available is also the
-most readable — the reason to prefer it is that it looks right, and the contrast
-is a bonus rather than the argument.
-
-**Accents darkened in HSL, preserving hue.** Darkening them toward the brand
 carrying both `photos.plant_id = X` and a `photo_plants` row for X rendered
 "X, X". All three now call `plantsAssignedToPhoto()`, which always deduped and
 was never affected. Plant Detail additionally excludes the plant whose page it
@@ -1125,6 +1119,18 @@ was starting from the logo instead of from a target ratio.
 Every other screen themes through the aliases and has not been seen in daylight.
 
 ### v2.33.0 — THEME-1, a daylight theme and the token layer under it
+### v2.33.1 — daylight reworked as the logo sheet
+
+Amanda: *"I thought I would like the light mode. I dont."* The first attempt was
+#FBF9F4 on white — legible, clinical, and nothing like this garden. I had
+optimised entirely for glare and thrown the brand away doing it.
+
+Reworked to **Deep Garden Green on Warm Cream, which is how the wordmark is
+drawn.** It measures 10.09:1, so the most on-brand pairing available is also the
+most readable — the reason to prefer it is that it looks right, and the contrast
+is a bonus rather than the argument.
+
+**Accents darkened in HSL, preserving hue.** Darkening them toward the brand
 
 Amanda reads the app on an iPad **in the garden, in direct sun**, where a dark
 screen washes out. Different problem from "light mode"; the answer is contrast.

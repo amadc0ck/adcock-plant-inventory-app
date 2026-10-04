@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.53.0";
+const APP_VERSION = "2.54.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1074,6 +1074,11 @@ const state = {
   inboxYear: "",
   inboxSearch: "",
   galleryFilters: { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false, favorites: false },
+  // GAL-7: galleryFilters may also carry all / dateFrom / dateTo / sort. Absent
+  // means off, so the older literal resets around the file need no change.
+  galleryLimit: 60,        // GAL-7: results are paged; reset whenever the filters change
+  galleryLimitKey: "",
+  gpsProbe: {},            // GPS-0: photoId -> { loading } | { lat, lng } | { none } | { error }
   inboxSelectMode: false,
   inboxSelected: new Set(),
   lightboxResumePending: false,
@@ -1548,6 +1553,77 @@ function driveErrorMessage(status, fallback) {
 // Reads the JPEG's embedded EXIF DateTimeOriginal, when present, so photos
 // batch-uploaded from a phone/camera keep their real capture date instead
 // of showing whenever they happened to be uploaded to this app.
+/* GPS-0 (v2.54.0). Reads GPS coordinates from a JPEG's EXIF, from an
+   ArrayBuffer. A probe first: nothing is stored, it answers "do these photos
+   even carry a location?" before any column is added. iOS browser uploads and
+   Google Photos downloads often strip it, so the honest answer may be no.
+
+   IFD0 tag 0x8825 points to the GPS IFD; in it 1/3 are N|S and E|W (ASCII,
+   inline) and 2/4 are three RATIONALs — degrees, minutes, seconds. */
+function parseExifGps(buf) {
+  try {
+    const view = new DataView(buf);
+    if (view.getUint16(0, false) !== 0xffd8) return null;
+    let offset = 2;
+    while (offset < view.byteLength - 4) {
+      const marker = view.getUint16(offset, false);
+      offset += 2;
+      if (marker === 0xffe1) {
+        if (view.getUint32(offset + 2, false) !== 0x45786966) return null; // "Exif"
+        const tiff = offset + 8;
+        const little = view.getUint16(tiff, false) === 0x4949;
+        const ifd0 = tiff + view.getUint32(tiff + 4, little);
+        const n0 = view.getUint16(ifd0, little);
+        let gpsAt = null;
+        for (let i = 0; i < n0; i++) {
+          const e = ifd0 + 2 + i * 12;
+          if (view.getUint16(e, little) === 0x8825) gpsAt = tiff + view.getUint32(e + 8, little);
+        }
+        if (gpsAt === null) return null;
+        const n = view.getUint16(gpsAt, little);
+        const g = {};
+        for (let i = 0; i < n; i++) {
+          const e = gpsAt + 2 + i * 12;
+          const tag = view.getUint16(e, little);
+          if (tag === 1 || tag === 3) g[tag] = String.fromCharCode(view.getUint8(e + 8));
+          if (tag === 2 || tag === 4) {
+            const at = tiff + view.getUint32(e + 8, little);
+            const r = (k) => { const den = view.getUint32(at + k * 8 + 4, little); return den ? view.getUint32(at + k * 8, little) / den : 0; };
+            g[tag] = r(0) + r(1) / 60 + r(2) / 3600;
+          }
+        }
+        if (g[2] == null || g[4] == null) return null;
+        const lat = g[1] === "S" ? -g[2] : g[2];
+        const lng = g[3] === "W" ? -g[4] : g[4];
+        if (!lat && !lng) return null;   // 0,0 is a blank, not the Gulf of Guinea
+        return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
+      } else if ((marker & 0xff00) !== 0xff00) {
+        return null;
+      } else {
+        offset += view.getUint16(offset, false);
+      }
+    }
+  } catch (e) { /* truncated or odd file */ }
+  return null;
+}
+async function checkPhotoGps(photoId) {
+  const p = state.photos.find((x) => x.id === photoId);
+  if (!p || !p.drive_file_id) return;
+  state.gpsProbe[photoId] = { loading: true };
+  render();
+  try {
+    const res = await authedFetch(`${CONFIG.SUPABASE_URL}/functions/v1/get-photo?id=${encodeURIComponent(p.drive_file_id)}`, () => ({ headers: apiHeaders() }));
+    if (!res.ok) throw new Error(`get-photo ${res.status}`);
+    // EXIF sits at the very start of the file; 256 KB is generous.
+    const buf = await (await res.blob()).slice(0, 262144).arrayBuffer();
+    const gps = parseExifGps(buf);
+    state.gpsProbe[photoId] = gps || { none: true };
+  } catch (e) {
+    state.gpsProbe[photoId] = { error: readableError(e) };
+  }
+  render();
+}
+
 function extractExifDate(file) {
   return new Promise((resolve) => {
     if (!file.type || (!file.type.includes("jpeg") && !file.type.includes("jpg"))) { resolve(null); return; }
@@ -4669,7 +4745,8 @@ function viewLabel() {
   if (state.tab === "gallery") {
     const f = state.galleryFilters;
     if (f.album) return locationById(f.album)?.name || "Album";
-    if (f.needs || f.highlight || f.favorites || f.inBloom || f.search) return "Gallery results";
+    if (f.all && !f.needs && !f.highlight && !f.favorites && !f.inBloom && !f.search) return "All photos";
+    if (f.needs || f.highlight || f.favorites || f.inBloom || f.search || f.dateFrom || f.dateTo) return "Gallery results";
     return "Gallery";
   }
   if (state.tab === "taxonDetail") {
@@ -8235,6 +8312,15 @@ function filteredGalleryPhotos() {
     if (inBloomIds && !inBloomIds.has(p.id)) return false;
     if (f.favorites && !p.is_favorite) return false;
     if (f.photoType && (p.photo_type || "general") !== f.photoType) return false;
+    // GAL-7. Compared as YYYY-MM-DD strings on the same date every tile shows
+    // (capture date, else upload date), so the filter cannot disagree with
+    // the labels. Both ends inclusive.
+    if (f.dateFrom || f.dateTo) {
+      const d = String(photoDate(p) || "").slice(0, 10);
+      if (!d) return false;
+      if (f.dateFrom && d < f.dateFrom) return false;
+      if (f.dateTo && d > f.dateTo) return false;
+    }
     if (f.locationId) {
       const photoLocIds = allLocationsForPhoto(p).map((l) => l.id);
       const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
@@ -8247,7 +8333,11 @@ function filteredGalleryPhotos() {
       if (!hay.includes(q)) return false;
     }
     return true;
-  }).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+  }).sort((a, b) => {
+    // GAL-7: one order for the grid AND the lightbox stepping through it.
+    const d = new Date(photoDate(b)) - new Date(photoDate(a));
+    return f.sort === "oldest" ? -d : d;
+  });
 }
 
 // ============================================================
@@ -8324,8 +8414,11 @@ function archivePeriod(l) {
 
 function screenGallery() {
   const f = state.galleryFilters;
-  const activeFilterCount = [f.locationId, f.photoType].filter(Boolean).length;
-  const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs || f.inBloom || f.favorites);
+  const activeFilterCount = [f.locationId, f.photoType, f.dateFrom || f.dateTo].filter(Boolean).length;
+  const searching = !!(f.search || activeFilterCount || f.album || f.highlight || f.needs || f.inBloom || f.favorites || f.all);
+  // GAL-7. Paged: the results grid drew every match, 2,664 cards for "all".
+  const limitKey = JSON.stringify(f);
+  if (state.galleryLimitKey !== limitKey) { state.galleryLimitKey = limitKey; state.galleryLimit = 60; }
   const NEEDS_LABELS = { no_plant: "Filed to a container or bed, needs a plant", no_location: "Attached to a plant, needs a location", neither: "Needs a plant and a location", has_suggestions: "Photos Claude has suggestions for", area_no_plant: "Archive and area photos, not yet tagged to a plant" };
   const matches = filteredGalleryPhotos();
 
@@ -8434,9 +8527,12 @@ function screenGallery() {
       <div class="sticky-controls">
       <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" id="search-gallery" oninput="state.galleryFilters.search=this.value;scheduleRender()" />
       <div class="row" style="margin-bottom:16px;">
-        <button class="btn btn-secondary btn-sm" onclick="openModal('galleryFilters')">
-          Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
-        </button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="openModal('galleryFilters')">
+            Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
+          </button>
+          ${searching ? "" : `<button class="btn btn-secondary btn-sm" onclick="showAllGalleryPhotos()">All ${state.photos.length} photos</button>`}
+        </div>
         <div style="display:flex;align-items:center;gap:10px;">
           ${searching ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="clearGalleryView()">Clear</button>` : ""}
           ${searching ? `<button class="btn btn-secondary btn-sm" onclick="toggleGallerySelectMode()">${state.gallerySelectMode ? "Done" : "Select"}</button>` : ""}
@@ -8457,8 +8553,12 @@ function screenGallery() {
         <button class="back-link" onclick="clearGalleryView()">${icon("back")}<span class="back-label">Gallery</span></button>
         ${/* A search or a chosen row collapses to one flat result set. */""}
         <div class="row" style="margin-bottom:12px;">
-          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : f.inBloom ? "In bloom now" : f.favorites ? "Favourites" : "Results"}</h3>
-          <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
+          <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">${f.album ? escapeHtml(locationById(f.album)?.name || "") : f.highlight ? escapeHtml(listOptionsFor("plant_type")[f.highlight] || f.highlight) : f.needs ? NEEDS_LABELS[f.needs] : f.inBloom ? "In bloom now" : f.favorites ? "Favourites" : f.all ? "All photos" : "Results"}</h3>
+          <div style="display:flex;align-items:center;gap:10px;">
+            ${f.dateFrom || f.dateTo ? `<span class="pill" style="font-size:11px;">${f.dateFrom ? fmtDate(f.dateFrom) : "…"} &ndash; ${f.dateTo ? fmtDate(f.dateTo) : "today"}</span>` : ""}
+            <button class="btn-ghost" style="padding:0;font-size:12px;" onclick="state.galleryFilters.sort = state.galleryFilters.sort === 'oldest' ? 'newest' : 'oldest';render()">${f.sort === "oldest" ? "Oldest first" : "Newest first"} &#8645;</button>
+            <span class="subtle">${countLabel(matches.length, "photo", "photos")}</span>
+          </div>
         </div>
           ${/* Select all stays inline — it belongs with the result count it
                acts on. The actions move to the fixed bar below, because an
@@ -8473,7 +8573,11 @@ function screenGallery() {
             </div>` : ""}
         ${matches.length === 0
           ? `<div class="empty"><div class="display">No photos match</div><div>Try a different search or filter.</div></div>`
-          : state.galleryView === "list" ? listRows(matches) : grid(matches)}`
+          : `${state.galleryView === "list" ? listRows(matches.slice(0, state.galleryLimit)) : grid(matches.slice(0, state.galleryLimit))}
+             ${matches.length > state.galleryLimit ? `
+               <div style="text-align:center;margin:18px 0 8px;">
+                 <button class="btn btn-secondary btn-sm" onclick="state.galleryLimit += 60;render()">Show more &mdash; ${state.galleryLimit} of ${matches.length}</button>
+               </div>` : ""}`}`
       : `
         ${(() => {
           const favs = favoritePhotos();
@@ -9468,8 +9572,33 @@ function modalContent() {
         <option value="">All types</option>
         ${Object.entries(PHOTO_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${f.photoType === k ? "selected" : ""}>${v}</option>`).join("")}
       </select>
+      ${/* GAL-7. Date taken, falling back to upload date — the date on every tile. */""}
+      <label>Date taken</label>
+      <div class="row" style="gap:10px;align-items:flex-end;">
+        <div style="flex:1;"><span class="subtle" style="font-size:11.5px;">From</span>
+          <input type="date" value="${escapeHtml(f.dateFrom || "")}" onchange="state.galleryFilters.dateFrom=this.value;render()" /></div>
+        <div style="flex:1;"><span class="subtle" style="font-size:11.5px;">To</span>
+          <input type="date" value="${escapeHtml(f.dateTo || "")}" onchange="state.galleryFilters.dateTo=this.value;render()" /></div>
+      </div>
+      <div class="wrap-gap" style="gap:6px;margin-top:8px;">
+        ${(() => {
+          const today = todayISO();
+          const ago = new Date(Date.now() - 30 * 86400000);
+          const d30 = `${ago.getFullYear()}-${String(ago.getMonth() + 1).padStart(2, "0")}-${String(ago.getDate()).padStart(2, "0")}`;
+          const chip = (label, from, to) => {
+            const on = (f.dateFrom || "") === from && (f.dateTo || "") === to;
+            return `<button class="btn-ghost" style="font-size:11.5px;padding:3px 10px;border-radius:20px;border:1px solid ${on ? "var(--moss)" : "rgba(37,41,37,0.18)"};${on ? "background:var(--moss);color:var(--parchment);" : ""}" onclick="setGalleryDateRange('${from}','${to}')">${label}</button>`;
+          };
+          return chip("Last 30 days", d30, today) + chip("This year", `${today.slice(0, 4)}-01-01`, today);
+        })()}
+        <select style="width:auto;font-size:11.5px;padding:4px 7px;" onchange="if(this.value)setGalleryDateRange(this.value+'-01-01', this.value+'-12-31')">
+          <option value="">A year…</option>
+          ${galleryPhotoYears().map((y) => `<option value="${y}" ${f.dateFrom === `${y}-01-01` && f.dateTo === `${y}-12-31` ? "selected" : ""}>${y}</option>`).join("")}
+        </select>
+        ${f.dateFrom || f.dateTo ? `<button class="btn-ghost" style="font-size:11.5px;padding:3px 6px;color:var(--terracotta);" onclick="setGalleryDateRange('','')">Clear dates</button>` : ""}
+      </div>
       <button class="btn btn-primary btn-block" style="margin-top:20px;" onclick="closeModal()">Done</button>
-      <button class="btn-ghost btn-block" style="margin-top:8px;text-align:center;justify-content:center;" onclick="state.galleryFilters={locationId:'',photoType:'',search:state.galleryFilters.search};render()">Clear filters</button>`;
+      <button class="btn-ghost btn-block" style="margin-top:8px;text-align:center;justify-content:center;" onclick="state.galleryFilters={locationId:'',photoType:'',search:state.galleryFilters.search,all:state.galleryFilters.all,sort:state.galleryFilters.sort};render()">Clear filters</button>`;
   }
 
   if (type === "linkPlantToLocation") {
@@ -10492,7 +10621,17 @@ function modalContent() {
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Edit photo</h3>
-      <p class="mono subtle" style="margin:0 0 12px;">${fmtDate(photoDate(ph))}</p>
+      <p class="mono subtle" style="margin:0 0 4px;">${fmtDate(photoDate(ph))}</p>
+      ${(() => {
+        // GPS-0: a probe, nothing is saved.
+        const g = state.gpsProbe[ph.id];
+        const body = !g ? `<button class="btn-ghost" style="padding:0;font-size:12px;" onclick="checkPhotoGps('${ph.id}')">Check for a location in the photo file</button>`
+          : g.loading ? `<span class="subtle">Reading the file&hellip;</span>`
+          : g.none ? `<span class="subtle">No GPS location stored in this file.</span>`
+          : g.error ? `<span class="subtle" style="color:var(--terracotta);">Could not read it: ${escapeHtml(g.error)}</span>`
+          : `<span class="mono">${g.lat.toFixed(5)}, ${g.lng.toFixed(5)}</span> &middot; <a href="https://www.google.com/maps?q=${g.lat},${g.lng}" target="_blank" rel="noopener" style="color:var(--blue);">Open in Maps</a>`;
+        return `<p style="font-size:12px;margin:0 0 12px;">📍 ${body}</p>`;
+      })()}
       ${/* Click the picture to say what matters in it. Every crop in the app
            then centres on that point instead of defaulting to the top, which
            is right for an upright specimen and wrong for a wide planting. */""}
@@ -13398,6 +13537,20 @@ async function toggleFavorite(photoId) {
 function favoritePhotos() {
   return state.photos.filter((p) => p.is_favorite)
     .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
+}
+function showAllGalleryPhotos() {
+  state.galleryFilters = { ...state.galleryFilters, all: true };
+  render();
+  window.scrollTo(0, 0);
+}
+// Years present, newest first — the year shortcuts offer only real ones.
+function galleryPhotoYears() {
+  const ys = new Set(state.photos.map((p) => String(photoDate(p) || "").slice(0, 4)).filter((y) => /^\d{4}$/.test(y)));
+  return [...ys].sort().reverse();
+}
+function setGalleryDateRange(from, to) {
+  state.galleryFilters = { ...state.galleryFilters, dateFrom: from || "", dateTo: to || "" };
+  render();
 }
 function showGalleryFavorites() {
   state.galleryFilters = { locationId: "", photoType: "", search: "", album: "", highlight: "", needs: "", inBloom: false, favorites: true };

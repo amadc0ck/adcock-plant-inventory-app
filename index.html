@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.48.0";
+const APP_VERSION = "2.49.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2041,10 +2041,6 @@ function plantPicker(onPick, opts) {
         <option value="">Any species</option>
         ${taxaInUse.map((t) => `<option value="${t.id}" ${state.pickerTaxon === t.id ? "selected" : ""}>${escapeHtml(taxonDisplayName(t))}</option>`).join("")}
       </select>
-      <select style="width:auto;font-size:12.5px;padding:6px 8px;" onchange="state.pickerLocation=this.value;render()">
-        <option value="">Anywhere</option>
-        ${locationSelectOptions(state.pickerLocation)}
-      </select>
       <button class="btn-ghost" style="font-size:12px;padding:0 4px;" title="Change the order"
         onclick="state.pickerSort = state.pickerSort === 'name' ? 'recent' : 'name';render()">
         ${state.pickerSort === "name" ? "A–Z" : "Newest first"} &#8645;</button>
@@ -2052,6 +2048,8 @@ function plantPicker(onPick, opts) {
         ? `<button class="btn-ghost" style="font-size:12px;padding:0 4px;" onclick="clearPlantPicker()">Clear</button>` : ""}
       <span class="subtle" style="font-size:11.5px;">${countLabel(matches.length, "plant", "plants")}</span>
     </div>
+    ${/* LOC-11: was a 157-row <select>. */""}
+    ${locationField("pk", { empty: "Anywhere", value: state.pickerLocation, onPick: "setPickerLocation('{id}')", noCreate: true })}
     ${(() => {
       // PHOTO-6. Sits above the list and ignores the filters, because skipping
       // the search entirely is the whole point of it. Hidden the moment she
@@ -2397,15 +2395,34 @@ function setLocField(prefix, locationId) {
 // quickAddLocation() resolves its callback via globalThis[name], so it needs a
 // real global taking (id). Only one field's picker is ever open, so
 // state.locFieldOpen already identifies which one is asking.
+function setPickerLocation(id) {
+  state.pickerLocation = id || "";
+  state.locFieldOpen = "";
+  if (id) noteRecentLocation(id);
+  render();
+}
+function setGalleryLocationFilter(id) {
+  state.galleryFilters.locationId = id || "";
+  state.locFieldOpen = "";
+  render();
+}
 function setLocFieldActive(locationId) {
   setLocField(state.locFieldOpen, locationId);
 }
 function locFieldValue(prefix) {
   return state.locField[prefix] || "";
 }
+/* LOC-11 (v2.49.0) widened this to replace every remaining location
+   <select> — a flat list of ~157 rows is a scroll hunt everywhere. Options:
+     value     — read from elsewhere instead of state.locField (a live filter)
+     onPick    — JS snippet with {id}, instead of staging via setLocField
+                 (Clear calls it with an empty id)
+     excludeIds — kept off the list, e.g. a location's own subtree as parent
+     noCreate  — no "create new" row (filters: creating there makes no sense) */
 function locationField(prefix, opts) {
   const o = opts || {};
-  const id = locFieldValue(prefix);
+  const id = o.value !== undefined ? (o.value || "") : locFieldValue(prefix);
+  const pickJs = o.onPick || `setLocField('${prefix}','{id}')`;
   const chosen = id ? locationById(id) : null;
   const parent = chosen && chosen.parent_location_id ? locationById(chosen.parent_location_id) : null;
   const open = state.locFieldOpen === prefix;
@@ -2421,10 +2438,13 @@ function locationField(prefix, opts) {
       <div style="display:flex;gap:10px;flex-shrink:0;">
         <button type="button" class="btn-ghost" style="padding:0;font-size:12px;"
           onclick="state.locFieldOpen = state.locFieldOpen === '${prefix}' ? '' : '${prefix}';state.locPickerNewOpen=false;render()">${open ? "Close" : (chosen ? "Change" : "Choose")}</button>
-        ${chosen ? `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="setLocField('${prefix}','')">Clear</button>` : ""}
+        ${chosen ? `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="${pickJs.replace(/\{id\}/g, "")}">Clear</button>` : ""}
       </div>
     </div>
-    ${open ? locationPicker(`setLocField('${prefix}','{id}')`, { onCreatePick: "setLocFieldActive" }) : ""}`;
+    ${open ? locationPicker(pickJs, {
+      ...(o.noCreate || o.onPick ? {} : { onCreatePick: "setLocFieldActive" }),
+      ...(o.excludeIds ? { excludeIds: o.excludeIds } : {}),
+    }) : ""}`;
 }
 
 function locationPicker(onPick, opts) {
@@ -4788,6 +4808,12 @@ function openModal(type, data = {}) {
     state.locField.pp = _wa ? _wa.id : "";
   }
   if (type === "batchAdd") state.locField.ba = "";
+  if (type === "newLocation") state.locField.nlp = (data && data.parentId) || "";
+  if (type === "editLocation") {
+    const _l = state.locations.find((x) => x.id === data.locationId);
+    state.locField.elp = _l ? (_l.parent_location_id || "") : "";
+  }
+  if (type === "galleryBatch") state.locField.gb = "";
   if (type === "movePlant") { state.moveTarget = ""; locPickerReset(); }
   // MERGE-2. A picker opened with the last screen's search still in it looks
   // like it is hiding most of the collection.
@@ -5026,7 +5052,7 @@ async function applyGalleryBatch() {
   const ids = Array.from(state.gallerySelected);
   if (!ids.length) { toast("Nothing selected", true); return; }
   const body = {};
-  const loc = document.getElementById("gb-location").value;
+  const loc = document.getElementById("gb-location-clear")?.checked ? "__clear__" : locFieldValue("gb");
   const plant = state.batchPlant || "";
   const type = document.getElementById("gb-type").value;
   if (loc) body.location_id = loc === "__clear__" ? null : loc;
@@ -8663,11 +8689,6 @@ function screenSettings() {
   </div>`;
 }
 
-function locationSelectOptions(selectedId) {
-  return `<option value="">— None —</option>` + locationOptionList().map((o) =>
-    `<option value="${o.id}" ${selectedId === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`
-  ).join("");
-}
 
 function modalContent() {
   if (!state.modal) return "";
@@ -9355,7 +9376,7 @@ function modalContent() {
           ${Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${k === "container" ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Parent location</label>
-        <select id="nl-parent">${locationSelectOptions(parent ? parent.id : null)}</select>
+        ${locationField("nlp", { empty: "None (top-level)" })}
         <label>Code (optional)</label>
         <input id="nl-code" placeholder="e.g. W-T-12" />
         <div class="checkbox-row">
@@ -9391,10 +9412,7 @@ function modalContent() {
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Filters</h3>
       <label>Location</label>
-      <select onchange="state.galleryFilters.locationId=this.value;render()">
-        <option value="">All locations</option>
-        ${locationOptionList().map((o) => `<option value="${o.id}" ${f.locationId === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
-      </select>
+      ${locationField("gf", { empty: "All locations", value: f.locationId, onPick: "setGalleryLocationFilter('{id}')", noCreate: true })}
       <label>Photo type</label>
       <select onchange="state.galleryFilters.photoType=this.value;render()">
         <option value="">All types</option>
@@ -9486,11 +9504,11 @@ function modalContent() {
       <p class="subtle" style="margin:0 0 14px;">Only what you set here changes. Leave a field blank to leave it as it is.</p>
 
       <label>Location</label>
-      <select id="gb-location">
-        <option value="">— Leave unchanged —</option>
-        <option value="__clear__">Remove location</option>
-        ${locationSelectOptions(null)}
-      </select>
+      ${locationField("gb", { empty: "Leave unchanged" })}
+      <div class="checkbox-row" style="margin-top:-2px;">
+        <input type="checkbox" id="gb-location-clear" />
+        <label for="gb-location-clear">Remove the location from these photos instead</label>
+      </div>
 
       ${/* PL-3. Same staged picker as the edit-photo form — picking must not
            apply the batch, so it stages and the Apply button commits. */""}
@@ -10215,8 +10233,6 @@ function modalContent() {
 
   if (type === "editLocation") {
     const l = state.locations.find((x) => x.id === data.locationId);
-    // Exclude itself from the parent picker to avoid self-referencing loops
-    const parentOptions = locationOptionList().filter((o) => o.id !== l.id);
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 14px;">Edit location</h3>
@@ -10254,10 +10270,9 @@ function modalContent() {
         </div>
         <div class="field-help">For a container that no longer exists (repotted) or a place the collection has left. History is kept either way. Separate from the Gallery setting above.</div>
         <label>Parent location</label>
-        <select id="el-parent">
-          <option value="">— None (top-level) —</option>
-          ${parentOptions.map((o) => `<option value="${o.id}" ${l.parent_location_id === o.id ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}
-        </select>
+        ${/* Its whole subtree is excluded, not just itself: parenting a location
+             under its own child is the same loop one level down. */""}
+        ${locationField("elp", { empty: "None (top-level)", excludeIds: [l.id, ...descendantLocationIds(l.id)] })}
         <label>Sort order</label>
         <input id="el-sort" type="number" value="${l.sort_order ?? ""}" placeholder="Lower numbers appear first" />
         <label>Code</label>
@@ -13512,6 +13527,38 @@ function restoreScroll(snap, what) {
   }
 }
 
+/* LOC-11. These forms carry the searchable location field, whose Choose /
+   drill-down / pick all re-render the modal — and a form field that is not
+   bound to state came back from that re-render empty. Typing a new location's
+   name and then choosing its parent lost the name; the same was true of New
+   plant's common name since LOCFIELD-1. Their fields are snapshotted across a
+   re-render of the SAME modal and put back.
+
+   Only plain fields. Anything whose handler writes state ("state." in its
+   oninput / onchange) is already rendered from state, and restoring its old DOM
+   value would undo a deliberate reset (a cleared picker search, say). */
+const KEEP_FIELD_MODALS = new Set(["batchAdd", "newPlant", "newPlantFromPhoto", "editPlant", "newLocation",
+  "galleryBatch", "newSpecimen", "propagatePlant", "editLocation"]);
+function captureModalFields() {
+  const out = [];
+  document.querySelectorAll(".modal input[id], .modal select[id], .modal textarea[id]").forEach((el) => {
+    if (el.type === "file") return;
+    const bound = `${el.getAttribute("oninput") || ""} ${el.getAttribute("onchange") || ""}`;
+    if (bound.includes("state.")) return;
+    out.push({ id: el.id, value: el.value, checked: el.checked });
+  });
+  return out;
+}
+function restoreModalFields(snap) {
+  if (!snap) return;
+  snap.forEach((f) => {
+    const el = document.getElementById(f.id);
+    if (!el || !el.closest(".modal")) return;
+    if (el.type === "checkbox" || el.type === "radio") el.checked = f.checked;
+    else if (el.value !== f.value) el.value = f.value;
+  });
+}
+
 function captureFocus() {
   const el = document.activeElement;
   if (!el || !el.id) return null;
@@ -13706,10 +13753,12 @@ function render() {
     ${state.lightbox ? renderLightbox() : ""}
     ${state.refImage ? renderRefImage() : ""}
   `;
+  const keptFields = sameView && state.modal && KEEP_FIELD_MODALS.has(state.modal.type) ? captureModalFields() : null;
   if (!patchAroundFocus(app, html)) app.innerHTML = html;
   document.body.classList.toggle("has-task-banner", !!taskBanner());
   measureStickyOffset();
   wireModalForms();
+  restoreModalFields(keptFields);
   restoreFocus(focusSnapshot);
   // Scroll was preserved when the view stayed the same and simply left alone
   // when it changed — so arriving somewhere new kept the previous page's Y
@@ -14333,7 +14382,7 @@ function wireModalForms() {
           locality: document.getElementById("nl-locality").value.trim() || null,
           active_from: document.getElementById("nl-activefrom").value || null,
           active_to: document.getElementById("nl-activeto").value || null,
-          parent_location_id: document.getElementById("nl-parent").value || null,
+          parent_location_id: locFieldValue("nlp") || null,
           code: document.getElementById("nl-code").value || null,
         };
         await restPost("locations", body);
@@ -14386,7 +14435,7 @@ function wireModalForms() {
           active_from: document.getElementById("el-activefrom").value || null,
           active_to: document.getElementById("el-activeto").value || null,
           archived: document.getElementById("el-archived").checked,
-          parent_location_id: document.getElementById("el-parent").value || null,
+          parent_location_id: locFieldValue("elp") || null,
           sort_order: sortVal === "" ? null : Number(sortVal),
           code: document.getElementById("el-code").value || null,
           notes: document.getElementById("el-notes").value || null,

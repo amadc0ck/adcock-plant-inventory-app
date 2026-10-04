@@ -908,6 +908,13 @@ stricter than the To Do count; overview/progress/historical need only a location
 Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
 
 ### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
+### v2.49.0 — LOC-11: no location dropdowns left
+Plant-picker "Anywhere" filter, New/Edit location parent, Gallery filter and Gallery batch now use the searchable
+`locationField` (new opts: value, onPick, excludeIds, noCreate). Edit location excludes its whole subtree, not just itself.
+Found on the way: opening the picker re-rendered the modal and wiped unbound fields (e.g. New plant's common name, since
+LOCFIELD-1). `KEEP_FIELD_MODALS` snapshots plain fields across same-modal re-renders; state-bound ones are skipped.
+Left as a select on purpose: the ~5-item archive jump list on To Do cards.
+
 ### v2.48.0 — FILE-1: past nine picks
 A chip now lists its whole group (scrolls inside itself); only the first nine get a key. "Type to narrow" (/) filters the
 showing list by name, accession or common name — with All it searches every group — and renumbers; Enter takes the top.
@@ -946,18 +953,6 @@ Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 
 (B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
 Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
 Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
-so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
-missing. Do not reopen the is_hybrid half.
-
-### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
-
-`taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
-five key expressions and the partial predicate intact. Identity is
-`(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
-and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
-157 rows, 157 distinct keys.
-
-Three paths can now hit it, and `restPost("taxa")` was only one of them:
 
 ### NAME-5 — data-quality pass, RAN 2026-09-11
 
@@ -982,6 +977,18 @@ never rendered double (`cultivarLabel()` already strips them), and setting
 
 `isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
 `taxa` may grow another unique index, and bare 23505 would then send her to
+so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
+missing. Do not reopen the is_hybrid half.
+
+### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
+
+`taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
+five key expressions and the partial predicate intact. Identity is
+`(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
+and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
+157 rows, 157 distinct keys.
+
+Three paths can now hit it, and `restPost("taxa")` was only one of them:
 Merge over something unrelated.
 
 **Testing note worth keeping:** the first version of its SQLSTATE test used a
@@ -1000,18 +1007,6 @@ is outside the partial index. Unchanged, and still not covered.
 adolphii* rows five seconds apart. With a unique index on `taxa` the loser now
 gets a 23505 — so it refreshes from the server (`state.taxa` is stale by
 definition at that point, the winner landed after the last `loadAll`) and
-before the genus, and that is derivable from the name — `TAXON_NOTHOGENERA`
-already listed all of them for `taxonLooksHybrid()`. Twelve records were
-silently dropping the sign; they now render `×Graptoveria 'Debbie'`.
-
-**The near-miss worth keeping:** rendering the × moved those records' `nameKey`,
-so `findTaxonByName()` would have stopped matching them and typing the name
-again would have created a SECOND species row — the exact failure nameKey
-exists to prevent. Caught by adding the test before believing the change was
-cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
-so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
-
-
 resolves to the row that won. The specimen links to the same species either way.
 
 Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —
@@ -1036,6 +1031,18 @@ question. A survivor with no location silently inherits the other's.
 *unassigns*, which is the opposite. Children reparent rather than being refused.
 Its table list was built by probing the database column by column, not from
 REFERENCE — that shortcut is what MERGE-1 cost. Refuses to merge a location into
+before the genus, and that is derivable from the name — `TAXON_NOTHOGENERA`
+already listed all of them for `taxonLooksHybrid()`. Twelve records were
+silently dropping the sign; they now render `×Graptoveria 'Debbie'`.
+
+**The near-miss worth keeping:** rendering the × moved those records' `nameKey`,
+so `findTaxonByName()` would have stopped matching them and typing the name
+again would have created a SECOND species row — the exact failure nameKey
+exists to prevent. Caught by adding the test before believing the change was
+cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
+so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
+
+
 its own descendant, and `locationPicker()` gained `excludeIds` so the subtree is
 never offered. Two tests, mutation-verified.
 

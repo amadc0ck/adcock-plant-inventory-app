@@ -947,7 +947,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.43.0";
+const APP_VERSION = "2.44.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4656,7 +4656,9 @@ function goTab(tab) {
 function toggleInboxSelectMode() {
   state.inboxSelectMode = !state.inboxSelectMode;
   state.inboxSelected = new Set();
-  render();
+  // Select mode hides the work queue, weather and undo strip ABOVE the grid,
+  // so the same scrollY lands a row or two further down. Pinned to the photo.
+  renderKeepingAnchor();
 }
 // Two scopes, deliberately distinct. "Shown" is the page she is looking at;
 // "matching" is everything behind the current filter, which at 2019 is 1,243
@@ -5250,7 +5252,7 @@ function inboxYears() {
 function inboxCompactRow(p, selectMode) {
   const picked = state.inboxSelected.has(p.id);
   return `
-    <div class="tag-card plant-list-card" style="padding:8px 12px;position:relative;${picked ? "outline:3px solid var(--moss);" : ""}"
+    <div class="tag-card plant-list-card" data-anchor="${p.id}" style="padding:8px 12px;position:relative;${picked ? "outline:3px solid var(--moss);" : ""}"
          onclick="${selectMode ? `toggleInboxPhotoSelected('${p.id}')` : `openInboxLightbox('${p.id}')`}">
       ${selectMode ? `<div class="select-check ${picked ? "checked" : ""}" style="top:6px;left:6px;z-index:2;">${picked ? icon("check") : ""}</div>` : ""}
       <div class="plant-list-thumb" style="width:39px;height:52px;">${photoImg(p)}</div>
@@ -5478,7 +5480,7 @@ function photoRow(p, selectMode) {
   const suggestionBadge = (sg) => identificationBadge(sg, { inert: selectMode });
 
   return `
-  <div class="tag-card" style="padding:0;overflow:hidden;${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
+  <div class="tag-card" data-anchor="${p.id}" style="padding:0;overflow:hidden;${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
     <div class="card-media ratio-3x4" ${!selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${!selectMode ? "pointer" : "default"};">
       ${selectMode ? `<div class="select-check ${isSelected ? "checked" : ""}" style="top:8px;left:8px;z-index:1;">${isSelected ? icon("check") : ""}</div>` : ""}
       ${photoImg(p)}
@@ -13074,9 +13076,37 @@ function patchAroundFocus(root, html) {
 // lands higher than they were. One retry a frame later, only when clamped.
 function reapplyClampedScroll(snap) {
   if (!snap || !snap.page || window.scrollY >= snap.page - 1) return;
+  const gen = scrollRestoreGen;
   requestAnimationFrame(() => {
+    // renderKeepingAnchor() moved the page on purpose since; do not undo it.
+    if (gen !== scrollRestoreGen) return;
     if (window.scrollY < snap.page - 1) window.scrollTo(0, snap.page);
   });
+}
+let scrollRestoreGen = 0;
+
+/* SELECT-1 (v2.44.0). Keeping scrollY is wrong when content ABOVE the viewport
+   changes height: the page "stays put" and everything you were looking at
+   slides away. Entering select mode on To Do removed the work queue above the
+   grid and jumped a row or more. This pins the first visible [data-anchor]
+   element to where it was on screen instead, nudged clear of the sticky
+   controls if those grew over it. No anchor on the page → plain render(). */
+function renderKeepingAnchor() {
+  const controls = () => document.querySelector(".sticky-controls");
+  const oldFloor = controls() ? controls().getBoundingClientRect().bottom : 0;
+  const anchor = [...document.querySelectorAll("[data-anchor]")]
+    .find((el) => el.getBoundingClientRect().bottom > oldFloor + 1);
+  const id = anchor && anchor.getAttribute("data-anchor");
+  const before = anchor ? anchor.getBoundingClientRect().top : 0;
+  render();
+  if (!id) return;
+  const after = document.querySelector(`[data-anchor="${CSS.escape(id)}"]`);
+  if (!after) return;
+  const newFloor = controls() ? controls().getBoundingClientRect().bottom : 0;
+  // Fully visible before → keep it fully visible below the (maybe taller) bar.
+  const target = before >= oldFloor ? Math.max(before, newFloor + 8) : before;
+  scrollRestoreGen++;
+  window.scrollBy(0, after.getBoundingClientRect().top - target);
 }
 
 let renderTimer = null;

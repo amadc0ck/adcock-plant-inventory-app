@@ -908,24 +908,17 @@ Gotcha: other `onchange="...render()"` fields can still eat the next click; conv
 Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
 
 ### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
+### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
+Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
+`renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
+compact rows carry `data-anchor`; add it to any other list whose upper content changes height on a toggle.
+
 CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
 RENDER-1: each repaint destroyed the field being typed in, and `focus()` scrolled to it (and drops the iOS keyboard).
 `patchAroundFocus()` keeps the live field and swaps everything around it; falls back to innerHTML otherwise.
 Gotcha: depends on no `addEventListener` on rendered nodes (see REFERENCE). Button-click jumps: only the clamped-scroll
 retry so far — not reproduced, needs a named screen if it persists.
 
-claiming one. The v2.37.0 commit message still says NAME-3.)*
-
-9 rows across 9 taxa. All four audit checks now return 0 against live data.
-Two of the four original findings were **not defects** — the cultivar quotes
-never rendered double (`cultivarLabel()` already strips them), and setting
-`is_hybrid` on the five cross-parentage records would have been wrong, visibly
-so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
-missing. Do not reopen the is_hybrid half.
-
-### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
-
-`taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
 ### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
 Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
 (A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
@@ -950,6 +943,18 @@ Three paths can now hit it, and `restPost("taxa")` was only one of them:
   points at Merge, instead of printing a Postgres body.
 - **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
   with the same identity under a different id would have died mid-restore on a
+claiming one. The v2.37.0 commit message still says NAME-3.)*
+
+9 rows across 9 taxa. All four audit checks now return 0 against live data.
+Two of the four original findings were **not defects** — the cultivar quotes
+never rendered double (`cultivarLabel()` already strips them), and setting
+`is_hybrid` on the five cross-parentage records would have been wrong, visibly
+so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
+missing. Do not reopen the is_hybrid half.
+
+### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
+
+`taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
   raw error. It now names what is in the way. **It does not skip the row:**
   the plants referencing that `taxa_id` would fail the FK next and take the
   rest of the restore with them.

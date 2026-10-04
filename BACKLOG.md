@@ -908,6 +908,11 @@ Found on the way: opening the picker re-rendered the modal and wiped unbound fie
 LOCFIELD-1). `KEEP_FIELD_MODALS` snapshots plain fields across same-modal re-renders; state-bound ones are skipped.
 Left as a select on purpose: the ~5-item archive jump list on To Do cards.
 
+### v2.52.0 — "Somewhere else in the collection" stayed open
+Its `open` was derived from pickerSearch only, so typing in the location filter inside it re-rendered it closed.
+Now `state.filingElsewhereOpen` (ontoggle) or any active filter holds it open, and patchAroundFocus never strips
+`open` from a kept <details>. Rule: a <details> containing inputs must take its open state from `state`.
+
 ### v2.51.0 — NAME-6: "Echeveria Canadian" could not be created
 An unquoted cultivar parsed as genus only, so the row's identity key equalled the bare-Echeveria taxon; the unique
 index refused it and findTaxonByName() could not explain why. Failed in batch add (2026-10-03) and from File photos.
@@ -936,18 +941,6 @@ stricter than the To Do count; overview/progress/historical need only a location
 Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
 
 ### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
-Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
-Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
-
-### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
-CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
-RENDER-1: each repaint destroyed the field being typed in, and `focus()` scrolled to it (and drops the iOS keyboard).
-`patchAroundFocus()` keeps the live field and swaps everything around it; falls back to innerHTML otherwise.
-Gotcha: depends on no `addEventListener` on rendered nodes (see REFERENCE). Button-click jumps: only the clamped-scroll
-retry so far — not reproduced, needs a named screen if it persists.
-
-### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
-Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
 Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
 `renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
 compact rows carry `data-anchor`; add it to any other list whose upper content changes height on a toggle.
@@ -972,6 +965,18 @@ the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
 permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
 claiming one. The v2.37.0 commit message still says NAME-3.)*
 
+Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
+Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
+
+### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
+CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
+RENDER-1: each repaint destroyed the field being typed in, and `focus()` scrolled to it (and drops the iOS keyboard).
+`patchAroundFocus()` keeps the live field and swaps everything around it; falls back to innerHTML otherwise.
+Gotcha: depends on no `addEventListener` on rendered nodes (see REFERENCE). Button-click jumps: only the clamped-scroll
+retry so far — not reproduced, needs a named screen if it persists.
+
+### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
+Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
 9 rows across 9 taxa. All four audit checks now return 0 against live data.
 Two of the four original findings were **not defects** — the cultivar quotes
 never rendered double (`cultivarLabel()` already strips them), and setting
@@ -1000,18 +1005,6 @@ Three paths can now hit it, and `restPost("taxa")` was only one of them:
 
 `isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
 `taxa` may grow another unique index, and bare 23505 would then send her to
-### v2.38.0 — losing the taxon race is no longer an error
-
-`ensureTaxonForName()` is a check-then-act race and it lost one: two *Sedum
-adolphii* rows five seconds apart. With a unique index on `taxa` the loser now
-gets a 23505 — so it refreshes from the server (`state.taxa` is stale by
-definition at that point, the winner landed after the last `loadAll`) and
-resolves to the row that won. The specimen links to the same species either way.
-
-Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —
-a unique violation with no explanation is worth seeing, not swallowing.
-
-**Shipped before the index on purpose.** The other order means the first race
 Merge over something unrelated.
 
 **Testing note worth keeping:** the first version of its SQLSTATE test used a
@@ -1036,6 +1029,18 @@ silently dropping the sign; they now render `×Graptoveria 'Debbie'`.
 
 **The near-miss worth keeping:** rendering the × moved those records' `nameKey`,
 so `findTaxonByName()` would have stopped matching them and typing the name
+### v2.38.0 — losing the taxon race is no longer an error
+
+`ensureTaxonForName()` is a check-then-act race and it lost one: two *Sedum
+adolphii* rows five seconds apart. With a unique index on `taxa` the loser now
+gets a 23505 — so it refreshes from the server (`state.taxa` is stale by
+definition at that point, the winner landed after the last `loadAll`) and
+resolves to the row that won. The specimen links to the same species either way.
+
+Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —
+a unique violation with no explanation is worth seeing, not swallowing.
+
+**Shipped before the index on purpose.** The other order means the first race
 again would have created a SECOND species row — the exact failure nameKey
 exists to prevent. Caught by adding the test before believing the change was
 cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
@@ -1054,18 +1059,6 @@ question. A survivor with no location silently inherits the other's.
 *unassigns*, which is the opposite. Children reparent rather than being refused.
 Its table list was built by probing the database column by column, not from
 REFERENCE — that shortcut is what MERGE-1 cost. Refuses to merge a location into
-Plant", and a tile that cries wolf stops being read.
-
-`mergeTaxa()` moves specimens, suggestions (`taxa_id` AND `value_id`), wishes
-and task subjects, then **fills only BLANK fields** on the survivor from the
-loser — discarding a filled-in `soil` would undo PROF work and buy another AI
-call. Six tests, mutation-verified.
-
-
-### v2.34.0 — DEDUPE-1: three renders stopped hand-rolling "which plants does this photo show"
-
-Plant Detail's *Also shows*, and both *Identified* / *Shows* lines on Location
-Detail, each built `[primary, ...tagged]` by hand and none deduped — a photo
 its own descendant, and `locationPicker()` gained `excludeIds` so the subtree is
 never offered. Two tests, mutation-verified.
 
@@ -1090,6 +1083,18 @@ v2.29.0: a predicate copied rather than called.
 **Backup taken by Amanda 2026-09-11**, the first since the v2.21.1 restore fix.
 
 
+Plant", and a tile that cries wolf stops being read.
+
+`mergeTaxa()` moves specimens, suggestions (`taxa_id` AND `value_id`), wishes
+and task subjects, then **fills only BLANK fields** on the survivor from the
+loser — discarding a filled-in `soil` would undo PROF work and buy another AI
+call. Six tests, mutation-verified.
+
+
+### v2.34.0 — DEDUPE-1: three renders stopped hand-rolling "which plants does this photo show"
+
+Plant Detail's *Also shows*, and both *Identified* / *Shows* lines on Location
+Detail, each built `[primary, ...tagged]` by hand and none deduped — a photo
 ### v2.33.1 — daylight reworked as the logo sheet
 
 Amanda: *"I thought I would like the light mode. I dont."* The first attempt was

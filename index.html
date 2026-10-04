@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.51.0";
+const APP_VERSION = "2.52.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1062,6 +1062,7 @@ const state = {
   filingLastLocationId: null, // FILE-1: anchor for the "next bucket in the row" picks
   filingPickFilter: {},    // FILE-1: chip filter per stage, { location: "row", plant: "checkins" }
   filingPickQuery: "",     // FILE-1: "type to narrow" over the picks; cleared per photo
+  filingElsewhereOpen: false, // FILE-1: "Somewhere else in the collection" expanded
   navStack: [],           // NAV-1: where you came from, with the filter intact
   inboxLimit: 20,
   inboxSort: "newest",
@@ -5666,7 +5667,12 @@ function screenFiling() {
         : `
           ${filingFilterChips(p)}
           ${filingPickList(p, picks, (state.filingPickFilter || {}).plant ? "Nothing in this group." : `No plants recorded at ${escapeHtml(loc.name)} yet.`)}
-          <details style="margin-top:4px;" ${state.pickerSearch ? "open" : ""}>
+          ${/* Open is STATE, not DOM. It was derived from pickerSearch alone, so
+               typing in the "Anywhere" location search inside it re-rendered it
+               closed on every keystroke. The toggle handler records her choice;
+               any active filter inside also holds it open. */""}
+          <details style="margin-top:4px;" ontoggle="state.filingElsewhereOpen=this.open"
+            ${state.filingElsewhereOpen || state.pickerSearch || state.pickerLocation || state.locFieldOpen === "pk" ? "open" : ""}>
             <summary class="btn-ghost" style="cursor:pointer;font-size:12.5px;padding:0;">Somewhere else in the collection&hellip;</summary>
             <div style="margin-top:8px;">${plantPicker(`filingSetPlant('${p.id}','{id}')`, { onNew: `openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${loc.id}'})` })}</div>
           </details>`}
@@ -13644,7 +13650,11 @@ function patchAroundFocus(root, html) {
     while (freshParent.firstChild !== next) liveParent.insertBefore(freshParent.firstChild, keep);
     while (next.nextSibling) liveParent.appendChild(next.nextSibling);
     const isField = keep === live;
-    [...keep.attributes].forEach((a) => { if (!next.hasAttribute(a.name)) keep.removeAttribute(a.name); });
+    // A <details> she opened stays open: `open` is her state, not the markup's.
+    [...keep.attributes].forEach((a) => {
+      if (keep.tagName === "DETAILS" && a.name === "open") return;
+      if (!next.hasAttribute(a.name)) keep.removeAttribute(a.name);
+    });
     [...next.attributes].forEach((a) => {
       if (isField && a.name === "value") return;
       if (keep.getAttribute(a.name) !== a.value) keep.setAttribute(a.name, a.value);

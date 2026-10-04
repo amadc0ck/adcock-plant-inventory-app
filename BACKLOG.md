@@ -908,6 +908,12 @@ Found on the way: opening the picker re-rendered the modal and wiped unbound fie
 LOCFIELD-1). `KEEP_FIELD_MODALS` snapshots plain fields across same-modal re-renders; state-bound ones are skipped.
 Left as a select on purpose: the ~5-item archive jump list on To Do cards.
 
+### v2.51.0 — NAME-6: "Echeveria Canadian" could not be created
+An unquoted cultivar parsed as genus only, so the row's identity key equalled the bare-Echeveria taxon; the unique
+index refused it and findTaxonByName() could not explain why. Failed in batch add (2026-10-03) and from File photos.
+`parseBotanicalName()` now returns `complete`; `ensureTaxonForName()` stores parts only from a complete parse, else the
+name alone (lands in "Names to split"). An unexplained clash now names the colliding species.
+
 ### v2.48.0 — FILE-1: past nine picks
 A chip now lists its whole group (scrolls inside itself); only the first nine get a key. "Type to narrow" (/) filters the
 showing list by name, accession or common name — with All it searches every group — and renumbers; Enter takes the top.
@@ -918,18 +924,6 @@ Tap the photo (or F) opens it full size in a "filing" lightbox mode that holds o
 Chips filter the numbered picks: Suggested · This row · Check-ins · Recents (location) and Suggested · In this location ·
 Check-ins · Recents (plant). Filter persists per stage across photos; key numbers follow what is shown.
 
-Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
-`renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
-compact rows carry `data-anchor`; add it to any other list whose upper content changes height on a toggle.
-
-### v2.43.0 — LOC-10: add a location from inside a location
-"+ Add location here" on every location page opens New location with the parent preset (and named in the title).
-Shown even with no children — the first pot is when it is needed. No schema change. `app_errors` SQL ran 2026-10-04.
-
-### v2.42.0 — LOG-1 + BATCH-2: error history, batch rows fail alone
-LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
-BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
-failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
 ### v2.46.0 — FILE-1 follow-up: smaller queue, row-aware location picks
 Queue was 2,000+: a plant is now required only where the location holds plants and is not an archive (or inside one).
 Location picks: Claude → same as last → next / previous sibling (numeric name sort) → locations with check-ups due → recents.
@@ -954,6 +948,18 @@ retry so far — not reproduced, needs a named screen if it persists.
 
 ### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
 Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
+Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
+`renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
+compact rows carry `data-anchor`; add it to any other list whose upper content changes height on a toggle.
+
+### v2.43.0 — LOC-10: add a location from inside a location
+"+ Add location here" on every location page opens New location with the parent preset (and named in the title).
+Shown even with no children — the first pot is when it is needed. No schema change. `app_errors` SQL ran 2026-10-04.
+
+### v2.42.0 — LOG-1 + BATCH-2: error history, batch rows fail alone
+LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
+BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
+failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
 (A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
 (B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
 Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
@@ -982,18 +988,6 @@ and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
 157 rows, 157 distinct keys.
 
 Three paths can now hit it, and `restPost("taxa")` was only one of them:
-Merge over something unrelated.
-
-**Testing note worth keeping:** the first version of its SQLSTATE test used a
-message containing the word "duplicate", and a mutant matching only that word
-survived it. The test now carries neither the name nor the prose, so it can
-only pass through the branch it is testing. A test that cannot fail the mutation
-it was written for is not evidence.
-
-**Residual gap:** a taxon created from a common name alone parses no genus and
-is outside the partial index. Unchanged, and still not covered.
-
-
 
 - **The create race** — resolves to the winner (v2.38.0).
 - **Edit species** — renaming onto another species' identity now says so and
@@ -1018,6 +1012,18 @@ Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —
 a unique violation with no explanation is worth seeing, not swallowing.
 
 **Shipped before the index on purpose.** The other order means the first race
+Merge over something unrelated.
+
+**Testing note worth keeping:** the first version of its SQLSTATE test used a
+message containing the word "duplicate", and a mutant matching only that word
+survived it. The test now carries neither the name nor the prose, so it can
+only pass through the branch it is testing. A test that cannot fail the mutation
+it was written for is not evidence.
+
+**Residual gap:** a taxon created from a common name alone parses no genus and
+is outside the partial index. Unchanged, and still not covered.
+
+
 after the index shows Amanda a raw Postgres error.
 
 
@@ -1036,18 +1042,6 @@ cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
 so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
 
 
-its own descendant, and `locationPicker()` gained `excludeIds` so the subtree is
-never offered. Two tests, mutation-verified.
-
-
-### v2.35.0 — two species-hygiene tiles, and mergeTaxa
-
-**Species with no specimens.** `ensureTaxonForName()` writes the taxon before
-linking the specimen, so a failed link orphans one that no screen can reach.
-Wished-for species are excluded: having no specimen is what a wish is.
-
-**Duplicate species**, grouped on `nameKey()` of the composed name only.
-Common names are deliberately out — two unrelated plants are both "Ghost
 ### v2.36.0 — MERGE-2: merge from anywhere, and merge locations
 
 **Plants.** "Merge another plant into this one" on Plant Detail. The page you
@@ -1072,6 +1066,18 @@ call. Six tests, mutation-verified.
 
 Plant Detail's *Also shows*, and both *Identified* / *Shows* lines on Location
 Detail, each built `[primary, ...tagged]` by hand and none deduped — a photo
+its own descendant, and `locationPicker()` gained `excludeIds` so the subtree is
+never offered. Two tests, mutation-verified.
+
+
+### v2.35.0 — two species-hygiene tiles, and mergeTaxa
+
+**Species with no specimens.** `ensureTaxonForName()` writes the taxon before
+linking the specimen, so a failed link orphans one that no screen can reach.
+Wished-for species are excluded: having no specimen is what a wish is.
+
+**Duplicate species**, grouped on `nameKey()` of the composed name only.
+Common names are deliberately out — two unrelated plants are both "Ghost
 carrying both `photos.plant_id = X` and a `photo_plants` row for X rendered
 "X, X". All three now call `plantsAssignedToPhoto()`, which always deduped and
 was never affected. Plant Detail additionally excludes the plant whose page it

@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.50.0";
+const APP_VERSION = "2.51.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -13934,7 +13934,9 @@ function renderLightbox() {
    than an empty one. */
 const INFRA_RANK_RE = /^(nothosubsp|subsp|ssp|subvar|var|subf|f)\.?$/i;
 function parseBotanicalName(raw) {
-  const out = { genus: null, species_epithet: null, infraspecific: null, cultivar: null, is_hybrid: false };
+  // `complete`: every token was read. NAME-6 — callers must not store a
+  // partial parse as if it were the whole name.
+  const out = { genus: null, species_epithet: null, infraspecific: null, cultivar: null, is_hybrid: false, complete: false };
   let str = String(raw || "").trim();
   if (!str) return out;
 
@@ -13970,6 +13972,7 @@ function parseBotanicalName(raw) {
   // Anything still unconsumed means the name is not a shape this understands
   // ("Austrocylindropuntia subulata monstrose"). What was read stays; the rest
   // is left for NAME-2 rather than forced into a field.
+  out.complete = i >= tok.length;
   return out;
 }
 
@@ -13986,11 +13989,21 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
   };
   // Parse the typed name into its parts, then let anything explicitly passed
   // win — a form field she filled in is a stronger signal than a parse.
+  //
+  // NAME-6 (v2.51.0): only a COMPLETE parse is stored. "Echeveria Canadian"
+  // (an unquoted cultivar) parsed as genus "Echeveria" and nothing else, so the
+  // row's identity key was bare Echeveria — identical to the existing
+  // genus-only taxon. The unique index refused it, findTaxonByName() could not
+  // explain the clash, and it failed in batch add and again from File photos.
+  // A partial parse now stores the name as typed, with no parts, and the split
+  // is left to "Names to split", which is exactly what that queue is for.
   const parsed = parseBotanicalName(name);
-  ["genus", "species_epithet", "infraspecific", "cultivar"].forEach((k) => {
-    if (parsed[k]) body[k] = parsed[k];
-  });
-  if (parsed.is_hybrid) body.is_hybrid = true;
+  if (parsed.complete) {
+    ["genus", "species_epithet", "infraspecific", "cultivar"].forEach((k) => {
+      if (parsed[k]) body[k] = parsed[k];
+    });
+    if (parsed.is_hybrid) body.is_hybrid = true;
+  }
   if (parts) {
     ["cultivar", "family", "genus", "species_epithet"].forEach((k) => {
       if (parts[k]) body[k] = parts[k];
@@ -14017,6 +14030,11 @@ async function ensureTaxonForName(botanicalName, commonName, parts) {
     state.taxa = await restGetAll("taxa", "?select=*");
     const won = findTaxonByName(name, common);
     if (won) return won.id;
+    // Say WHICH species it collided with — a bare 23505 told her nothing.
+    const norm = (v) => String(v || "").trim().toLowerCase().replace(/['"\u2018\u2019\u201C\u201D]/g, "");
+    const key = (t) => ["genus", "species_epithet", "infraspecific", "cultivar", "working_label"].map((k) => norm(t[k])).join("|");
+    const twin = state.taxa.find((t) => t.genus && key(t) === key(body));
+    if (twin) throw new Error(`"${name || common}" has the same name parts as the existing species ${taxonDisplayName(twin)}. Pick that one, or add the missing part (a cultivar goes in quotes: Genus 'Cultivar').`);
     throw e;
   }
   return created ? created.id : null;

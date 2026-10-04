@@ -487,5 +487,15 @@ t("filing: a group shows past nine, and typing narrows and renumbers", () => {
   eq(ctx.filingQuickPicks(ph).map((k) => k.id), ["P11"], "narrowed to one, now key 1");
 });
 
+t("NAME-6: an unquoted cultivar is an incomplete parse", () => {
+  const p = ctx.parseBotanicalName("Echeveria Canadian");
+  eq([p.genus, p.complete], ["Echeveria", false]);
+});
+t("NAME-6: fully read names are complete", () => {
+  ok(ctx.parseBotanicalName("Echeveria 'Canadian'").complete);
+  ok(ctx.parseBotanicalName("Echeveria agavoides var. corderoyi").complete);
+  ok(ctx.parseBotanicalName("Echeveria").complete);
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

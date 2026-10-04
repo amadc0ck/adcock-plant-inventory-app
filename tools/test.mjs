@@ -474,5 +474,18 @@ t("filing chips: a group filter shows only that group, All de-duplicates", () =>
   eq(ctx.filingQuickPicks(ph).map((k) => k.id), ["A", "B"]);
 });
 
+t("filing: a group shows past nine, and typing narrows and renumbers", () => {
+  const plants = Array.from({ length: 12 }, (_, i) => ({ id: "P" + i, location_id: "L", status: "active", accession_number: "2026-" + String(i).padStart(3, "0") }));
+  setState(ctx, {
+    locations: [{ id: "L", name: "Bucket", type: "container", holds_plants: true }],
+    plants, photoPlants: [], suggestions: [], filingPickQuery: "",
+    photos: [{ id: "ph", location_id: "L", taken_at: "2026-09-01" }], filingPickFilter: { plant: "here" },
+  });
+  const ph = ctx.__eval("state").photos[0];
+  eq(ctx.filingQuickPicks(ph).length, 12, "single group is uncapped");
+  ctx.__eval("state").filingPickQuery = "2026-011";
+  eq(ctx.filingQuickPicks(ph).map((k) => k.id), ["P11"], "narrowed to one, now key 1");
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

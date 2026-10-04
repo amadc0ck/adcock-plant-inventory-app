@@ -908,6 +908,11 @@ stricter than the To Do count; overview/progress/historical need only a location
 Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
 
 ### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
+### v2.48.0 — FILE-1: past nine picks
+A chip now lists its whole group (scrolls inside itself); only the first nine get a key. "Type to narrow" (/) filters the
+showing list by name, accession or common name — with All it searches every group — and renumbers; Enter takes the top.
+Gotcha: clearing the query must also clear the live box (`filingClearQuery`), since RENDER-1 keeps a focused field's value.
+
 ### v2.47.0 — FILE-1: full-size view and pick filters
 Tap the photo (or F) opens it full size in a "filing" lightbox mode that holds only that photo.
 Chips filter the numbered picks: Suggested · This row · Check-ins · Recents (location) and Suggested · In this location ·
@@ -929,18 +934,6 @@ Gotcha: other `onchange="...render()"` fields can still eat the next click; conv
 Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
 
 ### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
-
-### NAME-5 — data-quality pass, RAN 2026-09-11
-
-*(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
-the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
-permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
-claiming one. The v2.37.0 commit message still says NAME-3.)*
-
-9 rows across 9 taxa. All four audit checks now return 0 against live data.
-Two of the four original findings were **not defects** — the cultivar quotes
-never rendered double (`cultivarLabel()` already strips them), and setting
-`is_hybrid` on the five cross-parentage records would have been wrong, visibly
 CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
 RENDER-1: each repaint destroyed the field being typed in, and `focus()` scrolled to it (and drops the iOS keyboard).
 `patchAroundFocus()` keeps the live field and swaps everything around it; falls back to innerHTML otherwise.
@@ -966,6 +959,18 @@ and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
 
 Three paths can now hit it, and `restPost("taxa")` was only one of them:
 
+### NAME-5 — data-quality pass, RAN 2026-09-11
+
+*(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
+the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
+permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
+claiming one. The v2.37.0 commit message still says NAME-3.)*
+
+9 rows across 9 taxa. All four audit checks now return 0 against live data.
+Two of the four original findings were **not defects** — the cultivar quotes
+never rendered double (`cultivarLabel()` already strips them), and setting
+`is_hybrid` on the five cross-parentage records would have been wrong, visibly
+
 - **The create race** — resolves to the winner (v2.38.0).
 - **Edit species** — renaming onto another species' identity now says so and
   points at Merge, instead of printing a Postgres body.
@@ -983,18 +988,6 @@ Merge over something unrelated.
 message containing the word "duplicate", and a mutant matching only that word
 survived it. The test now carries neither the name nor the prose, so it can
 only pass through the branch it is testing. A test that cannot fail the mutation
-resolves to the row that won. The specimen links to the same species either way.
-
-Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —
-a unique violation with no explanation is worth seeing, not swallowing.
-
-**Shipped before the index on purpose.** The other order means the first race
-after the index shows Amanda a raw Postgres error.
-
-
-### v2.37.0 — NAME-5: two different crosses, two different signs
-
-`is_hybrid` puts the × between genus and epithet. A **nothogenus** wears it
 it was written for is not evidence.
 
 **Residual gap:** a taxon created from a common name alone parses no genus and
@@ -1019,6 +1012,18 @@ cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
 so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
 
 
+resolves to the row that won. The specimen links to the same species either way.
+
+Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —
+a unique violation with no explanation is worth seeing, not swallowing.
+
+**Shipped before the index on purpose.** The other order means the first race
+after the index shows Amanda a raw Postgres error.
+
+
+### v2.37.0 — NAME-5: two different crosses, two different signs
+
+`is_hybrid` puts the × between genus and epithet. A **nothogenus** wears it
 ### v2.36.0 — MERGE-2: merge from anywhere, and merge locations
 
 **Plants.** "Merge another plant into this one" on Plant Detail. The page you

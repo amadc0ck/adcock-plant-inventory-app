@@ -488,7 +488,7 @@
      split", a bucket name, a quoted search — and it must never wrap beside its
      chevron. Truncates instead. */
   /* HOVER-1 */
-  .hover-card{position:absolute;z-index:110;width:290px;background:var(--parchment);color:var(--ink);
+  .hover-card{position:absolute;z-index:110;width:240px;background:var(--parchment);color:var(--ink);
     border-radius:10px;box-shadow:0 12px 34px -8px rgba(0,0,0,0.55);overflow:hidden;
     opacity:0;visibility:hidden;transform:translateY(-4px);transition:opacity .12s,transform .12s;pointer-events:none;}
   .hover-card.is-open{opacity:1;visibility:visible;transform:translateY(0);}
@@ -496,7 +496,7 @@
      near the right edge kept the document wider than the viewport and every
      screen sat scrolled sideways. Parked off-canvas when closed instead. */
   .hover-card:not(.is-open){left:-9999px !important;top:0 !important;}
-  .hover-card-media{width:100%;aspect-ratio:4/3;background:var(--parchment-dim);}
+  .hover-card-media{width:100%;aspect-ratio:3/4;background:var(--parchment-dim);}
   .hover-card-media img{width:100%;height:100%;object-fit:cover;display:block;}
   .hover-card-body{padding:11px 13px;}
   .hover-card-name{font-family:'Fraunces',serif;font-size:15px;font-weight:600;margin-top:2px;line-height:1.25;}
@@ -568,7 +568,7 @@
   .dupe-note.is-warn{background:rgba(217,116,116,0.14);border:1px solid rgba(217,116,116,0.55);color:var(--ink);}
   .dupe-note strong{font-weight:700;}
   .dupe-note .dupe-pick{background:none;border:none;padding:0;margin-top:6px;font-size:12.5px;text-decoration:underline;cursor:pointer;color:var(--ink);font-family:inherit;display:block;}
-  .plant-list-thumb{width:92px;height:92px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--parchment-dim);}
+  .plant-list-thumb{width:69px;height:92px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--parchment-dim);}
   .plant-list-thumb-empty{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--moss-dim);}
   .plant-list-thumb-empty svg{width:26px;height:26px;}
 
@@ -598,23 +598,28 @@
      badly, which is the whole reason for the pattern. Reach for a
      ratio class here; do not add another bespoke image box.
      ============================================================ */
-  /* The focal picker shows the WHOLE frame. It used to be a .ratio-4x3
+  /* The focal picker shows the WHOLE frame. It used to be a 4:3
      .card-media, so it was already cropped: you picked a point on the crop,
      could not see what was being cut, and the percentage was measured against
-     the cropped box rather than the photo. The previews show what the point
-     actually does at each ratio the app crops to. */
+     the cropped box rather than the photo. The preview shows what the point
+     actually does at the one ratio the app crops to. */
   .focal-stage{position:relative;width:fit-content;max-width:100%;margin:0 auto;line-height:0;cursor:crosshair;}
   .focal-stage img{max-width:100%;max-height:44vh;width:auto;height:auto;display:block;border-radius:8px;}
   .focal-previews{display:flex;gap:12px;justify-content:center;margin-top:12px;}
   .focal-previews > div{width:84px;}
   .focal-prev{border-radius:6px;overflow:hidden;background:var(--parchment-dim);position:relative;}
-  .focal-prev.r-1x1{aspect-ratio:1;}
-  .focal-prev.r-4x3{aspect-ratio:4/3;}
+  .focal-prev.r-3x4{aspect-ratio:3/4;}
   .focal-prev img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
   .focal-prev-cap{display:block;font-size:10.5px;color:#8AA090;margin-top:5px;text-align:center;line-height:1.3;}
   .card-media{width:100%;background:var(--parchment-dim);position:relative;overflow:hidden;}
-  .card-media.ratio-4x3{aspect-ratio:4/3;}
-  .card-media.ratio-1x1{aspect-ratio:1;}
+  /* CROP-1 (v2.41.0). Every photo tile is 3:4 portrait — the exact frame of
+     an iPhone portrait shot, so most photos in the collection now show whole.
+     Was 1:1 for grids and 4:3 for card heroes, which cut 25% and 44% off the
+     height of a portrait photo: the top of the plant or the pot, usually the
+     part that mattered. Landscape photos are cropped harder instead; that is
+     what the focal point is for. One ratio, so one preview in the focal
+     picker and one answer to "what shape is this tile?". */
+  .card-media.ratio-3x4{aspect-ratio:3/4;}
   .card-media img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
 
   /* PERF-1. These sit in the DOM before their blob arrives so the loader can
@@ -636,7 +641,7 @@
      .card-grid now, so the Gallery tab and a location's photos agree. */
   .photo-feed{display:flex;flex-direction:column;gap:10px;}
   .photo-feed-card{background:var(--bg-raised);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
-  .photo-feed-media{width:100%;aspect-ratio:1;background:#0B1410;cursor:zoom-in;line-height:0;overflow:hidden;}
+  .photo-feed-media{width:100%;aspect-ratio:3/4;background:#0B1410;cursor:zoom-in;line-height:0;overflow:hidden;}
   .photo-feed-media .photo-img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;}
   .photo-feed-body{padding:12px 15px 15px;}
   .photo-feed-actions{display:flex;align-items:center;gap:18px;margin-bottom:10px;}
@@ -873,7 +878,7 @@
   @media (min-width: 700px) {
     .container{max-width:900px;}
     .card-grid{display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;align-items:start;}
-    .plant-list-thumb{width:120px;height:120px;}
+    .plant-list-thumb{width:90px;height:120px;}
     .detail-split{flex-direction:row;align-items:flex-start;}
     .detail-split .detail-media{width:42%;max-width:400px;}
     .detail-split .detail-body{flex:1;}
@@ -904,7 +909,7 @@
   @media (min-width: 1100px) {
     .container{max-width:1280px;}
     .card-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
-    .plant-list-thumb{width:140px;height:140px;}
+    .plant-list-thumb{width:105px;height:140px;}
     .login-wrap .container{max-width:none;}
     .queue-grid{grid-template-columns:repeat(4,1fr);}
     /* Tasks beside the queue rather than above it, so neither pushes the other
@@ -940,8 +945,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.40.0";
-const APP_UPDATED = "2026-09-12";
+const APP_VERSION = "2.41.0";
+const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -2043,7 +2048,7 @@ function plantPicker(onPick, opts) {
           return `
           <button class="tag-card plant-list-card" style="width:100%;padding:7px 11px;border:none;text-align:left;cursor:pointer;"
                   onclick="${onPick.replace("{id}", pl.id)}">
-            <div class="plant-list-thumb" style="width:38px;height:38px;">
+            <div class="plant-list-thumb" style="width:28px;height:38px;">
               ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
             </div>
             <div style="flex:1;min-width:0;">
@@ -2065,7 +2070,7 @@ function plantPicker(onPick, opts) {
       const n = specimensOfTaxon(t.id).length;
       return `
       <div class="tag-card plant-list-card" style="padding:8px 10px;margin-bottom:10px;background:rgba(124,167,161,0.10);border-color:rgba(124,167,161,0.35);">
-        <div class="plant-list-thumb" style="width:64px;height:64px;flex-shrink:0;">
+        <div class="plant-list-thumb" style="width:48px;height:64px;flex-shrink:0;">
           ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
         </div>
         <div style="flex:1;min-width:0;">
@@ -2084,7 +2089,7 @@ function plantPicker(onPick, opts) {
         return `
         <button class="tag-card plant-list-card" style="width:100%;padding:8px 11px;border:none;text-align:left;cursor:pointer;"
                 onclick="${onPick.replace("{id}", pl.id)}">
-          <div class="plant-list-thumb" style="width:46px;height:46px;">
+          <div class="plant-list-thumb" style="width:34px;height:46px;">
             ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
           </div>
           <div style="flex:1;min-width:0;">
@@ -5105,7 +5110,7 @@ function inboxCompactRow(p, selectMode) {
     <div class="tag-card plant-list-card" style="padding:8px 12px;position:relative;${picked ? "outline:3px solid var(--moss);" : ""}"
          onclick="${selectMode ? `toggleInboxPhotoSelected('${p.id}')` : `openInboxLightbox('${p.id}')`}">
       ${selectMode ? `<div class="select-check ${picked ? "checked" : ""}" style="top:6px;left:6px;z-index:2;">${picked ? icon("check") : ""}</div>` : ""}
-      <div class="plant-list-thumb" style="width:52px;height:52px;">${photoImg(p)}</div>
+      <div class="plant-list-thumb" style="width:39px;height:52px;">${photoImg(p)}</div>
       <div style="flex:1;min-width:0;">
         <div class="tag-id">${fmtDate(photoDate(p))}${photoMetaSuffix(p)}</div>
         <div style="font-size:13px;color:var(--ink-soft);margin-top:1px;">${p.notes ? escapeHtml(p.notes) : `<span class="value-blank">No notes</span>`}</div>
@@ -5331,7 +5336,7 @@ function photoRow(p, selectMode) {
 
   return `
   <div class="tag-card" style="padding:0;overflow:hidden;${selectMode ? `cursor:pointer;outline:${isSelected ? "3px solid var(--moss)" : "none"};` : ""}" ${selectMode ? `onclick="toggleInboxPhotoSelected('${p.id}')"` : ""}>
-    <div class="card-media ratio-4x3" ${!selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${!selectMode ? "pointer" : "default"};">
+    <div class="card-media ratio-3x4" ${!selectMode ? `onclick="openInboxLightbox('${p.id}')"` : ""} style="cursor:${!selectMode ? "pointer" : "default"};">
       ${selectMode ? `<div class="select-check ${isSelected ? "checked" : ""}" style="top:8px;left:8px;z-index:1;">${isSelected ? icon("check") : ""}</div>` : ""}
       ${photoImg(p)}
     </div>
@@ -5588,7 +5593,7 @@ function screenTaxonDetail() {
     const cov = plantCoverPhoto(sp);
     return `
       <div class="tag-card plant-list-card" style="margin-left:${depth * 18}px;padding:10px 12px;" onclick="openPlant('${sp.id}')">
-        <div class="plant-list-thumb" style="width:56px;height:56px;">
+        <div class="plant-list-thumb" style="width:42px;height:56px;">
           ${cov ? photoImg(cov) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
         </div>
         <div style="flex:1;min-width:0;">
@@ -5611,7 +5616,7 @@ function screenTaxonDetail() {
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
           <div class="detail-media">
-            <div class="card-media ratio-4x3" style="cursor:pointer;" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">
+            <div class="card-media ratio-3x4" style="cursor:pointer;" onclick="openModal('chooseTaxonPhoto',{taxonId:'${t.id}'})">
               ${cover ? photoImgEager(cover) : `<div class="card-media-empty">${icon("photo")}<span>No photos yet</span></div>`}
               ${/* The ONLY route to the species photo picker, plus the image
                    itself. A "Set species photo" row in the action rail ran the
@@ -5753,7 +5758,7 @@ function screenTaxonDetail() {
             const loc = photo.location_id ? locationById(photo.location_id) : null;
             return `
             <div class="tag-card" style="padding:0;overflow:hidden;border-color:rgba(124,167,161,0.5);">
-              <div class="card-media ratio-1x1" style="cursor:pointer;" onclick="openGalleryLightbox('${photo.id}')">${photoImg(photo)}</div>
+              <div class="card-media ratio-3x4" style="cursor:pointer;" onclick="openGalleryLightbox('${photo.id}')">${photoImg(photo)}</div>
               <div style="padding:9px 11px;">
                 <div class="tag-id">${fmtDate(photoDate(photo))}${photoMetaSuffix(photo)}</div>
                 <div style="font-size:12px;margin-top:2px;">${sp
@@ -5786,7 +5791,7 @@ function screenTaxonDetail() {
             const loc = photo.location_id ? locationById(photo.location_id) : null;
             return `
             <div class="tag-card" style="padding:0;overflow:hidden;">
-              <div class="card-media ratio-1x1" style="cursor:pointer;" onclick="openLightbox('${specimen.id}','${photo.id}')">${photoImg(photo)}</div>
+              <div class="card-media ratio-3x4" style="cursor:pointer;" onclick="openLightbox('${specimen.id}','${photo.id}')">${photoImg(photo)}</div>
               <div style="padding:9px 11px;">
                 <div class="tag-id">${fmtDate(photoDate(photo))}${photoMetaSuffix(photo)}</div>
                 <div class="mono" style="font-size:11px;color:var(--moss-dim);margin-top:2px;cursor:pointer;" onclick="openPlant('${specimen.id}')">${specimen.accession_number}</div>
@@ -5871,7 +5876,7 @@ function screenPlantDetail() {
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
         <div class="detail-media">
-          <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroPhoto ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : `onclick="openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})"`}>
+          <div class="card-media ratio-3x4" style="cursor:pointer;" ${heroPhoto ? `onclick="openLightbox('${pl.id}','${heroPhoto.id}')"` : `onclick="openModal('choosePrimaryPhoto',{plantId:'${pl.id}'})"`}>
             ${heroPhoto
               ? photoImgEager(heroPhoto)
               : `<div class="card-media-empty">${icon("photo")}<span>Tap to add a profile picture</span></div>`}
@@ -6225,7 +6230,7 @@ function locationCard(l) {
   // between the list and the page it opens.
   return `
     <div class="tag-card loc-card" onclick="openLocation('${l.id}')">
-      <div class="card-media ratio-4x3">
+      <div class="card-media ratio-3x4">
         ${cover ? photoImg(cover) : `<div class="card-media-empty">${icon("photo")}<span>No photos yet</span></div>`}
       </div>
       ${/* Counts sat beside the name in a right-aligned column, so "4026
@@ -6292,7 +6297,7 @@ function screenLocationDetail() {
       <div class="tag-card" style="padding:0;overflow:hidden;">
         <div class="detail-split">
         <div class="detail-media">
-          <div class="card-media ratio-4x3" style="cursor:pointer;" ${heroPhoto ? `onclick="openLightbox('${l.id}','${heroPhoto.id}','location')"` : `onclick="openModal('chooseLocationPhoto',{locationId:'${l.id}'})"`}>
+          <div class="card-media ratio-3x4" style="cursor:pointer;" ${heroPhoto ? `onclick="openLightbox('${l.id}','${heroPhoto.id}','location')"` : `onclick="openModal('chooseLocationPhoto',{locationId:'${l.id}'})"`}>
             ${heroPhoto
               ? photoImgEager(heroPhoto)
               : `<div class="card-media-empty">${icon("photo")}<span>Tap to add a main photo</span></div>`}
@@ -6414,7 +6419,7 @@ function screenLocationDetail() {
               const cover = locationCoverPhoto(c);
               return `
               <div class="tag-card plant-list-card" style="cursor:pointer;padding:10px 12px;" onclick="openLocation('${c.id}')">
-                <div class="plant-list-thumb" style="width:56px;height:56px;flex-shrink:0;">
+                <div class="plant-list-thumb" style="width:42px;height:56px;flex-shrink:0;">
                   ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
                 </div>
                 <div style="flex:1;min-width:0;">
@@ -7325,7 +7330,7 @@ function reportLocationItem(l) {
   const cover = locationCoverPhoto(l);
   return `
     <div class="tag-card plant-list-card" style="padding:10px 14px;" onclick="openFromReport('location','${l.id}','${state.reportView || ""}')">
-      <div class="plant-list-thumb" style="width:60px;height:60px;">
+      <div class="plant-list-thumb" style="width:45px;height:60px;">
         ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
       </div>
       <div style="flex:1;min-width:0;">
@@ -7432,7 +7437,7 @@ function reportPlantItem(pl) {
   return `
     <div class="tag-card" style="padding:10px 14px;">
       <div style="display:flex;gap:14px;cursor:pointer;" onclick="openFromReport('plant','${pl.id}','${state.reportView || ""}')">
-        <div class="plant-list-thumb" style="width:60px;height:60px;flex-shrink:0;">
+        <div class="plant-list-thumb" style="width:45px;height:60px;flex-shrink:0;">
           ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
         </div>
         <div style="flex:1;min-width:0;">
@@ -7581,7 +7586,7 @@ function screenGallery() {
 
   const tile = (p) => `
     <button class="gal-tile" onclick="openGalleryLightbox('${p.id}')">
-      <div class="card-media ratio-1x1">${photoImg(p)}</div>
+      <div class="card-media ratio-3x4">${photoImg(p)}</div>
       <div class="gal-tile-cap">${fmtDate(photoDate(p))}</div>
     </button>`;
 
@@ -7606,7 +7611,7 @@ function screenGallery() {
              onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : `openGalleryLightbox('${p.id}')`}">
           ${state.gallerySelectMode ? `<div class="select-check ${state.gallerySelected.has(p.id) ? "checked" : ""}" style="top:6px;left:6px;z-index:2;">${state.gallerySelected.has(p.id) ? icon("check") : ""}</div>` : ""}
           <div style="display:flex;gap:14px;align-items:flex-start;">
-            <div class="plant-list-thumb" style="width:52px;height:52px;">${photoImg(p)}</div>
+            <div class="plant-list-thumb" style="width:39px;height:52px;">${photoImg(p)}</div>
             <div style="flex:1;min-width:0;">
               <div class="tag-id">${fmtDate(photoDate(p))}${photoMetaSuffix(p)}</div>
               ${plant ? `<div style="font-size:13px;margin-top:1px;">${plantDisplayHtml(plant)}</div>` : ""}
@@ -7645,7 +7650,7 @@ function screenGallery() {
         <div class="tag-card" style="padding:0;overflow:hidden;cursor:pointer;position:relative;${state.gallerySelectMode && state.gallerySelected.has(p.id) ? "outline:3px solid var(--moss);" : ""}"
              onclick="${state.gallerySelectMode ? `toggleGalleryPhotoSelected('${p.id}')` : `openGalleryLightbox('${p.id}')`}">
           ${state.gallerySelectMode ? `<div class="select-check ${state.gallerySelected.has(p.id) ? "checked" : ""}" style="top:8px;left:8px;z-index:2;">${state.gallerySelected.has(p.id) ? icon("check") : ""}</div>` : ""}
-          <div class="card-media ratio-1x1">${photoImg(p)}</div>
+          <div class="card-media ratio-3x4">${photoImg(p)}</div>
           <div style="padding:10px 12px;">
             <div class="row">
               <div class="tag-id">${fmtDate(photoDate(p))}${photoMetaSuffix(p)}</div>
@@ -7737,7 +7742,7 @@ function screenGallery() {
           if (!albums.length) return "";
           return scroller("Garden Albums", albums.map((a) => `
             <button class="gal-card" onclick="showGalleryAlbum('${a.location.id}')">
-              <div class="card-media ratio-4x3">${photoImg(a.photos[0])}</div>
+              <div class="card-media ratio-3x4">${photoImg(a.photos[0])}</div>
               <div class="gal-card-label">
                 <div class="gal-card-title">${escapeHtml(a.location.name)}</div>
                 <div class="gal-card-meta">${countLabel(a.photos.length, "photo", "photos")}</div>
@@ -7766,7 +7771,7 @@ function screenGallery() {
           if (!highlights.length) return "";
           return scroller("Collection Highlights", highlights.map((h) => `
             <button class="gal-chip" onclick="showGalleryHighlight('${h.type}')">
-              <div class="card-media ratio-1x1">${photoImg(h.photos[0])}</div>
+              <div class="card-media ratio-3x4">${photoImg(h.photos[0])}</div>
               <div class="gal-chip-icon">${icon("leaf")}</div>
               <div class="gal-card-label">
                 <div class="gal-card-title" style="font-size:13.5px;">${escapeHtml(h.label)}</div>
@@ -7780,7 +7785,7 @@ function screenGallery() {
           if (!archives.length) return "";
           return scroller("From the Archives", archives.map((a) => `
             <button class="gal-card" onclick="showGalleryAlbum('${a.location.id}')">
-              <div class="card-media ratio-4x3">${photoImg(a.photos[0])}</div>
+              <div class="card-media ratio-3x4">${photoImg(a.photos[0])}</div>
               <div class="gal-card-label">
                 <div class="gal-card-title">${escapeHtml(a.location.name)}</div>
                 <div class="gal-card-meta">${escapeHtml(archivePeriod(a.location))}${archivePeriod(a.location) ? " · " : ""}${countLabel(a.photos.length, "photo", "photos")}</div>
@@ -8095,7 +8100,7 @@ function modalContent() {
       <div class="stack" style="margin-bottom:14px;">
         ${plants.map((pl) => `
           <div class="tag-card" style="padding:8px 10px;display:flex;align-items:center;gap:10px;">
-            <div class="plant-list-thumb" style="width:40px;height:40px;flex-shrink:0;">
+            <div class="plant-list-thumb" style="width:30px;height:40px;flex-shrink:0;">
               ${plantCoverPhoto(pl) ? photoImg(plantCoverPhoto(pl)) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
             </div>
             <div style="flex:1;min-width:0;">
@@ -8284,7 +8289,7 @@ function modalContent() {
                       const small = img.url?.s || img.url?.m || img.url?.o;
                       const large = img.url?.o || img.url?.m || img.url?.s;
                       const cap = [name, img.author ? `© ${img.author}` : ""].filter(Boolean).join(" · ");
-                      return `<img src="${small}" title="Tap to enlarge" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:zoom-in;"
+                      return `<img src="${small}" title="Tap to enlarge" style="width:48px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:zoom-in;"
                         onclick="event.stopPropagation();openRefImage('${escapeAttr(large)}','${escapeAttr(cap)}')" />`;
                     }).join("")}
                   </div>
@@ -8762,11 +8767,11 @@ function modalContent() {
                  every thumbnail rendered at intrinsic height and overlapped the
                  ones below — the picker was unusable past a few photos.
 
-                 `.card-media.ratio-1x1` is the wrapper the rest of the app uses
+                 `.card-media.ratio-3x4` is the wrapper the rest of the app uses
                  for exactly this and has never had the problem. A plain div,
                  not a button, is what carries the ratio. */""}
             <button onclick="setTaxonPhoto('${t.id}','${p.id}')" style="border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);outline:${t.primary_photo_id === p.id ? "3px solid var(--moss)" : "none"};">
-              <div class="card-media ratio-1x1">${photoImg(p)}</div>
+              <div class="card-media ratio-3x4">${photoImg(p)}</div>
             </button>`).join("")}
         </div>`}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Cancel</button>`;
@@ -8882,7 +8887,7 @@ function modalContent() {
                   const picked = sel.has(p.id);
                   return `
                   <div>
-                    <div class="card-media ratio-1x1" style="border-radius:6px;cursor:pointer;position:relative;${picked ? "outline:3px solid var(--terracotta);" : ""}"
+                    <div class="card-media ratio-3x4" style="border-radius:6px;cursor:pointer;position:relative;${picked ? "outline:3px solid var(--terracotta);" : ""}"
                          onclick="toggleDupePhotoSelected('${p.id}')">
                       ${photoImg(p)}
                       <div class="select-check ${picked ? "checked" : ""}" style="top:6px;left:6px;z-index:2;${picked ? "background:var(--terracotta);border-color:var(--terracotta);" : ""}">${picked ? icon("check") : ""}</div>
@@ -9316,7 +9321,7 @@ function modalContent() {
           const picked = sel.has(p.id);
           return `
           <button onclick="toggleAssignPhoto('${p.id}')" style="border:none;padding:0;background:none;cursor:pointer;position:relative;">
-            <div class="card-media ratio-1x1" style="border-radius:6px;${picked ? "outline:3px solid var(--moss);" : ""}">${photoImg(p)}</div>
+            <div class="card-media ratio-3x4" style="border-radius:6px;${picked ? "outline:3px solid var(--moss);" : ""}">${photoImg(p)}</div>
             ${picked ? `<div class="select-check checked" style="top:5px;left:5px;z-index:2;">${icon("check")}</div>` : ""}
             <div class="mono" style="font-size:9.5px;color:#8AA090;margin-top:3px;">${fmtDate(photoDate(p))}</div>
           </button>`;
@@ -9329,7 +9334,7 @@ function modalContent() {
           ${here.map((sp) => `
             <button class="tag-card plant-list-card" style="width:100%;padding:9px 12px;border:none;text-align:left;cursor:pointer;${sel.size ? "" : "opacity:0.5;"}"
                     onclick="assignPhotosToPlant('${sp.id}')" ${sel.size ? "" : "disabled"}>
-              <div class="plant-list-thumb" style="width:44px;height:44px;">
+              <div class="plant-list-thumb" style="width:33px;height:44px;">
                 ${plantCoverPhoto(sp) ? photoImg(plantCoverPhoto(sp)) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
               </div>
               <div style="flex:1;min-width:0;">
@@ -9372,7 +9377,7 @@ function modalContent() {
             const loc = p.location_id ? locationById(p.location_id) : null;
             return `
             <button onclick="attachInboxPhotoToPlant('${p.id}','${data.plantId}')" style="border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);text-align:left;">
-              <div style="aspect-ratio:1;">${photoImg(p)}</div>
+              <div class="card-media ratio-3x4">${photoImg(p)}</div>
               <div class="mono" style="font-size:10px;color:#8AA090;padding:4px 5px 2px;">${fmtDate(photoDate(p))}</div>
               ${loc ? `<div style="font-size:10px;color:var(--blue);padding:0 5px 5px;">${escapeHtml(loc.name)}</div>` : ""}
             </button>`;
@@ -9393,7 +9398,7 @@ function modalContent() {
           ${photos.map((p) => {
             return `
             <button onclick="setLocationPhoto('${data.locationId}','${p.id}')" style="border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);">
-              <div class="card-media ratio-1x1">${photoImg(p)}</div>
+              <div class="card-media ratio-3x4">${photoImg(p)}</div>
             </button>`;
           }).join("")}
         </div>`}
@@ -9420,7 +9425,7 @@ function modalContent() {
             return `
             <div style="position:relative;">
               <button onclick="setPrimaryPhoto('${data.plantId}','${p.id}')" style="width:100%;border-radius:8px;overflow:hidden;border:none;padding:0;cursor:pointer;background:var(--parchment-dim);display:block;">
-                <div class="card-media ratio-1x1">${photoImg(p)}</div>
+                <div class="card-media ratio-3x4">${photoImg(p)}</div>
               </button>
               <button onclick="event.stopPropagation();deletePhoto('${p.id}')" class="thumb-delete-btn" aria-label="Delete photo">${icon("trash")}</button>
             </div>`;
@@ -9719,16 +9724,12 @@ function modalContent() {
              border:2px solid var(--parchment);box-shadow:0 0 0 2px rgba(20,32,26,0.6);pointer-events:none;
              left:${ph.focal_x == null ? 50 : ph.focal_x}%;top:${ph.focal_y == null ? 0 : ph.focal_y}%;"></div>
       </div>
-      ${/* Only the two ratios the app actually crops to. A preview of a shape
-           that never appears would mislead rather than help. */""}
+      ${/* Only the ratio the app actually crops to (CROP-1: 3:4 everywhere).
+           A preview of a shape that never appears would mislead. */""}
       <div class="focal-previews">
         <div>
-          <div class="focal-prev r-1x1">${photoImg(ph, "", `id="focal-prev-1x1"`)}</div>
-          <span class="focal-prev-cap">Square<br/>tiles, thumbnails</span>
-        </div>
-        <div>
-          <div class="focal-prev r-4x3">${photoImg(ph, "", `id="focal-prev-4x3"`)}</div>
-          <span class="focal-prev-cap">4:3<br/>cards, heroes</span>
+          <div class="focal-prev r-3x4">${photoImg(ph, "", `id="focal-prev-3x4"`)}</div>
+          <span class="focal-prev-cap">3:4<br/>every tile and card</span>
         </div>
       </div>
       ${suggestionBlock(ph.id)}
@@ -9812,7 +9813,7 @@ function modalContent() {
           const cover = chosen ? plantCoverPhoto(chosen) : null;
           return `
           <div class="tag-card plant-list-card" style="padding:8px 10px;margin-bottom:8px;">
-            <div class="plant-list-thumb" style="width:44px;height:44px;flex-shrink:0;">
+            <div class="plant-list-thumb" style="width:33px;height:44px;flex-shrink:0;">
               ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
             </div>
             <div style="flex:1;min-width:0;">
@@ -12439,7 +12440,7 @@ function cancelBackfill() {
 function paintFocal(x, y) {
   const marker = document.getElementById("focal-marker");
   if (marker) { marker.style.left = x + "%"; marker.style.top = y + "%"; }
-  ["focal-prev-1x1", "focal-prev-4x3"].forEach((id) => {
+  ["focal-prev-3x4"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.objectPosition = x + "% " + y + "%";
   });
@@ -12818,7 +12819,11 @@ function restoreFocus(snap) {
   if (!snap) return;
   const el = document.getElementById(snap.id);
   if (!el) return;
-  el.focus();
+  // patchAroundFocus() kept the live field, so focus and caret never moved.
+  if (el === document.activeElement) return;
+  // RENDER-1. A bare focus() scrolls the field into view — that was the page
+  // jumping on every keystroke the rebuild fell back to.
+  el.focus({ preventScroll: true });
   // Throws on input types with no text selection (date, number in some
   // browsers). The focus is the important half; the caret is best-effort.
   try { el.setSelectionRange(snap.start, snap.end); } catch (e) {}
@@ -12833,6 +12838,64 @@ function restoreFocus(snap) {
    the repaint is coalesced to one frame after the typing pauses. 90ms is below
    the ~100ms threshold where a UI stops feeling immediate, and comfortably
    above a fast typist's inter-key gap. */
+/* RENDER-1 (v2.41.0). Typing still jumped after PERF-2: every repaint
+   destroyed the field being typed into and focus() rebuilt it, which scrolls
+   the page to the field and, on iOS, drops and re-raises the keyboard — the
+   "wait for it before the next character". A programmatic focus() outside a
+   user gesture may not raise the keyboard on iOS at all.
+
+   So the focused field is never replaced. The new markup is parsed off-DOM;
+   if the field's id exists there at the same depth with the same tags all the
+   way up, everything EXCEPT that chain is swapped for the new nodes and the
+   chain's own attributes are copied across (value excepted on the field).
+   Anything else — no focus, the field gone, the structure moved — returns
+   false and render() falls back to innerHTML exactly as before.
+
+   Safe because every handler here is an inline attribute or a property that
+   wireModalForms() reassigns; nothing on these nodes uses addEventListener,
+   so a kept node cannot accumulate listeners. A kept .modal also keeps its
+   own scrollTop, which is a bonus. */
+function patchAroundFocus(root, html) {
+  const live = document.activeElement;
+  if (!live || !live.id || !root.contains(live)) return false;
+  if (live.tagName !== "INPUT" && live.tagName !== "TEXTAREA") return false;
+  const tpl = document.createElement("template");
+  tpl.innerHTML = html;
+  const fresh = tpl.content.getElementById(live.id);
+  if (!fresh || fresh.tagName !== live.tagName) return false;
+  const chainOf = (el, top) => { const c = []; for (let n = el; n && n !== top; n = n.parentNode) c.unshift(n); return c; };
+  const liveChain = chainOf(live, root), freshChain = chainOf(fresh, tpl.content);
+  if (liveChain.length !== freshChain.length) return false;
+  if (liveChain.some((n, i) => n.tagName !== freshChain[i].tagName)) return false;
+
+  let liveParent = root, freshParent = tpl.content;
+  liveChain.forEach((keep, i) => {
+    const next = freshChain[i];
+    while (keep.previousSibling) keep.previousSibling.remove();
+    while (keep.nextSibling) keep.nextSibling.remove();
+    while (freshParent.firstChild !== next) liveParent.insertBefore(freshParent.firstChild, keep);
+    while (next.nextSibling) liveParent.appendChild(next.nextSibling);
+    const isField = keep === live;
+    [...keep.attributes].forEach((a) => { if (!next.hasAttribute(a.name)) keep.removeAttribute(a.name); });
+    [...next.attributes].forEach((a) => {
+      if (isField && a.name === "value") return;
+      if (keep.getAttribute(a.name) !== a.value) keep.setAttribute(a.name, a.value);
+    });
+    liveParent = keep; freshParent = next;
+  });
+  return true;
+}
+
+// RENDER-1. restoreScroll() runs straight after the rebuild; if the new page
+// is briefly shorter than the old offset the browser clamps it, and the user
+// lands higher than they were. One retry a frame later, only when clamped.
+function reapplyClampedScroll(snap) {
+  if (!snap || !snap.page || window.scrollY >= snap.page - 1) return;
+  requestAnimationFrame(() => {
+    if (window.scrollY < snap.page - 1) window.scrollTo(0, snap.page);
+  });
+}
+
 let renderTimer = null;
 function scheduleRender(delay = 90) {
   if (renderTimer) clearTimeout(renderTimer);
@@ -12898,7 +12961,7 @@ function render() {
   else if (state.tab === "gallery") screen = screenGallery();
   else if (state.tab === "settings") screen = screenSettings();
 
-  app.innerHTML = `
+  const html = `
     ${topBar()}
     ${screen}
     ${navBar()}
@@ -12907,6 +12970,7 @@ function render() {
     ${state.lightbox ? renderLightbox() : ""}
     ${state.refImage ? renderRefImage() : ""}
   `;
+  if (!patchAroundFocus(app, html)) app.innerHTML = html;
   document.body.classList.toggle("has-task-banner", !!taskBanner());
   measureStickyOffset();
   wireModalForms();
@@ -12915,8 +12979,10 @@ function render() {
   // when it changed — so arriving somewhere new kept the previous page's Y
   // offset. Scrolled far down the Plants list, opening a species landed you at
   // the bottom of a shorter page with the header off screen.
-  if (samePage) restoreScroll(scrollSnapshot, { page: true, modal: sameView });
-  else window.scrollTo(0, 0);
+  if (samePage) {
+    restoreScroll(scrollSnapshot, { page: true, modal: sameView });
+    reapplyClampedScroll(scrollSnapshot);
+  } else window.scrollTo(0, 0);
   lastRenderKey = currentViewKey();
   lastPageKey = pageViewKey();
   observeLazyPhotos();

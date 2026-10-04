@@ -908,6 +908,13 @@ Verify: suggestion details still show candidates; a photo note saves without the
 *(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
 the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
 permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
+### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
+CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
+RENDER-1: each repaint destroyed the field being typed in, and `focus()` scrolled to it (and drops the iOS keyboard).
+`patchAroundFocus()` keeps the live field and swaps everything around it; falls back to innerHTML otherwise.
+Gotcha: depends on no `addEventListener` on rendered nodes (see REFERENCE). Button-click jumps: only the clamped-scroll
+retry so far — not reproduced, needs a named screen if it persists.
+
 claiming one. The v2.37.0 commit message still says NAME-3.)*
 
 9 rows across 9 taxa. All four audit checks now return 0 against live data.
@@ -4309,6 +4316,10 @@ create index if not exists photos_favorite_idx on photos (is_favorite) where is_
 ### v1.60.0
 
 **Timeline as a journey; edit a photo from anywhere.** Schema: none.
+**This SQL was never run until 2026-10-04** — Favourite failed with "column does not exist" from v1.62.0
+on. Ran and verified live that day. `schema-check.mjs` reported 0 missing throughout: it does not
+pick up `is_favorite` from `toggleFavorite()`'s computed body, so a clean run does not cover every write.
+
 
 - **The specimen timeline is chronological, split where the location changes.** Per-location columns made sense when one plant record stood for several physical plants; since SPECIES-2 a specimen lives in one place at a time, and what actually varies is *when it moved*. Amanda's Santa Rita has photos across four former homes — read in order, that is the plant's life story, which columns hid.
 - Each run is headed with the location and its date span. A plant that moved away and came back shows **two separate stays**, not one merged block.

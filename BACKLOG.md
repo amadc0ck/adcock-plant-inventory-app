@@ -896,18 +896,10 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
-### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
-Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
-(A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
-(B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
-Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
-Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
+### v2.43.0 — LOC-10: add a location from inside a location
+"+ Add location here" on every location page opens New location with the parent preset (and named in the title).
+Shown even with no children — the first pot is when it is needed. No schema change. `app_errors` SQL ran 2026-10-04.
 
-### NAME-5 — data-quality pass, RAN 2026-09-11
-
-*(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
-the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
-permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
 ### v2.42.0 — LOG-1 + BATCH-2: error history, batch rows fail alone
 LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
 BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
@@ -934,6 +926,18 @@ missing. Do not reopen the is_hybrid half.
 ### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
 
 `taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
+### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
+Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
+(A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
+(B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
+Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
+Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
+
+### NAME-5 — data-quality pass, RAN 2026-09-11
+
+*(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
+the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
+permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
 five key expressions and the partial predicate intact. Identity is
 `(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
 and trimmed, cultivar de-quoted, partial on a present genus. Built clean:

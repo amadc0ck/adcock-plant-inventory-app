@@ -947,7 +947,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.42.0";
+const APP_VERSION = "2.43.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -6544,12 +6544,18 @@ function screenLocationDetail() {
 
       ${(() => {
         const children = directChildLocations(l.id);
-        if (children.length === 0) return "";
+        // LOC-10. Adding a pot meant leaving for the Locations tab and finding
+        // this place again in a 149-row parent dropdown. The button opens the
+        // same form with the parent already set. Shown even with no children,
+        // since the first child is exactly when it is needed.
+        const addHere = `<button class="btn btn-secondary btn-sm" onclick="openModal('newLocation',{parentId:'${l.id}'})">+ Add location here</button>`;
+        if (children.length === 0) return `<div class="wrap-gap" style="margin-top:24px;">${addHere}</div>`;
         return `
           <div class="row" style="margin-top:24px;margin-bottom:12px;">
             <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Inside this ${locationTypeLabel(l.type).toLowerCase()}</h3>
             <span class="subtle">${children.length} total</span>
           </div>
+          <div class="wrap-gap" style="margin-bottom:12px;">${addHere}</div>
           <div class="card-grid">
             ${children.map((c) => {
               const count = aggregatePlantCount(c.id);
@@ -8815,9 +8821,11 @@ function modalContent() {
   }
 
   if (type === "newLocation") {
+    // LOC-10: opened from a location page, the parent is that location.
+    const parent = data && data.parentId ? locationById(data.parentId) : null;
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">New location</h3>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">New location${parent ? ` in ${escapeHtml(parent.name)}` : ""}</h3>
       <form id="new-location-form">
         <label>Name *</label>
         <input id="nl-name" required placeholder="e.g. Bucket 12" />
@@ -8827,7 +8835,7 @@ function modalContent() {
           ${Object.entries(LOCATION_TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${k === "container" ? "selected" : ""}>${v}</option>`).join("")}
         </select>
         <label>Parent location</label>
-        <select id="nl-parent">${locationSelectOptions(null)}</select>
+        <select id="nl-parent">${locationSelectOptions(parent ? parent.id : null)}</select>
         <label>Code (optional)</label>
         <input id="nl-code" placeholder="e.g. W-T-12" />
         <div class="checkbox-row">

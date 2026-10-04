@@ -459,5 +459,20 @@ t("next skips skipped photos and wraps to the start", () => {
   eq(ctx.filingNextAfter("plantOnly", ["bare", "locOnly", "plantOnly", "overviewNoLoc"]), "bare");
 });
 
+t("filing chips: a group filter shows only that group, All de-duplicates", () => {
+  setState(ctx, {
+    locations: [{ id: "L", name: "Bucket", type: "container", holds_plants: true }],
+    plants: [{ id: "A", location_id: "L", status: "active" }, { id: "B", location_id: "L", status: "active" }],
+    photoPlants: [], suggestions: [{ id: "s1", photo_id: "ph", kind: "plant_tag", value_id: "A", status: "pending" }],
+    photos: [{ id: "ph", location_id: "L", taken_at: "2026-09-01" }], filingPickFilter: {},
+  });
+  const ph = ctx.__eval("state").photos[0];
+  eq(ctx.filingQuickPicks(ph).map((k) => k.id), ["A", "B"], "All: suggested A once, then B here");
+  ctx.__eval("state").filingPickFilter = { plant: "suggested" };
+  eq(ctx.filingQuickPicks(ph).map((k) => k.id), ["A"]);
+  ctx.__eval("state").filingPickFilter = { plant: "here" };
+  eq(ctx.filingQuickPicks(ph).map((k) => k.id), ["A", "B"]);
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

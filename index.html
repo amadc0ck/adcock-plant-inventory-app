@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.46.0";
+const APP_VERSION = "2.47.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1060,6 +1060,7 @@ const state = {
   filingHistory: [],       // FILE-1: ids already shown, for Back
   filingLocOpen: false,    // FILE-1: full location picker expanded
   filingLastLocationId: null, // FILE-1: anchor for the "next bucket in the row" picks
+  filingPickFilter: {},    // FILE-1: chip filter per stage, { location: "row", plant: "checkins" }
   navStack: [],           // NAV-1: where you came from, with the filter intact
   inboxLimit: 20,
   inboxSort: "newest",
@@ -5153,6 +5154,11 @@ function closeLightbox() {
   render();
 }
 function lightboxPhotoList() {
+  // FILE-1: just the photo being filed. Stepping here would leave the File
+  // photos page showing a different photo from the one being looked at.
+  if (state.lightbox.mode === "filing") {
+    return state.photos.filter((p) => p.id === state.lightbox.photoId);
+  }
   if (state.lightbox.mode === "inbox") {
     return state.photos.filter(isInboxPhoto).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
   }
@@ -5373,51 +5379,100 @@ function openFiling() {
   window.scrollTo(0, 0);
 }
 
-// The numbered one-tap choices for the current photo. One function, used by
-// both the screen and the keyboard handler, so key 3 is always the third
-// button on screen. Location first when there is none — a plant's location
-// cannot be trusted for an old photo, and the location narrows the plants.
-function filingQuickPicks(p) {
-  if (!p) return [];
-  const picks = [];
+/* Location first when a photo has none — a plant's location cannot be trusted
+   for an old photo, and the location narrows the plants.
+
+   v2.47.0: every pick carries a group, and chips above the list filter to one
+   group — "Check-ins", "Recents", "In this location", "Suggested …". "All"
+   is the original mix, capped at 9; a single group shows up to 9 of its own,
+   so filtering reaches picks the mix had no room for. The chosen filter is
+   kept per stage across photos, because she works in streaks. */
+const FILING_GROUPS = {
+  location: [["", "All"], ["suggested", "Suggested locations"], ["row", "This row"], ["checkins", "Check-ins"], ["recents", "Recents"]],
+  plant: [["", "All"], ["suggested", "Suggested plants"], ["here", "In this location"], ["checkins", "Check-ins"], ["recents", "Recents"]],
+};
+function filingStage(p) {
+  if (!p) return null;
+  if (!p.location_id) return "location";
+  if (!photoHasAnyPlant(p) && !isPlacePhoto(p) && !isHistoricalPhoto(p)) return "plant";
+  return null;
+}
+function filingPickGroups(p) {
+  const stage = filingStage(p);
+  const g = { suggested: [], row: [], here: [], checkins: [], recents: [] };
+  if (!stage) return { stage, g };
   const sgs = suggestionsForPhoto(p.id);
-  if (!p.location_id) {
-    const seen = new Set();
-    const add = (l, note, sg) => {
-      if (!l || seen.has(l.id)) return;
-      seen.add(l.id);
-      picks.push({ kind: "location", id: l.id, sg, label: l.name, note });
-    };
-    const parentName = (l) => (l.parent_location_id && locationById(l.parent_location_id) ? locationById(l.parent_location_id).name : "");
-    sgs.filter((sg) => sg.kind === "location_tag").forEach((sg) => add(locationById(sg.value_id), "Claude suggests", sg.id));
-    // The row: same, next, previous.
+  const parentName = (l) => (l && l.parent_location_id && locationById(l.parent_location_id) ? locationById(l.parent_location_id).name : "");
+  if (stage === "location") {
+    const loc = (group, l, note, sg) => { if (l) g[group].push({ kind: "location", id: l.id, sg, label: l.name, note }); };
+    sgs.filter((sg) => sg.kind === "location_tag").forEach((sg) => loc("suggested", locationById(sg.value_id), "Claude suggests", sg.id));
     const { anchor, prev, next } = filingNeighbourLocations();
-    add(anchor, "Same as last");
-    add(next, `Next in ${parentName(next) || "this row"}`);
-    add(prev, `Previous in ${parentName(prev) || "this row"}`);
-    // Where plants are waiting for a check-up — a new photo is the check-up.
+    loc("row", anchor, "Same as last");
+    loc("row", next, `Next in ${parentName(next) || "this row"}`);
+    loc("row", prev, `Previous in ${parentName(prev) || "this row"}`);
     const due = {};
     plantsNeedingCheckIn().forEach(({ pl }) => { if (pl.location_id) due[pl.location_id] = (due[pl.location_id] || 0) + 1; });
-    Object.entries(due).sort((a, b) => b[1] - a[1]).slice(0, 3)
-      .forEach(([id, n]) => add(locationById(id), `${countLabel(n, "plant", "plants")} due a check-up`));
-    recentLocationIds().map(locationById).forEach((l) => l && add(l, parentName(l) || "Recent"));
-  } else if (!photoHasAnyPlant(p)) {
-    const seen = new Set();
-    sgs.filter((sg) => sg.kind === "plant_tag" && state.plants.some((x) => x.id === sg.value_id)).forEach((sg) => {
-      seen.add(sg.value_id);
-      picks.push({ kind: "plant", id: sg.value_id, sg: sg.id, note: "Claude suggests" });
+    Object.entries(due).sort((a, b) => b[1] - a[1])
+      .forEach(([id, n]) => loc("checkins", locationById(id), `${countLabel(n, "plant", "plants")} due a check-up`));
+    recentLocationIds().map(locationById).forEach((l) => loc("recents", l, parentName(l) || "Recent"));
+  } else {
+    const plant = (group, pl, note, sg) => { if (pl) g[group].push({ kind: "plant", id: pl.id, sg, note }); };
+    const byId = (id) => state.plants.find((x) => x.id === id);
+    sgs.filter((sg) => sg.kind === "plant_tag").forEach((sg) => plant("suggested", byId(sg.value_id), "Claude suggests", sg.id));
+    const here = plantsAtLocation(p.location_id).map((pl) => ({ pl, st: checkInStatus(pl) }));
+    here.sort((a, b) => (b.st && b.st.due ? 1 : 0) - (a.st && a.st.due ? 1 : 0))
+      .forEach(({ pl, st }) => plant("here", pl, st && st.due ? `Here · check-up due (${st.label})` : "Here"));
+    // Check-ups due HERE first — this photo was taken here — then anywhere.
+    const hereIds = new Set(here.map((x) => x.pl.id));
+    const due = plantsNeedingCheckIn();
+    due.filter(({ pl }) => hereIds.has(pl.id)).forEach(({ pl, st }) => plant("checkins", pl, `Here · ${st.label}`));
+    due.filter(({ pl }) => !hereIds.has(pl.id)).forEach(({ pl, st }) => {
+      const l = locationById(pl.location_id);
+      plant("checkins", pl, `${l ? l.name : "No location"} · ${st.label}`);
     });
-    plantsAtLocation(p.location_id).filter((pl) => !seen.has(pl.id))
-      .map((pl) => ({ pl, st: checkInStatus(pl) }))
-      .sort((a, b) => (b.st && b.st.due ? 1 : 0) - (a.st && a.st.due ? 1 : 0))
-      .slice(0, 8).forEach(({ pl, st }) => {
-        seen.add(pl.id);
-        picks.push({ kind: "plant", id: pl.id, note: st && st.due ? `Here · check-up due (${st.label})` : "Here" });
-      });
-    recentPlantIds().filter((id) => !seen.has(id)).map((id) => state.plants.find((x) => x.id === id)).filter(Boolean).slice(0, 3)
-      .forEach((pl) => picks.push({ kind: "plant", id: pl.id, note: "Recent" }));
+    recentPlantIds().map(byId).forEach((pl) => plant("recents", pl, "Recent"));
   }
-  return picks.slice(0, 9);
+  return { stage, g };
+}
+// The numbered list actually on screen. Shared by the screen and the keyboard
+// handler, so key 3 is always the third button showing.
+function filingQuickPicks(p) {
+  const { stage, g } = filingPickGroups(p);
+  if (!stage) return [];
+  const filter = (state.filingPickFilter || {})[stage] || "";
+  if (filter && g[filter]) return g[filter].slice(0, 9);
+  // "All": the original order — suggested, then the row / here, then
+  // check-ins, then recents — de-duplicated, nine at most.
+  const order = stage === "location" ? ["suggested", "row", "checkins", "recents"] : ["suggested", "here", "checkins", "recents"];
+  const seen = new Set(), out = [];
+  const quota = stage === "location" ? { suggested: 9, row: 3, checkins: 3, recents: 9 } : { suggested: 9, here: 8, checkins: 2, recents: 3 };
+  order.forEach((k) => {
+    let n = 0;
+    g[k].forEach((pick) => {
+      if (n >= quota[k] || seen.has(pick.id)) return;
+      seen.add(pick.id); out.push(pick); n++;
+    });
+  });
+  return out.slice(0, 9);
+}
+function filingFilterChips(p) {
+  const { stage, g } = filingPickGroups(p);
+  if (!stage) return "";
+  const cur = (state.filingPickFilter || {})[stage] || "";
+  return `
+    <div class="wrap-gap" style="gap:6px;margin-bottom:8px;">
+      ${FILING_GROUPS[stage].map(([key, label]) => {
+        const n = key ? g[key].length : null;
+        const on = cur === key;
+        return `<button class="btn-ghost" ${n === 0 ? "disabled" : ""}
+          style="font-size:11.5px;padding:3px 10px;border-radius:20px;border:1px solid ${on ? "var(--moss)" : "rgba(37,41,37,0.18)"};${on ? "background:var(--moss);color:var(--parchment);" : ""}${n === 0 ? "opacity:0.45;" : ""}"
+          onclick="setFilingPickFilter('${stage}','${key}')">${label}${n !== null ? ` <span class="mono" style="font-size:10px;opacity:0.75;">${n}</span>` : ""}</button>`;
+      }).join("")}
+    </div>`;
+}
+function setFilingPickFilter(stage, key) {
+  state.filingPickFilter = { ...(state.filingPickFilter || {}), [stage]: key };
+  render();
 }
 function filingPickHtml(pick, i, photoId) {
   const n = i + 1;
@@ -5475,7 +5530,7 @@ function screenFiling() {
     ${screenHeader("File photos", `${countLabel(left, "photo", "photos")} still need a plant and a location${state.inboxYear ? ` &middot; ${state.inboxYear}` : ""}`)}
     <div class="detail-split" style="gap:18px;">
       <div class="detail-media">
-        <div class="filing-stage">${photoImg(p)}</div>
+        <div class="filing-stage" style="cursor:zoom-in;" title="Full size (F)" onclick="state.lightbox={mode:'filing',photoId:'${p.id}'};render()">${photoImg(p)}</div>
         <div class="row" style="margin-top:10px;">
           <button class="btn btn-secondary btn-sm" ${state.filingHistory.length ? "" : "disabled"} onclick="filingBack()" title="Previous photo (←)">${icon("back")} Back</button>
           <span class="mono subtle" style="font-size:11.5px;">${done ? "Filed" : `${pos} of ${list.length}`}</span>
@@ -5499,7 +5554,7 @@ function screenFiling() {
         </div>
         ${state.filingLocOpen ? `<div style="margin-bottom:14px;">${locationPicker(`filingSetLocation('${p.id}','{id}')`, { onCreatePick: "filingSetLocationActive" })}</div>` : ""}
 
-        ${!loc && picks.length ? `<div class="stack" style="margin-bottom:14px;">${picks.map((k, i) => filingPickHtml(k, i, p.id)).join("")}</div>` : ""}
+        ${!loc ? `${filingFilterChips(p)}${picks.length ? `<div class="stack" style="margin-bottom:14px;">${picks.map((k, i) => filingPickHtml(k, i, p.id)).join("")}</div>` : `<p class="subtle" style="font-size:12.5px;">Nothing in this group &mdash; use Choose above.</p>`}` : ""}
 
         <div class="section-label" style="margin-top:6px;">Plant</div>
         ${plants.length ? `
@@ -5509,7 +5564,8 @@ function screenFiling() {
         : !loc ? `<p class="subtle" style="font-size:12.5px;margin-bottom:8px;">Choose the location first and the plants there are offered here. Or pick the plant now &mdash; its current location is used if this photo has none.</p>
             ${plantPicker(`filingSetPlant('${p.id}','{id}')`, { onNew: `openModal('newPlantFromPhoto',{photoId:'${p.id}'})` })}`
         : `
-          ${picks.length ? `<div class="stack" style="margin-bottom:12px;">${picks.map((k, i) => filingPickHtml(k, i, p.id)).join("")}</div>` : `<p class="subtle" style="font-size:12.5px;">No plants recorded at ${escapeHtml(loc.name)} yet.</p>`}
+          ${filingFilterChips(p)}
+          ${picks.length ? `<div class="stack" style="margin-bottom:12px;">${picks.map((k, i) => filingPickHtml(k, i, p.id)).join("")}</div>` : `<p class="subtle" style="font-size:12.5px;">${(state.filingPickFilter || {}).plant ? "Nothing in this group." : `No plants recorded at ${escapeHtml(loc.name)} yet.`}</p>`}
           <details style="margin-top:4px;" ${state.pickerSearch ? "open" : ""}>
             <summary class="btn-ghost" style="cursor:pointer;font-size:12.5px;padding:0;">Somewhere else in the collection&hellip;</summary>
             <div style="margin-top:8px;">${plantPicker(`filingSetPlant('${p.id}','{id}')`, { onNew: `openModal('newPlantFromPhoto',{photoId:'${p.id}', locationId:'${loc.id}'})` })}</div>
@@ -5519,7 +5575,7 @@ function screenFiling() {
           ${needsPlant || (!loc && !plants.length) ? `<button class="btn btn-secondary btn-sm" onclick="openModal('newPlantFromPhoto',{photoId:'${p.id}'${loc ? `, locationId:'${loc.id}'` : ""}})">New plant from this photo</button>` : ""}
           ${!isPlacePhoto(p) && !plants.length ? `<button class="btn btn-secondary btn-sm" onclick="filingMarkOverview('${p.id}')" title="A shot of the space, not one plant — needs only a location">Overview shot</button>` : ""}
         </div>
-        <p class="subtle" style="font-size:11.5px;margin-top:16px;">Keys: <span class="mono">1&ndash;9</span> pick &middot; <span class="mono">&rarr;</span> skip &middot; <span class="mono">&larr;</span> back &middot; <span class="mono">Esc</span> leave</p>
+        <p class="subtle" style="font-size:11.5px;margin-top:16px;">Keys: <span class="mono">1&ndash;9</span> pick &middot; <span class="mono">&rarr;</span> skip &middot; <span class="mono">&larr;</span> back &middot; <span class="mono">F</span> full size &middot; <span class="mono">Esc</span> leave</p>
       </div>
     </div>
   </div></div>`;
@@ -5637,6 +5693,9 @@ function filingBack() {
 // typing a search never triggers a pick.
 function wireFilingKeys() {
   document.addEventListener("keydown", (e) => {
+    if (state.tab === "filing" && state.lightbox && state.lightbox.mode === "filing" && e.key === "Escape") {
+      e.preventDefault(); closeLightbox(); return;
+    }
     if (state.tab !== "filing" || state.modal || state.lightbox) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target;
@@ -5644,6 +5703,11 @@ function wireFilingKeys() {
     if (e.key === "ArrowRight") { e.preventDefault(); filingSkip(); return; }
     if (e.key === "ArrowLeft") { e.preventDefault(); filingBack(); return; }
     if (e.key === "Escape") { e.preventDefault(); navBack(); return; }
+    if (e.key === "f" || e.key === "F") {
+      const { photo } = filingCurrent();
+      if (photo) { e.preventDefault(); state.lightbox = { mode: "filing", photoId: photo.id }; render(); }
+      return;
+    }
     if (/^[1-9]$/.test(e.key)) {
       const { photo } = filingCurrent();
       const pick = filingQuickPicks(photo)[Number(e.key) - 1];
@@ -13615,20 +13679,23 @@ function renderLightbox() {
   const isInbox = state.lightbox.mode === "inbox";
   const isLocation = state.lightbox.mode === "location";
   const isGallery = state.lightbox.mode === "gallery";
+  const isFiling = state.lightbox.mode === "filing";
   const { plantId, locationId, photoId } = state.lightbox;
   const list = lightboxPhotoList();
   const idx = list.findIndex((p) => p.id === photoId);
   const p = list[idx];
   if (!p) { state.lightbox = null; return ""; }
   const url = state.photoUrlCache[p.drive_file_id];
-  const pl = (!isInbox && !isLocation && !isGallery) ? state.plants.find((x) => x.id === plantId) : (isGallery && p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null);
+  const pl = (!isInbox && !isLocation && !isGallery && !isFiling) ? state.plants.find((x) => x.id === plantId) : (isGallery && p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null);
   const loc = isLocation ? locationById(locationId) : null;
   const isPrimary = isLocation ? loc?.primary_photo_id === p.id : pl?.primary_photo_id === p.id;
   const plantnetSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "PlantNet") : null;
   const claudeSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "Claude") : null;
   const isIdentifying = state.identifyingPhotoId === p.id;
 
-  const titleLine = isInbox
+  const titleLine = isFiling
+    ? `<div style="font-size:13.5px;">${fmtDate(photoDate(p))}</div><div style="font-size:11px;color:#9FB0A3;">${p.location_id && locationById(p.location_id) ? escapeHtml(locationById(p.location_id).name) : "No location yet"}</div>`
+    : isInbox
     ? `<div style="font-size:13.5px;">Unfiled photo</div>`
     : isGallery
     ? `<div style="font-size:13.5px;">${pl ? escapeHtml(plantDisplayName(pl)) : "Gallery photo"}</div><div style="font-size:11px;color:#9FB0A3;">${allLocationsForPhoto(p).map((l) => escapeHtml(l.name)).join(", ") || "No location"}</div>`
@@ -13642,7 +13709,10 @@ function renderLightbox() {
     </div>`;
 
   let bottomActions;
-  if (isInbox) {
+  if (isFiling) {
+    // Looking, not acting: every filing control is on the page behind.
+    bottomActions = `<div class="subtle" style="text-align:center;font-size:12px;color:#9FB0A3;">Close to keep filing &middot; Esc</div>`;
+  } else if (isInbox) {
     bottomActions = `
     ${plantnetSuggestion ? lightboxSuggestionLine(plantnetSuggestion) : ""}
     ${claudeSuggestion ? lightboxSuggestionLine(claudeSuggestion) : ""}

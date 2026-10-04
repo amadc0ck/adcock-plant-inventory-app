@@ -908,22 +908,15 @@ stricter than the To Do count; overview/progress/historical need only a location
 Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
 
 ### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
+### v2.47.0 — FILE-1: full-size view and pick filters
+Tap the photo (or F) opens it full size in a "filing" lightbox mode that holds only that photo.
+Chips filter the numbered picks: Suggested · This row · Check-ins · Recents (location) and Suggested · In this location ·
+Check-ins · Recents (plant). Filter persists per stage across photos; key numbers follow what is shown.
+
 Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
 `renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
 compact rows carry `data-anchor`; add it to any other list whose upper content changes height on a toggle.
 
-CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
-RENDER-1: each repaint destroyed the field being typed in, and `focus()` scrolled to it (and drops the iOS keyboard).
-`patchAroundFocus()` keeps the live field and swaps everything around it; falls back to innerHTML otherwise.
-Gotcha: depends on no `addEventListener` on rendered nodes (see REFERENCE). Button-click jumps: only the clamped-scroll
-retry so far — not reproduced, needs a named screen if it persists.
-
-### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
-Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
-(A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
-(B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
-Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
-Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
 ### v2.43.0 — LOC-10: add a location from inside a location
 "+ Add location here" on every location page opens New location with the parent preset (and named in the title).
 Shown even with no children — the first pot is when it is needed. No schema change. `app_errors` SQL ran 2026-10-04.
@@ -948,6 +941,18 @@ claiming one. The v2.37.0 commit message still says NAME-3.)*
 Two of the four original findings were **not defects** — the cultivar quotes
 never rendered double (`cultivarLabel()` already strips them), and setting
 `is_hybrid` on the five cross-parentage records would have been wrong, visibly
+CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
+RENDER-1: each repaint destroyed the field being typed in, and `focus()` scrolled to it (and drops the iOS keyboard).
+`patchAroundFocus()` keeps the live field and swaps everything around it; falls back to innerHTML otherwise.
+Gotcha: depends on no `addEventListener` on rendered nodes (see REFERENCE). Button-click jumps: only the clamped-scroll
+retry so far — not reproduced, needs a named screen if it persists.
+
+### v2.40.0 — EGRESS-1: stop re-downloading what didn't change
+Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 KB gz) after nearly every save — 22 times in 13 minutes on 2026-09-12.
+(A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
+(B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
+Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
+Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
 so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
 missing. Do not reopen the is_hybrid half.
 
@@ -966,18 +971,6 @@ Three paths can now hit it, and `restPost("taxa")` was only one of them:
   points at Merge, instead of printing a Postgres body.
 - **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
   with the same identity under a different id would have died mid-restore on a
-it was written for is not evidence.
-
-**Residual gap:** a taxon created from a common name alone parses no genus and
-is outside the partial index. Unchanged, and still not covered.
-
-
-### v2.38.0 — losing the taxon race is no longer an error
-
-`ensureTaxonForName()` is a check-then-act race and it lost one: two *Sedum
-adolphii* rows five seconds apart. With a unique index on `taxa` the loser now
-gets a 23505 — so it refreshes from the server (`state.taxa` is stale by
-definition at that point, the winner landed after the last `loadAll`) and
   raw error. It now names what is in the way. **It does not skip the row:**
   the plants referencing that `taxa_id` would fail the FK next and take the
   rest of the restore with them.
@@ -1002,6 +995,18 @@ after the index shows Amanda a raw Postgres error.
 ### v2.37.0 — NAME-5: two different crosses, two different signs
 
 `is_hybrid` puts the × between genus and epithet. A **nothogenus** wears it
+it was written for is not evidence.
+
+**Residual gap:** a taxon created from a common name alone parses no genus and
+is outside the partial index. Unchanged, and still not covered.
+
+
+### v2.38.0 — losing the taxon race is no longer an error
+
+`ensureTaxonForName()` is a check-then-act race and it lost one: two *Sedum
+adolphii* rows five seconds apart. With a unique index on `taxa` the loser now
+gets a 23505 — so it refreshes from the server (`state.taxa` is stale by
+definition at that point, the winner landed after the last `loadAll`) and
 before the genus, and that is derivable from the name — `TAXON_NOTHOGENERA`
 already listed all of them for `taxonLooksHybrid()`. Twelve records were
 silently dropping the sign; they now render `×Graptoveria 'Debbie'`.

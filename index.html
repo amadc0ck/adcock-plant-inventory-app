@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.45.0";
+const APP_VERSION = "2.46.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1059,6 +1059,7 @@ const state = {
   filingSkipped: new Set(),// FILE-1: skipped this visit; back in the queue next visit
   filingHistory: [],       // FILE-1: ids already shown, for Back
   filingLocOpen: false,    // FILE-1: full location picker expanded
+  filingLastLocationId: null, // FILE-1: anchor for the "next bucket in the row" picks
   navStack: [],           // NAV-1: where you came from, with the filter intact
   inboxLimit: 20,
   inboxSort: "newest",
@@ -5290,10 +5291,38 @@ function inboxCompactRow(p, selectMode) {
    show a space, not a specimen, so a location is enough (photoAwaitsPlant()
    and the gap counts already treat them so). "Overview shot" is offered here
    for exactly that. */
+/* v2.46.0, Amanda: the queue showed 2,000+ photos, most of them filed to
+   historical / archive locations where naming the plant is optional. A plant
+   is only REQUIRED where the location holds plants (the same test the gap
+   counts use) and the location is not an archive or inside one. Optional
+   tagging of archive photos stays where it was, on the location pages. */
 function photoNeedsFiling(p) {
   if (!p) return false;
   if (!p.location_id) return true;
-  return !photoHasAnyPlant(p) && !isPlacePhoto(p) && !isHistoricalPhoto(p);
+  if (photoHasAnyPlant(p) || isPlacePhoto(p) || isHistoricalPhoto(p)) return false;
+  if (locationInArchive(p.location_id)) return false;
+  return photoLocationExpectsPlants(p);
+}
+// An archive's children are archive too — "Vallejo Apartment / Kitchen sill".
+function locationInArchive(locationId) {
+  for (let l = locationById(locationId), hops = 0; l && hops < 12; l = locationById(l.parent_location_id), hops++) {
+    if (l.gallery_row === "archives" || l.archived) return true;
+  }
+  return false;
+}
+
+/* Filing runs down a row: bucket 11, 12, 13. The anchor is the last location
+   filed to on this page (else the most recent anywhere); its siblings sorted
+   as people read numbers — "Bucket 9" before "Bucket 10" — give the one
+   before and after. */
+function filingNeighbourLocations() {
+  const anchor = locationById(state.filingLastLocationId || recentLocationIds()[0]);
+  if (!anchor) return { anchor: null, prev: null, next: null };
+  const sibs = state.locations
+    .filter((l) => (l.parent_location_id || null) === (anchor.parent_location_id || null) && !l.archived)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+  const i = sibs.findIndex((l) => l.id === anchor.id);
+  return { anchor, prev: i > 0 ? sibs[i - 1] : null, next: i >= 0 && i < sibs.length - 1 ? sibs[i + 1] : null };
 }
 // Same year filter and sort as To Do, so "2018, oldest first" carries over.
 function filingPhotos() {
@@ -5354,23 +5383,37 @@ function filingQuickPicks(p) {
   const sgs = suggestionsForPhoto(p.id);
   if (!p.location_id) {
     const seen = new Set();
-    sgs.filter((sg) => sg.kind === "location_tag" && locationById(sg.value_id)).forEach((sg) => {
-      seen.add(sg.value_id);
-      picks.push({ kind: "location", id: sg.value_id, sg: sg.id, label: locationById(sg.value_id).name, note: "Claude suggests" });
-    });
-    recentLocationIds().map(locationById).filter((l) => l && !seen.has(l.id)).slice(0, 5).forEach((l) => {
-      picks.push({ kind: "location", id: l.id, label: l.name, note: l.parent_location_id && locationById(l.parent_location_id) ? locationById(l.parent_location_id).name : "Recent" });
-    });
+    const add = (l, note, sg) => {
+      if (!l || seen.has(l.id)) return;
+      seen.add(l.id);
+      picks.push({ kind: "location", id: l.id, sg, label: l.name, note });
+    };
+    const parentName = (l) => (l.parent_location_id && locationById(l.parent_location_id) ? locationById(l.parent_location_id).name : "");
+    sgs.filter((sg) => sg.kind === "location_tag").forEach((sg) => add(locationById(sg.value_id), "Claude suggests", sg.id));
+    // The row: same, next, previous.
+    const { anchor, prev, next } = filingNeighbourLocations();
+    add(anchor, "Same as last");
+    add(next, `Next in ${parentName(next) || "this row"}`);
+    add(prev, `Previous in ${parentName(prev) || "this row"}`);
+    // Where plants are waiting for a check-up — a new photo is the check-up.
+    const due = {};
+    plantsNeedingCheckIn().forEach(({ pl }) => { if (pl.location_id) due[pl.location_id] = (due[pl.location_id] || 0) + 1; });
+    Object.entries(due).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .forEach(([id, n]) => add(locationById(id), `${countLabel(n, "plant", "plants")} due a check-up`));
+    recentLocationIds().map(locationById).forEach((l) => l && add(l, parentName(l) || "Recent"));
   } else if (!photoHasAnyPlant(p)) {
     const seen = new Set();
     sgs.filter((sg) => sg.kind === "plant_tag" && state.plants.some((x) => x.id === sg.value_id)).forEach((sg) => {
       seen.add(sg.value_id);
       picks.push({ kind: "plant", id: sg.value_id, sg: sg.id, note: "Claude suggests" });
     });
-    plantsAtLocation(p.location_id).filter((pl) => !seen.has(pl.id)).slice(0, 8).forEach((pl) => {
-      seen.add(pl.id);
-      picks.push({ kind: "plant", id: pl.id, note: "Here" });
-    });
+    plantsAtLocation(p.location_id).filter((pl) => !seen.has(pl.id))
+      .map((pl) => ({ pl, st: checkInStatus(pl) }))
+      .sort((a, b) => (b.st && b.st.due ? 1 : 0) - (a.st && a.st.due ? 1 : 0))
+      .slice(0, 8).forEach(({ pl, st }) => {
+        seen.add(pl.id);
+        picks.push({ kind: "plant", id: pl.id, note: st && st.due ? `Here · check-up due (${st.label})` : "Here" });
+      });
     recentPlantIds().filter((id) => !seen.has(id)).map((id) => state.plants.find((x) => x.id === id)).filter(Boolean).slice(0, 3)
       .forEach((pl) => picks.push({ kind: "plant", id: pl.id, note: "Recent" }));
   }
@@ -5513,6 +5556,7 @@ async function filingSetLocation(photoId, locationId, sgId) {
   try {
     mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, { location_id: locationId }));
     noteRecentLocation(locationId);
+    state.filingLastLocationId = locationId;
     await filingMarkSuggestion(sgId);
     state.filingLocOpen = false;
     locPickerReset();
@@ -5535,6 +5579,7 @@ async function filingSetPlant(photoId, plantId, sgId) {
       // Snapshot, never a live link — same rule as attachInboxPhotoToPlant().
       if (!ph.location_id && plant.location_id) body.location_id = plant.location_id;
       mergeRows("photos", await restPatch("photos", `id=eq.${photoId}`, body));
+      if (body.location_id) state.filingLastLocationId = body.location_id;
     } else if (ph.plant_id !== plantId && !state.photoPlants.some((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
       const rows = await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
       state.photoPlants.push(...(rows || []));

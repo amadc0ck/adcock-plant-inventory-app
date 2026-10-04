@@ -896,18 +896,11 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
-### v2.43.0 — LOC-10: add a location from inside a location
-"+ Add location here" on every location page opens New location with the parent preset (and named in the title).
-Shown even with no children — the first pot is when it is needed. No schema change. `app_errors` SQL ran 2026-10-04.
+### v2.46.0 — FILE-1 follow-up: smaller queue, row-aware location picks
+Queue was 2,000+: a plant is now required only where the location holds plants and is not an archive (or inside one).
+Location picks: Claude → same as last → next / previous sibling (numeric name sort) → locations with check-ups due → recents.
+Plants here are listed check-up-due first. Anchor is the last location filed on the page, else the most recent anywhere.
 
-### v2.42.0 — LOG-1 + BATCH-2: error history, batch rows fail alone
-LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
-BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
-failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
-Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
-Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
-
-### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
 ### v2.45.0 — FILE-1: File photos, one at a time
 To Do → "File one by one": one photo shown whole, numbered quick picks (Claude's suggestion, plants here, recents), full
 pickers behind them, auto-advance; keys 1–9 / → skip / ← back / Esc. Filed = location AND plant (Amanda, 2026-10-04) —
@@ -931,6 +924,18 @@ Egress hit 4.54 of 5 GB in three weeks: `loadAll()` fetched all 19 tables (~950 
 (B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
 Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
 Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
+### v2.43.0 — LOC-10: add a location from inside a location
+"+ Add location here" on every location page opens New location with the parent preset (and named in the title).
+Shown even with no children — the first pot is when it is needed. No schema change. `app_errors` SQL ran 2026-10-04.
+
+### v2.42.0 — LOG-1 + BATCH-2: error history, batch rows fail alone
+LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
+BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
+failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
+Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
+Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
+
+### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
 
 ### NAME-5 — data-quality pass, RAN 2026-09-11
 
@@ -949,18 +954,6 @@ missing. Do not reopen the is_hybrid half.
 ### v2.39.0 — TAXA-IDX complete: the index ran, and the three paths that meet it
 
 `taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
-  raw error. It now names what is in the way. **It does not skip the row:**
-  the plants referencing that `taxa_id` would fail the FK next and take the
-  rest of the restore with them.
-
-`isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
-`taxa` may grow another unique index, and bare 23505 would then send her to
-Merge over something unrelated.
-
-**Testing note worth keeping:** the first version of its SQLSTATE test used a
-message containing the word "duplicate", and a mutant matching only that word
-survived it. The test now carries neither the name nor the prose, so it can
-only pass through the branch it is testing. A test that cannot fail the mutation
 five key expressions and the partial predicate intact. Identity is
 `(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
 and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
@@ -985,6 +978,18 @@ is outside the partial index. Unchanged, and still not covered.
 adolphii* rows five seconds apart. With a unique index on `taxa` the loser now
 gets a 23505 — so it refreshes from the server (`state.taxa` is stale by
 definition at that point, the winner landed after the last `loadAll`) and
+  raw error. It now names what is in the way. **It does not skip the row:**
+  the plants referencing that `taxa_id` would fail the FK next and take the
+  rest of the restore with them.
+
+`isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
+`taxa` may grow another unique index, and bare 23505 would then send her to
+Merge over something unrelated.
+
+**Testing note worth keeping:** the first version of its SQLSTATE test used a
+message containing the word "duplicate", and a mutant matching only that word
+survived it. The test now carries neither the name nor the prose, so it can
+only pass through the branch it is testing. A test that cannot fail the mutation
 resolves to the row that won. The specimen links to the same species either way.
 
 Anything that is not a 23505 rethrows, and so does a 23505 it cannot resolve —

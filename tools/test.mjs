@@ -404,7 +404,12 @@ t("no error at all is not a clash", () => {
 // only a location. A wrong rule here either strands photos in the queue
 // forever or lets unfiled ones vanish from it.
 const seedFiling = () => setState(ctx, {
-  locations: [{ id: "L", name: "Bucket", type: "container", holds_plants: true }],
+  locations: [
+    { id: "L", name: "Bucket", type: "container", holds_plants: true },
+    { id: "ARC", name: "Vallejo", type: "area", holds_plants: true, gallery_row: "archives" },
+    { id: "ARCkid", name: "Sill", type: "container", holds_plants: true, parent_location_id: "ARC" },
+    { id: "AREA", name: "Yard", type: "area", holds_plants: false },
+  ],
   plants: [{ id: "P", location_id: "L" }],
   photoPlants: [{ id: "j", photo_id: "tagged", plant_id: "P" }],
   inboxYear: "", inboxSort: "newest", filingSkipped: new Set(),
@@ -417,11 +422,27 @@ const seedFiling = () => setState(ctx, {
     { id: "overview", taken_at: "2026-08-31", location_id: "L", photo_type: "overview" },
     { id: "overviewNoLoc", taken_at: "2026-08-30", photo_type: "overview" },
     { id: "historical", taken_at: "2026-08-29", location_id: "L", historical: true },
+    { id: "archive", taken_at: "2026-08-28", location_id: "ARC" },
+    { id: "archiveChild", taken_at: "2026-08-27", location_id: "ARCkid" },
+    { id: "area", taken_at: "2026-08-26", location_id: "AREA" },
   ],
 });
 t("filing queue holds exactly the photos missing a plant or a location", () => {
   seedFiling();
   eq(ctx.filingPhotos().map((p) => p.id), ["bare", "locOnly", "plantOnly", "overviewNoLoc"]);
+});
+t("archive locations, their children, and plant-less areas make the plant optional", () => {
+  seedFiling();
+  const ids = ctx.filingPhotos().map((p) => p.id);
+  no(ids.includes("archive")); no(ids.includes("archiveChild")); no(ids.includes("area"));
+});
+t("neighbour buckets sort numerically within the row", () => {
+  setState(ctx, { filingLastLocationId: "b10", locations: [
+    { id: "b9", name: "Bucket 9", parent_location_id: "R" }, { id: "b10", name: "Bucket 10", parent_location_id: "R" },
+    { id: "b11", name: "Bucket 11", parent_location_id: "R" }, { id: "x", name: "Bucket 10", parent_location_id: "OTHER" },
+  ] });
+  const n = ctx.filingNeighbourLocations();
+  eq([n.prev && n.prev.id, n.next && n.next.id], ["b9", "b11"]);
 });
 t("a photo_plants tag counts as a plant", () => {
   seedFiling();

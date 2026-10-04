@@ -896,17 +896,11 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
-### v2.50.0 — HOVER-2: plant preview card no longer sticks
-It hid only on mouseout, which never fires when render() removes the hovered element (next photo, narrowed list).
-Now tracks its target: drops after any render that disconnects it, on mousemove outside it, on any scroll (capture —
-inner lists count) and on keydown. Safe only because the card has no buttons; add some and mousemove must allow the card.
-
-### v2.49.0 — LOC-11: no location dropdowns left
-Plant-picker "Anywhere" filter, New/Edit location parent, Gallery filter and Gallery batch now use the searchable
-`locationField` (new opts: value, onPick, excludeIds, noCreate). Edit location excludes its whole subtree, not just itself.
-Found on the way: opening the picker re-rendered the modal and wiped unbound fields (e.g. New plant's common name, since
-LOCFIELD-1). `KEEP_FIELD_MODALS` snapshots plain fields across same-modal re-renders; state-bound ones are skipped.
-Left as a select on purpose: the ~5-item archive jump list on To Do cards.
+### v2.53.0 — UPL-1: optional location and plant on every upload
+Upload form has Location (searchable) and Plant fields, preset from the page it was opened from; both apply to every
+selected file, and a plant fills an empty location from where it lives. Google Photos import now sends plantId too
+(photos-picker accepted it since PHOTOS-1; nothing passed it). Gotcha: chosen files live in `state.uploadFiles`,
+because picking a location re-renders the modal and a file input cannot be refilled.
 
 ### v2.52.0 — "Somewhere else in the collection" stayed open
 Its `open` was derived from pickerSearch only, so typing in the location filter inside it re-rendered it closed.
@@ -931,6 +925,18 @@ Check-ins · Recents (plant). Filter persists per stage across photos; key numbe
 
 ### v2.46.0 — FILE-1 follow-up: smaller queue, row-aware location picks
 Queue was 2,000+: a plant is now required only where the location holds plants and is not an archive (or inside one).
+### v2.50.0 — HOVER-2: plant preview card no longer sticks
+It hid only on mouseout, which never fires when render() removes the hovered element (next photo, narrowed list).
+Now tracks its target: drops after any render that disconnects it, on mousemove outside it, on any scroll (capture —
+inner lists count) and on keydown. Safe only because the card has no buttons; add some and mousemove must allow the card.
+
+### v2.49.0 — LOC-11: no location dropdowns left
+Plant-picker "Anywhere" filter, New/Edit location parent, Gallery filter and Gallery batch now use the searchable
+`locationField` (new opts: value, onPick, excludeIds, noCreate). Edit location excludes its whole subtree, not just itself.
+Found on the way: opening the picker re-rendered the modal and wiped unbound fields (e.g. New plant's common name, since
+LOCFIELD-1). `KEEP_FIELD_MODALS` snapshots plain fields across same-modal re-renders; state-bound ones are skipped.
+Left as a select on purpose: the ~5-item archive jump list on To Do cards.
+
 Location picks: Claude → same as last → next / previous sibling (numeric name sort) → locations with check-ups due → recents.
 Plants here are listed check-up-due first. Anchor is the last location filed on the page, else the most recent anywhere.
 
@@ -953,18 +959,6 @@ Shown even with no children — the first pot is when it is needed. No schema ch
 LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
 BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
 failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
-(A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
-(B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
-Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
-Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
-
-### NAME-5 — data-quality pass, RAN 2026-09-11
-
-*(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
-the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
-permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
-claiming one. The v2.37.0 commit message still says NAME-3.)*
-
 Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
 Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
 
@@ -989,6 +983,18 @@ missing. Do not reopen the is_hybrid half.
 `taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
 five key expressions and the partial predicate intact. Identity is
 `(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
+(A) `identifications.raw_response` (416 KB gz of each reload) left out of the bulk select; `ensureIdentificationRaw()` fetches it when `identificationDetail` opens. Backup export still selects `*`.
+(B) `mergeRows()` puts restPatch's returned rows into state for the 10 functions that write only `photos` (no triggers on `photos`, checked live). A photo edit: ~950 KB → ~1 KB.
+Gotcha: a new `identifications` column must be added to loadAll's explicit select list.
+Verify: suggestion details still show candidates; a photo note saves without the full-load spinner.
+
+### NAME-5 — data-quality pass, RAN 2026-09-11
+
+*(Filed as NAME-3 on 2026-09-11 and renumbered the same day: NAME-3 was already
+the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
+permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
+claiming one. The v2.37.0 commit message still says NAME-3.)*
+
 and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
 157 rows, 157 distinct keys.
 
@@ -1017,18 +1023,6 @@ it was written for is not evidence.
 is outside the partial index. Unchanged, and still not covered.
 
 
-after the index shows Amanda a raw Postgres error.
-
-
-### v2.37.0 — NAME-5: two different crosses, two different signs
-
-`is_hybrid` puts the × between genus and epithet. A **nothogenus** wears it
-before the genus, and that is derivable from the name — `TAXON_NOTHOGENERA`
-already listed all of them for `taxonLooksHybrid()`. Twelve records were
-silently dropping the sign; they now render `×Graptoveria 'Debbie'`.
-
-**The near-miss worth keeping:** rendering the × moved those records' `nameKey`,
-so `findTaxonByName()` would have stopped matching them and typing the name
 ### v2.38.0 — losing the taxon race is no longer an error
 
 `ensureTaxonForName()` is a check-then-act race and it lost one: two *Sedum
@@ -1053,6 +1047,18 @@ so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
 are on survives, matching "Keep this" on the duplicates tile. `mergePlants()`
 gained `opts.locationId`, asked for **only when the two are in different
 places** — the duplicates-in-one-bucket case must not learn her to click past a
+after the index shows Amanda a raw Postgres error.
+
+
+### v2.37.0 — NAME-5: two different crosses, two different signs
+
+`is_hybrid` puts the × between genus and epithet. A **nothogenus** wears it
+before the genus, and that is derivable from the name — `TAXON_NOTHOGENERA`
+already listed all of them for `taxonLooksHybrid()`. Twelve records were
+silently dropping the sign; they now render `×Graptoveria 'Debbie'`.
+
+**The near-miss worth keeping:** rendering the × moved those records' `nameKey`,
+so `findTaxonByName()` would have stopped matching them and typing the name
 question. A survivor with no location silently inherits the other's.
 
 **Locations.** `mergeLocations()` is entirely new; `deleteLocation()`
@@ -1071,18 +1077,6 @@ Wished-for species are excluded: having no specimen is what a wish is.
 
 **Duplicate species**, grouped on `nameKey()` of the composed name only.
 Common names are deliberately out — two unrelated plants are both "Ghost
-carrying both `photos.plant_id = X` and a `photo_plants` row for X rendered
-"X, X". All three now call `plantsAssignedToPhoto()`, which always deduped and
-was never affected. Plant Detail additionally excludes the plant whose page it
-is: listing itself under "Also shows" is wrong with clean data too.
-
-Four tests added and mutation-verified — removing the dedupe fails the first.
-The drift class this closes is the same one behind v2.19.0, v2.22.0, v2.23.1 and
-v2.29.0: a predicate copied rather than called.
-
-**Backup taken by Amanda 2026-09-11**, the first since the v2.21.1 restore fix.
-
-
 Plant", and a tile that cries wolf stops being read.
 
 `mergeTaxa()` moves specimens, suggestions (`taxa_id` AND `value_id`), wishes
@@ -1107,6 +1101,18 @@ most readable — the reason to prefer it is that it looks right, and the contra
 is a bonus rather than the argument.
 
 **Accents darkened in HSL, preserving hue.** Darkening them toward the brand
+carrying both `photos.plant_id = X` and a `photo_plants` row for X rendered
+"X, X". All three now call `plantsAssignedToPhoto()`, which always deduped and
+was never affected. Plant Detail additionally excludes the plant whose page it
+is: listing itself under "Also shows" is wrong with clean data too.
+
+Four tests added and mutation-verified — removing the dedupe fails the first.
+The drift class this closes is the same one behind v2.19.0, v2.22.0, v2.23.1 and
+v2.29.0: a predicate copied rather than called.
+
+**Backup taken by Amanda 2026-09-11**, the first since the v2.21.1 restore fix.
+
+
 green was tried first and muddied everything: Bloom Orange went khaki, Terra
 Cotta went brown. In HSL they stay recognisably themselves at 4.6:1+.
 

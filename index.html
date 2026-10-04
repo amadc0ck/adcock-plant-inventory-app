@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.52.0";
+const APP_VERSION = "2.53.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1063,6 +1063,9 @@ const state = {
   filingPickFilter: {},    // FILE-1: chip filter per stage, { location: "row", plant: "checkins" }
   filingPickQuery: "",     // FILE-1: "type to narrow" over the picks; cleared per photo
   filingElsewhereOpen: false, // FILE-1: "Somewhere else in the collection" expanded
+  uploadPlantId: "",       // UPL-1: optional plant chosen in the upload form
+  uploadPlantPickerOpen: false,
+  uploadFiles: [],         // UPL-1: chosen files, held in state — a file input loses them on re-render
   navStack: [],           // NAV-1: where you came from, with the filter intact
   inboxLimit: 20,
   inboxSort: "newest",
@@ -2396,6 +2399,21 @@ function setLocField(prefix, locationId) {
 // quickAddLocation() resolves its callback via globalThis[name], so it needs a
 // real global taking (id). Only one field's picker is ever open, so
 // state.locFieldOpen already identifies which one is asking.
+function toggleUploadPlantPicker() {
+  state.uploadPlantPickerOpen = !state.uploadPlantPickerOpen;
+  clearPlantPicker();
+  // Narrowed to the chosen location — the plant is almost always one there.
+  if (state.uploadPlantPickerOpen && locFieldValue("up")) state.pickerLocation = locFieldValue("up");
+  render();
+}
+function setUploadPlant(id) {
+  state.uploadPlantId = id || "";
+  state.uploadPlantPickerOpen = false;
+  const pl = id ? state.plants.find((x) => x.id === id) : null;
+  if (pl && !locFieldValue("up") && pl.location_id) state.locField.up = pl.location_id;
+  clearPlantPicker();
+  render();
+}
 function setPickerLocation(id) {
   state.pickerLocation = id || "";
   state.locFieldOpen = "";
@@ -4833,6 +4851,14 @@ function openModal(type, data = {}) {
     state.locField.elp = _l ? (_l.parent_location_id || "") : "";
   }
   if (type === "galleryBatch") state.locField.gb = "";
+  if (type === "upload") {
+    const _upl = data && data.plantId ? state.plants.find((x) => x.id === data.plantId) : null;
+    state.uploadPlantId = _upl ? _upl.id : "";
+    // A specimen's photo is taken where the specimen lives — snapshot, as ever.
+    state.locField.up = (data && data.locationId) || (_upl && _upl.location_id) || "";
+    state.uploadPlantPickerOpen = false;
+    state.uploadFiles = [];
+  }
   if (type === "movePlant") { state.moveTarget = ""; locPickerReset(); }
   // MERGE-2. A picker opened with the last screen's search still in it looks
   // like it is hiding most of the collection.
@@ -10405,18 +10431,52 @@ function modalContent() {
     // taken a plantId; nothing ever passed one, so the only way to get a photo
     // onto a plant was to upload to the Inbox and file it afterwards.
     const upl = data.plantId ? state.plants.find((x) => x.id === data.plantId) : null;
+    /* UPL-1 (v2.53.0). Location and plant are optional on EVERY upload, not
+       only when opened from a record — a batch shot off one shelf can be filed
+       before it lands. Both apply to every selected photo; anything left blank
+       goes to To Do / File photos as before. Choosing a plant fills an empty
+       location from where the plant lives (the snapshot rule). */
+    const chosenLoc = locationById(locFieldValue("up"));
+    const chosenPl = state.uploadPlantId ? state.plants.find((x) => x.id === state.uploadPlantId) : null;
+    const nFiles = state.uploadFiles.length;
+    const filed = chosenLoc && chosenPl ? "filed" : chosenLoc || chosenPl ? "part" : "none";
     return `
       <div class="modal-handle"></div>
-      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">${upl ? `Add photo — ${escapeHtml(plantPickerName(upl).primary)}` : loc ? `Add photo — ${escapeHtml(loc.name)}` : "Add photos"}</h3>
-      <p class="subtle" style="margin:0 0 14px;">${upl ? "Lands straight on this specimen's timeline — no filing step." : loc ? "Photo of this location/container — won't need attaching to a plant." : "Select multiple to upload them all at once — each lands in To Do separately."}</p>
+      <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">${upl ? `Add photos — ${escapeHtml(plantPickerName(upl).primary)}` : loc ? `Add photos — ${escapeHtml(loc.name)}` : "Add photos"}</h3>
+      <p class="subtle" style="margin:0 0 14px;">Select several to upload them together. Location and plant are optional and apply to all of them.</p>
       <form id="upload-form">
-        <input type="file" id="upload-file" accept="image/*" ${loc || upl ? "" : "multiple"} required style="padding:10px;" />
-        <label>Notes (optional${loc || upl ? "" : ", applied to all selected"})</label>
+        ${/* The chosen files live in state.uploadFiles: picking a location or
+             plant below re-renders this modal, and a file input cannot be
+             refilled from the markup. */""}
+        <input type="file" id="upload-file" accept="image/*" multiple style="padding:10px;"
+          onchange="state.uploadFiles=[...this.files];render()" />
+        ${nFiles ? `<div class="subtle" style="font-size:12.5px;margin:-4px 0 6px;">${countLabel(nFiles, "photo", "photos")} selected</div>` : ""}
+
+        <label>Location (optional)</label>
+        ${locationField("up", { empty: "None — file it later" })}
+
+        <label>Plant (optional)</label>
+        <div class="tag-card plant-list-card" style="padding:8px 10px;margin-bottom:8px;">
+          <span class="suggestion-icon" style="color:var(--moss-dim);">${icon("leaf")}</span>
+          <div style="flex:1;min-width:0;">
+            ${chosenPl ? `<div style="font-size:13.5px;font-weight:500;">${escapeHtml(plantPickerName(chosenPl).primary)}</div>
+              <div class="mono" style="font-size:10.5px;color:var(--moss-dim);">${chosenPl.accession_number}</div>`
+            : `<div class="value-blank" style="font-size:13px;">None — file it later</div>`}
+          </div>
+          <div style="display:flex;gap:10px;flex-shrink:0;">
+            <button type="button" class="btn-ghost" style="padding:0;font-size:12px;" onclick="toggleUploadPlantPicker()">${state.uploadPlantPickerOpen ? "Close" : chosenPl ? "Change" : "Choose"}</button>
+            ${chosenPl ? `<button type="button" class="btn-ghost" style="padding:0;font-size:12px;color:var(--terracotta);" onclick="setUploadPlant('')">Clear</button>` : ""}
+          </div>
+        </div>
+        ${state.uploadPlantPickerOpen ? `<div style="margin-bottom:10px;">${plantPicker("setUploadPlant('{id}')")}</div>` : ""}
+        <div class="field-help">${filed === "filed" ? "Filed on upload — these will not appear in To Do." : filed === "part" ? "Partly filed — File photos will ask for the rest." : "Nothing set — they land in To Do to be filed."}</div>
+
+        <label>Notes (optional, applied to all selected)</label>
         <textarea id="upload-notes" rows="2" placeholder="e.g. new growth on the west side"></textarea>
-        <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn">${loc || upl ? "Upload" : "Upload to Inbox"}</button>
+        <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn" ${nFiles ? "" : "disabled"}>${nFiles ? `Upload ${countLabel(nFiles, "photo", "photos")}` : "Choose photos first"}</button>
       </form>
       <div class="divider"></div>
-      <button class="btn btn-secondary btn-block" onclick="openModal('photosPicker',${loc ? `{locationId:'${loc.id}'}` : "{}"})">${icon("photo")} Import from Google Photos</button>
+      <button class="btn btn-secondary btn-block" onclick="openModal('photosPicker',{${[locFieldValue("up") ? `locationId:'${locFieldValue("up")}'` : "", state.uploadPlantId ? `plantId:'${state.uploadPlantId}'` : ""].filter(Boolean).join(",")}})">${icon("photo")} Import from Google Photos${chosenLoc || chosenPl ? " with these" : ""}</button>
       <div class="field-help">Pick from your Google Photos library. Capture dates come across automatically.</div>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
@@ -10569,7 +10629,7 @@ function modalContent() {
         <div class="modal-handle"></div>
         <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 4px;">Import from Google Photos</h3>
         <p class="subtle" style="margin:0 0 14px;">Google Photos opens in a new tab. Pick as many as you like and press <strong>Done</strong> — that tab closes itself and you land back here while they import.</p>
-        <button class="btn btn-accent btn-block" onclick="startPhotosPicker(${data.locationId ? `'${data.locationId}'` : "null"})">Choose photos</button>
+        <button class="btn btn-accent btn-block" onclick="startPhotosPicker(${data.locationId ? `'${data.locationId}'` : "null"}, ${data.plantId ? `'${data.plantId}'` : "null"})">Choose photos</button>
         <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
     }
     if (st.phase === "picking") {
@@ -12804,6 +12864,7 @@ function savePhotosImport() {
     localStorage.setItem(PHOTOS_IMPORT_KEY, JSON.stringify({
       savedAt: Date.now(),
       locationId: st.locationId || null,
+      plantId: st.plantId || null,
       done: st.done,
       total: st.total,
       remaining,
@@ -12834,7 +12895,7 @@ async function resumePhotosImport() {
   if (!saved) { toast("That import can no longer be resumed — the Google Photos links expired", true); state.resumableImport = null; render(); return; }
   state.resumableImport = null;
   state.photosImport = {
-    phase: "importing", locationId: saved.locationId, cancel: false,
+    phase: "importing", locationId: saved.locationId, plantId: saved.plantId || null, cancel: false,
     done: saved.done, failed: 0, total: saved.total, queue: saved.remaining, resumed: true,
     startedAt: Date.now(), lastProgressAt: Date.now(), lastError: null,
   };
@@ -12886,10 +12947,12 @@ async function photosPickerCall(action, body) {
   return data;
 }
 
-async function startPhotosPicker(locationId) {
+async function startPhotosPicker(locationId, plantId) {
   try {
     const session = await photosPickerCall("create");
-    state.photosImport = { phase: "picking", sessionId: session.sessionId, pickerUri: session.pickerUri, locationId, cancel: false, done: 0, failed: 0, total: 0 };
+    // UPL-1: plantId has been accepted by photos-picker since PHOTOS-1; the
+    // client simply never sent one.
+    state.photosImport = { phase: "picking", sessionId: session.sessionId, pickerUri: session.pickerUri, locationId, plantId: plantId || null, cancel: false, done: 0, failed: 0, total: 0 };
     render();
     // Opened from the click handler so the popup blocker allows it, and the
     // handle is kept so the tab can be closed once picking is done.
@@ -13053,6 +13116,7 @@ async function runPhotosImportQueue(items) {
         createTime: item.createTime,
         mediaItemId: item.id || null,
         locationId: st.locationId || null,
+        plantId: st.plantId || null,
       });
       // The unique index caught one the client-side check missed — two runs
       // overlapping, say. Counted as skipped rather than imported or failed.
@@ -13562,7 +13626,7 @@ function restoreScroll(snap, what) {
    oninput / onchange) is already rendered from state, and restoring its old DOM
    value would undo a deliberate reset (a cleared picker search, say). */
 const KEEP_FIELD_MODALS = new Set(["batchAdd", "newPlant", "newPlantFromPhoto", "editPlant", "newLocation",
-  "galleryBatch", "newSpecimen", "propagatePlant", "editLocation"]);
+  "galleryBatch", "newSpecimen", "propagatePlant", "editLocation", "upload"]);
 function captureModalFields() {
   const out = [];
   document.querySelectorAll(".modal input[id], .modal select[id], .modal textarea[id]").forEach((el) => {
@@ -14079,12 +14143,13 @@ function wireModalForms() {
   if (uploadForm) {
     uploadForm.onsubmit = async (e) => {
       e.preventDefault();
-      const files = Array.from(document.getElementById("upload-file").files);
+      // UPL-1: from state, not the input — see the note in the modal.
+      const files = state.uploadFiles.length ? state.uploadFiles : Array.from(document.getElementById("upload-file").files);
       const notes = document.getElementById("upload-notes").value;
-      const locationId = state.modal?.data?.locationId || null;
-      // Opened from a specimen, the photo lands on that specimen rather than in
-      // the Inbox to be filed back to where it started.
-      const uploadPlantId = state.modal?.data?.plantId || null;
+      const uploadPlantId = state.uploadPlantId || null;
+      const upPlant = uploadPlantId ? state.plants.find((x) => x.id === uploadPlantId) : null;
+      const locationId = locFieldValue("up") || (upPlant && upPlant.location_id) || null;
+      if (uploadPlantId) notePlantUse(uploadPlantId);
       if (!files.length) return;
       const btn = document.getElementById("upload-submit-btn");
       btn.disabled = true;

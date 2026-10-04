@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.49.0";
+const APP_VERSION = "2.50.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3534,17 +3534,35 @@ function hidePlantCard() {
 
 // Attached once, at boot. Pointer events only — a touch device gets the tap
 // behaviour the element already has instead.
+/* HOVER-2 (v2.50.0). The card stayed up after the pointer left, and over the
+   next photo on File photos. It hid only on `mouseout` — and when render()
+   replaces the element under the pointer (the next photo, a narrowed list) the
+   element is simply gone: no mouseout ever fires. So the target is tracked,
+   and the card drops when that target leaves the DOM (checked after every
+   render), when the pointer is no longer inside it, or on any scroll — the
+   File photos pick list scrolls inside itself, not the window. */
+let hoverCardTarget = null;
+function dropStaleHoverCard() {
+  if (hoverCardTarget && !hoverCardTarget.isConnected) { hoverCardTarget = null; hidePlantCard(); }
+}
 function wireHoverCards() {
   document.addEventListener("mouseover", (e) => {
     const t = e.target && e.target.closest ? e.target.closest("[data-plant-card]") : null;
-    if (t) showPlantCard(t, t.getAttribute("data-plant-card"));
+    if (t) { hoverCardTarget = t; showPlantCard(t, t.getAttribute("data-plant-card")); }
   });
   document.addEventListener("mouseout", (e) => {
     const t = e.target && e.target.closest ? e.target.closest("[data-plant-card]") : null;
-    if (t) hidePlantCard();
+    // Moving between children of the same target is not leaving it.
+    if (t && !(e.relatedTarget && t.contains(e.relatedTarget))) { hoverCardTarget = null; hidePlantCard(); }
   });
-  // Scrolling or navigating away should not leave one floating.
-  window.addEventListener("scroll", hidePlantCard, { passive: true });
+  document.addEventListener("mousemove", (e) => {
+    if (!hoverCardTarget) return;
+    if (!hoverCardTarget.isConnected || !hoverCardTarget.contains(e.target)) { hoverCardTarget = null; hidePlantCard(); }
+  }, { passive: true });
+  // Scrolling or navigating away should not leave one floating. Capture, so a
+  // scroll inside any element counts, not only the window.
+  document.addEventListener("scroll", () => { hoverCardTarget = null; hidePlantCard(); }, { passive: true, capture: true });
+  document.addEventListener("keydown", () => { hoverCardTarget = null; hidePlantCard(); });
 }
 
 /* AI-3 layer 2. Layer 1 catches a duplicate by NAME, as she types it. This
@@ -13758,6 +13776,7 @@ function render() {
   document.body.classList.toggle("has-task-banner", !!taskBanner());
   measureStickyOffset();
   wireModalForms();
+  dropStaleHoverCard();
   restoreModalFields(keptFields);
   restoreFocus(focusSnapshot);
   // Scroll was preserved when the view stayed the same and simply left alone

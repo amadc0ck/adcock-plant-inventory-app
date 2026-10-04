@@ -896,18 +896,11 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
-### v2.46.0 — FILE-1 follow-up: smaller queue, row-aware location picks
-Queue was 2,000+: a plant is now required only where the location holds plants and is not an archive (or inside one).
-Location picks: Claude → same as last → next / previous sibling (numeric name sort) → locations with check-ups due → recents.
-Plants here are listed check-up-due first. Anchor is the last location filed on the page, else the most recent anywhere.
+### v2.50.0 — HOVER-2: plant preview card no longer sticks
+It hid only on mouseout, which never fires when render() removes the hovered element (next photo, narrowed list).
+Now tracks its target: drops after any render that disconnects it, on mousemove outside it, on any scroll (capture —
+inner lists count) and on keydown. Safe only because the card has no buttons; add some and mousemove must allow the card.
 
-### v2.45.0 — FILE-1: File photos, one at a time
-To Do → "File one by one": one photo shown whole, numbered quick picks (Claude's suggestion, plants here, recents), full
-pickers behind them, auto-advance; keys 1–9 / → skip / ← back / Esc. Filed = location AND plant (Amanda, 2026-10-04) —
-stricter than the To Do count; overview/progress/historical need only a location ("Overview shot" button sets the type).
-Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
-
-### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
 ### v2.49.0 — LOC-11: no location dropdowns left
 Plant-picker "Anywhere" filter, New/Edit location parent, Gallery filter and Gallery batch now use the searchable
 `locationField` (new opts: value, onPick, excludeIds, noCreate). Edit location excludes its whole subtree, not just itself.
@@ -937,6 +930,18 @@ Shown even with no children — the first pot is when it is needed. No schema ch
 LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
 BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
 failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
+### v2.46.0 — FILE-1 follow-up: smaller queue, row-aware location picks
+Queue was 2,000+: a plant is now required only where the location holds plants and is not an archive (or inside one).
+Location picks: Claude → same as last → next / previous sibling (numeric name sort) → locations with check-ups due → recents.
+Plants here are listed check-up-due first. Anchor is the last location filed on the page, else the most recent anywhere.
+
+### v2.45.0 — FILE-1: File photos, one at a time
+To Do → "File one by one": one photo shown whole, numbered quick picks (Claude's suggestion, plants here, recents), full
+pickers behind them, auto-advance; keys 1–9 / → skip / ← back / Esc. Filed = location AND plant (Amanda, 2026-10-04) —
+stricter than the To Do count; overview/progress/historical need only a location ("Overview shot" button sets the type).
+Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
+
+### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
 Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
 Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
 
@@ -965,18 +970,6 @@ claiming one. The v2.37.0 commit message still says NAME-3.)*
 Two of the four original findings were **not defects** — the cultivar quotes
 never rendered double (`cultivarLabel()` already strips them), and setting
 `is_hybrid` on the five cross-parentage records would have been wrong, visibly
-
-- **The create race** — resolves to the winner (v2.38.0).
-- **Edit species** — renaming onto another species' identity now says so and
-  points at Merge, instead of printing a Postgres body.
-- **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
-  with the same identity under a different id would have died mid-restore on a
-  raw error. It now names what is in the way. **It does not skip the row:**
-  the plants referencing that `taxa_id` would fail the FK next and take the
-  rest of the restore with them.
-
-`isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
-`taxa` may grow another unique index, and bare 23505 would then send her to
 so on *Opuntia basilaris* 'Baby Rita'. See v2.37.0 for the sign that WAS
 missing. Do not reopen the is_hybrid half.
 
@@ -1001,6 +994,18 @@ it was written for is not evidence.
 is outside the partial index. Unchanged, and still not covered.
 
 
+
+- **The create race** — resolves to the winner (v2.38.0).
+- **Edit species** — renaming onto another species' identity now says so and
+  points at Merge, instead of printing a Postgres body.
+- **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
+  with the same identity under a different id would have died mid-restore on a
+  raw error. It now names what is in the way. **It does not skip the row:**
+  the plants referencing that `taxa_id` would fail the FK next and take the
+  rest of the restore with them.
+
+`isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
+`taxa` may grow another unique index, and bare 23505 would then send her to
 ### v2.38.0 — losing the taxon race is no longer an error
 
 `ensureTaxonForName()` is a check-then-act race and it lost one: two *Sedum
@@ -1019,18 +1024,6 @@ after the index shows Amanda a raw Postgres error.
 ### v2.37.0 — NAME-5: two different crosses, two different signs
 
 `is_hybrid` puts the × between genus and epithet. A **nothogenus** wears it
-### v2.36.0 — MERGE-2: merge from anywhere, and merge locations
-
-**Plants.** "Merge another plant into this one" on Plant Detail. The page you
-are on survives, matching "Keep this" on the duplicates tile. `mergePlants()`
-gained `opts.locationId`, asked for **only when the two are in different
-places** — the duplicates-in-one-bucket case must not learn her to click past a
-question. A survivor with no location silently inherits the other's.
-
-**Locations.** `mergeLocations()` is entirely new; `deleteLocation()`
-*unassigns*, which is the opposite. Children reparent rather than being refused.
-Its table list was built by probing the database column by column, not from
-REFERENCE — that shortcut is what MERGE-1 cost. Refuses to merge a location into
 before the genus, and that is derivable from the name — `TAXON_NOTHOGENERA`
 already listed all of them for `taxonLooksHybrid()`. Twelve records were
 silently dropping the sign; they now render `×Graptoveria 'Debbie'`.
@@ -1055,6 +1048,18 @@ Wished-for species are excluded: having no specimen is what a wish is.
 
 **Duplicate species**, grouped on `nameKey()` of the composed name only.
 Common names are deliberately out — two unrelated plants are both "Ghost
+### v2.36.0 — MERGE-2: merge from anywhere, and merge locations
+
+**Plants.** "Merge another plant into this one" on Plant Detail. The page you
+are on survives, matching "Keep this" on the duplicates tile. `mergePlants()`
+gained `opts.locationId`, asked for **only when the two are in different
+places** — the duplicates-in-one-bucket case must not learn her to click past a
+question. A survivor with no location silently inherits the other's.
+
+**Locations.** `mergeLocations()` is entirely new; `deleteLocation()`
+*unassigns*, which is the opposite. Children reparent rather than being refused.
+Its table list was built by probing the database column by column, not from
+REFERENCE — that shortcut is what MERGE-1 cost. Refuses to merge a location into
 Plant", and a tile that cries wolf stops being read.
 
 `mergeTaxa()` moves specimens, suggestions (`taxa_id` AND `value_id`), wishes

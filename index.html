@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.54.0";
+const APP_VERSION = "2.55.0";
 const APP_UPDATED = "2026-10-04";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -6939,7 +6939,10 @@ function screenPlantDetail() {
           <button class="btn-ghost" style="font-size:12px;" onclick="state.timelineOldestFirst=!state.timelineOldestFirst;render()">
             ${state.timelineOldestFirst ? "Oldest first ↑" : "Newest first ↓"}
           </button>
-          <button class="btn btn-secondary btn-sm" onclick="openModal('attachInboxPhoto',{plantId:'${pl.id}'})">+ Add photos</button>
+          ${/* UPL-2: the upload form, with this plant and its location filled in —
+               new photos and Google Photos imports both land filed. Attaching
+               photos already in To Do is a link inside it. */""}
+          <button class="btn btn-secondary btn-sm" onclick="openModal('upload',{plantId:'${pl.id}'})">+ Add photos</button>
         </div>
       </div>
 
@@ -10605,6 +10608,7 @@ function modalContent() {
         <button type="submit" class="btn btn-accent btn-block" style="margin-top:20px;" id="upload-submit-btn" ${nFiles ? "" : "disabled"}>${nFiles ? `Upload ${countLabel(nFiles, "photo", "photos")}` : "Choose photos first"}</button>
       </form>
       <div class="divider"></div>
+      ${upl ? `<button class="btn-ghost btn-block" style="margin-bottom:10px;text-align:center;justify-content:center;" onclick="openModal('attachInboxPhoto',{plantId:'${upl.id}'})">Or attach photos already waiting in To Do</button>` : ""}
       <button class="btn btn-secondary btn-block" onclick="openModal('photosPicker',{${[locFieldValue("up") ? `locationId:'${locFieldValue("up")}'` : "", state.uploadPlantId ? `plantId:'${state.uploadPlantId}'` : ""].filter(Boolean).join(",")}})">${icon("photo")} Import from Google Photos${chosenLoc || chosenPl ? " with these" : ""}</button>
       <div class="field-help">Pick from your Google Photos library. Capture dates come across automatically.</div>
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;

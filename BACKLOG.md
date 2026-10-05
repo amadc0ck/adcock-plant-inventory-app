@@ -908,6 +908,10 @@ Now `state.filingElsewhereOpen` (ontoggle) or any active filter holds it open, a
 `open` from a kept <details>. Rule: a <details> containing inputs must take its open state from `state`.
 
 ### v2.51.0 — NAME-6: "Echeveria Canadian" could not be created
+### v2.55.0 — UPL-2: specimen "+ Add photos" opens the upload form
+Plant and its location prefilled, so uploads and Google Photos imports land filed. The old target (attach photos
+already in To Do) is a link inside the upload form.
+
 ### v2.54.0 — GAL-7 all photos + date range, GPS-0 probe
 Gallery: "All N photos" button; results paged 60 at a time (was every match at once); newest/oldest toggle shared by
 grid and lightbox; Filters gains From/To date (photoDate, inclusive) plus Last 30 days / This year / year shortcuts.
@@ -931,18 +935,6 @@ Found on the way: opening the picker re-rendered the modal and wiped unbound fie
 LOCFIELD-1). `KEEP_FIELD_MODALS` snapshots plain fields across same-modal re-renders; state-bound ones are skipped.
 Left as a select on purpose: the ~5-item archive jump list on To Do cards.
 
-Location picks: Claude → same as last → next / previous sibling (numeric name sort) → locations with check-ups due → recents.
-Plants here are listed check-up-due first. Anchor is the last location filed on the page, else the most recent anywhere.
-
-### v2.45.0 — FILE-1: File photos, one at a time
-To Do → "File one by one": one photo shown whole, numbered quick picks (Claude's suggestion, plants here, recents), full
-pickers behind them, auto-advance; keys 1–9 / → skip / ← back / Esc. Filed = location AND plant (Amanda, 2026-10-04) —
-stricter than the To Do count; overview/progress/historical need only a location ("Overview shot" button sets the type).
-Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
-
-### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
-Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
-`renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
 ### v2.48.0 — FILE-1: past nine picks
 A chip now lists its whole group (scrolls inside itself); only the first nine get a key. "Type to narrow" (/) filters the
 showing list by name, accession or common name — with All it searches every group — and renumbers; Enter takes the top.
@@ -967,6 +959,18 @@ BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 sa
 failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
 Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
 Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
+Location picks: Claude → same as last → next / previous sibling (numeric name sort) → locations with check-ups due → recents.
+Plants here are listed check-up-due first. Anchor is the last location filed on the page, else the most recent anywhere.
+
+### v2.45.0 — FILE-1: File photos, one at a time
+To Do → "File one by one": one photo shown whole, numbered quick picks (Claude's suggestion, plants here, recents), full
+pickers behind them, auto-advance; keys 1–9 / → skip / ← back / Esc. Filed = location AND plant (Amanda, 2026-10-04) —
+stricter than the To Do count; overview/progress/historical need only a location ("Overview shot" button sets the type).
+Writes merge into state (no loadAll) except via the assign / new-plant modals, after which the page offers Next.
+
+### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
+Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
+`renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
 
 ### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
 CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
@@ -989,18 +993,6 @@ the v2.5.0 name-parsing item and NAME-4 the uncompletable-count fix. IDs are
 permanent — check `grep -ohE "[A-Z]+-[0-9]+" BACKLOG.md | sort -u` before
 claiming one. The v2.37.0 commit message still says NAME-3.)*
 
-and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
-157 rows, 157 distinct keys.
-
-Three paths can now hit it, and `restPost("taxa")` was only one of them:
-
-- **The create race** — resolves to the winner (v2.38.0).
-- **Edit species** — renaming onto another species' identity now says so and
-  points at Merge, instead of printing a Postgres body.
-- **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
-  with the same identity under a different id would have died mid-restore on a
-  raw error. It now names what is in the way. **It does not skip the row:**
-  the plants referencing that `taxa_id` would fail the FK next and take the
 9 rows across 9 taxa. All four audit checks now return 0 against live data.
 Two of the four original findings were **not defects** — the cultivar quotes
 never rendered double (`cultivarLabel()` already strips them), and setting
@@ -1025,6 +1017,18 @@ survived it. The test now carries neither the name nor the prose, so it can
 only pass through the branch it is testing. A test that cannot fail the mutation
 it was written for is not evidence.
 
+and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
+157 rows, 157 distinct keys.
+
+Three paths can now hit it, and `restPost("taxa")` was only one of them:
+
+- **The create race** — resolves to the winner (v2.38.0).
+- **Edit species** — renaming onto another species' identity now says so and
+  points at Merge, instead of printing a Postgres body.
+- **The backup restore** — `restoreUpsert` upserts on `id`, so a backup row
+  with the same identity under a different id would have died mid-restore on a
+  raw error. It now names what is in the way. **It does not skip the row:**
+  the plants referencing that `taxa_id` would fail the FK next and take the
 **Residual gap:** a taxon created from a common name alone parses no genus and
 is outside the partial index. Unchanged, and still not covered.
 
@@ -1053,18 +1057,6 @@ silently dropping the sign; they now render `×Graptoveria 'Debbie'`.
 
 **The near-miss worth keeping:** rendering the × moved those records' `nameKey`,
 so `findTaxonByName()` would have stopped matching them and typing the name
-question. A survivor with no location silently inherits the other's.
-
-**Locations.** `mergeLocations()` is entirely new; `deleteLocation()`
-*unassigns*, which is the opposite. Children reparent rather than being refused.
-Its table list was built by probing the database column by column, not from
-REFERENCE — that shortcut is what MERGE-1 cost. Refuses to merge a location into
-its own descendant, and `locationPicker()` gained `excludeIds` so the subtree is
-never offered. Two tests, mutation-verified.
-
-
-### v2.35.0 — two species-hygiene tiles, and mergeTaxa
-
 again would have created a SECOND species row — the exact failure nameKey
 exists to prevent. Caught by adding the test before believing the change was
 cosmetic. `nameKey` now strips a leading `x ` (anchored, whitespace required,
@@ -1089,6 +1081,18 @@ Plant", and a tile that cries wolf stops being read.
 and task subjects, then **fills only BLANK fields** on the survivor from the
 loser — discarding a filled-in `soil` would undo PROF work and buy another AI
 call. Six tests, mutation-verified.
+question. A survivor with no location silently inherits the other's.
+
+**Locations.** `mergeLocations()` is entirely new; `deleteLocation()`
+*unassigns*, which is the opposite. Children reparent rather than being refused.
+Its table list was built by probing the database column by column, not from
+REFERENCE — that shortcut is what MERGE-1 cost. Refuses to merge a location into
+its own descendant, and `locationPicker()` gained `excludeIds` so the subtree is
+never offered. Two tests, mutation-verified.
+
+
+### v2.35.0 — two species-hygiene tiles, and mergeTaxa
+
 
 
 ### v2.34.0 — DEDUPE-1: three renders stopped hand-rolling "which plants does this photo show"
@@ -1107,18 +1111,6 @@ v2.29.0: a predicate copied rather than called.
 **Backup taken by Amanda 2026-09-11**, the first since the v2.21.1 restore fix.
 
 
-green was tried first and muddied everything: Bloom Orange went khaki, Terra
-Cotta went brown. In HSL they stay recognisably themselves at 4.6:1+.
-
-**Confirmed by Amanda 2026-09-11.** The lesson worth keeping: the first version
-failed because I treated "readable in sun" as the whole problem and let the
-brand fall out of it. The contrast numbers were fine both times — what changed
-was starting from the logo instead of from a target ratio.
-
-**Still unverified:** only `.attn-row` and `.action-card` use semantic tokens.
-Every other screen themes through the aliases and has not been seen in daylight.
-
-### v2.33.0 — THEME-1, a daylight theme and the token layer under it
 ### v2.33.1 — daylight reworked as the logo sheet
 
 Amanda: *"I thought I would like the light mode. I dont."* The first attempt was
@@ -1143,6 +1135,18 @@ aliases so ~500 references keep working and migrate gradually.
 
 `--on-ground-muted` (#B2BAA7) is new and had to be — AUDIT F7: nothing reached
 AA on the dark ground but two near-whites and orange. Daylight accents are
+green was tried first and muddied everything: Bloom Orange went khaki, Terra
+Cotta went brown. In HSL they stay recognisably themselves at 4.6:1+.
+
+**Confirmed by Amanda 2026-09-11.** The lesson worth keeping: the first version
+failed because I treated "readable in sun" as the whole problem and let the
+brand fall out of it. The contrast numbers were fine both times — what changed
+was starting from the logo instead of from a target ratio.
+
+**Still unverified:** only `.attn-row` and `.action-card` use semantic tokens.
+Every other screen themes through the aliases and has not been seen in daylight.
+
+### v2.33.0 — THEME-1, a daylight theme and the token layer under it
 darkened to 4.6–6.2:1.
 
 **Two traps, both caught by LOOKING, not reasoning.** `--bg:var(--ground)`

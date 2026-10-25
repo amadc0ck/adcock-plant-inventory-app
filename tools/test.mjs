@@ -567,5 +567,50 @@ t("a junk confirmations value degrades to nothing confirmed", () => {
   eq(ctx.findDuplicatePlantGroups().length, 1);
 });
 
+/* ---------- Batch tagger (TAGB-1, v2.57.0) ---------- */
+// The REST layer is stubbed in-context; each test records what was called and
+// asserts on state, which is what the lightbox renders from.
+const stubRest = () => {
+  const calls = [];
+  ctx.__eval("render = () => {}; loadAll = async () => { throw new Error('loadAll called'); }; toast = () => {};");
+  ctx.__calls = calls;
+  ctx.__eval(`
+    restPatch = async (t, f, b) => { __calls.push(['patch', t, b]); const id = f.replace('id=eq.', ''); return [{ id, ...b }]; };
+    restPost = async (t, b) => { __calls.push(['post', t, b]); return [{ id: 'pp' + __calls.length, ...b }]; };
+    restDelete = async (t, f) => { __calls.push(['delete', t, f]); };`);
+  return calls;
+};
+// t() does not await, so an async case would count as passed before it ran.
+const ta = async (name, fn) => {
+  try { await fn(); pass++; }
+  catch (e) { fail++; console.error(`  FAIL  ${name}\n        ${e.message}`); }
+};
+const batchState = () => setState(ctx, {
+  photos: [{ id: "ph1", location_id: "L", plant_id: null }, { id: "ph2", location_id: "L", plant_id: null }],
+  photoPlants: [], plants: [{ id: "a", location_id: "L" }, { id: "b", location_id: "L" }],
+  lightbox: { mode: "fileBatch", locationId: "L", photoIds: ["ph1", "ph2"], photoId: "ph1" } });
+
+t("a tagged photo stays in the batch until it is closed", () => {
+  // Tagging takes a photo out of the "needs a plant" queue; a list read live
+  // would drop it from under her and close the lightbox.
+  batchState();
+  ctx.__eval("state.photos[0].plant_id = 'a'");
+  eq(ctx.lightboxPhotoList().map((p) => p.id), ["ph1", "ph2"]);
+});
+await ta("local tagging: first plant is the primary, the second a tag, no reload", async () => {
+  batchState(); stubRest();
+  await ctx.assignPlantToPhoto("ph1", "a", { local: true });
+  await ctx.assignPlantToPhoto("ph1", "b", { local: true });
+  eq(ctx.plantsAssignedToPhoto("ph1").map((p) => p.id), ["a", "b"]);
+});
+await ta("local untag of the primary promotes the tag and drops its row", async () => {
+  batchState(); stubRest();
+  await ctx.assignPlantToPhoto("ph1", "a", { local: true });
+  await ctx.assignPlantToPhoto("ph1", "b", { local: true });
+  await ctx.unassignPlantFromPhoto("ph1", "a", { local: true });
+  eq(ctx.plantsAssignedToPhoto("ph1").map((p) => p.id), ["b"]);
+  eq(ctx.__eval("state.photoPlants.length"), 0);
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

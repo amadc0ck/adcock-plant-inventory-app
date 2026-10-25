@@ -954,7 +954,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.56.0";
+const APP_VERSION = "2.57.0";
 const APP_UPDATED = "2026-10-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -5280,6 +5280,18 @@ function openGalleryLightbox(photoId) {
   state.lightbox = { mode: "gallery", photoId };
   render();
 }
+/* TAGB-1. A filing card's photos, opened to tag one at a time against the
+   plants at that location — a strawberry pot holds ten, and "pick one" could
+   only file the whole batch to a single plant.
+
+   The ids are a SNAPSHOT taken here. Tagging a photo takes it out of the
+   "needs a plant" queue, so a list read live would drop the photo being
+   tagged from under her and the lightbox would close. */
+function openFileBatch(locationId, photoIds, startId) {
+  if (!photoIds || !photoIds.length) return;
+  state.lightbox = { mode: "fileBatch", locationId, photoIds, photoId: startId || photoIds[0] };
+  render();
+}
 function prepareLightboxResume() {
   if (!state.lightbox || state.lightbox.mode !== "inbox") return;
   const list = lightboxPhotoList();
@@ -5307,6 +5319,9 @@ function lightboxPhotoList() {
   // photos page showing a different photo from the one being looked at.
   if (state.lightbox.mode === "filing") {
     return state.photos.filter((p) => p.id === state.lightbox.photoId);
+  }
+  if (state.lightbox.mode === "fileBatch") {
+    return state.lightbox.photoIds.map((id) => state.photos.find((p) => p.id === id)).filter(Boolean);
   }
   if (state.lightbox.mode === "inbox") {
     return state.photos.filter(isInboxPhoto).sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
@@ -8026,8 +8041,10 @@ function workQueueDetail() {
     const groups = byLoc ? photosNeedingPlantByLocation() : photosNeedingLocationByPlant();
     const total = groups.reduce((n, g) => n + g.photos.length, 0);
     const confident = groups.filter((g) => byLoc ? g.only : g.location).reduce((n, g) => n + g.photos.length, 0);
-    const strip = (photos) => `<div class="file-strip">${photos.slice(0, 8).map((p) =>
-      `<div class="file-thumb" onclick="openGalleryLightbox('${p.id}')">${photoImg(p)}</div>`).join("")}${
+    // TAGB-1. On the by-location view a thumbnail opens the batch tagger at
+    // that photo; `open` builds the onclick for one photo id.
+    const strip = (photos, open = (id) => `openGalleryLightbox('${id}')`) => `<div class="file-strip">${photos.slice(0, 8).map((p) =>
+      `<div class="file-thumb" onclick="${open(p.id)}">${photoImg(p)}</div>`).join("")}${
       photos.length > 8 ? `<div class="file-more">+${photos.length - 8}</div>` : ""}</div>`;
 
     return `
@@ -8042,16 +8059,19 @@ function workQueueDetail() {
               const ids = g.photos.map((p) => p.id);
               const idList = JSON.stringify(ids).replace(/"/g, "&quot;");
               if (byLoc) {
+                const batchLocId = g.location ? g.location.id : "";
                 return `
                 <div class="tag-card file-group">
                   <div class="row">
                     <div style="min-width:0;">
-                      <div class="tag-id">${g.location ? escapeHtml(locationPath(g.location)) : "No location"}</div>
+                      <div class="tag-id" style="${g.location ? "cursor:pointer;" : ""}" ${g.location ? `onclick="openLocation('${g.location.id}')" title="Go to this location"` : ""}>${g.location ? escapeHtml(locationPath(g.location)) : "No location"}</div>
                       <div style="font-size:13px;color:var(--ink-soft);margin-top:2px;">${countLabel(g.photos.length, "photo needs", "photos need")} a plant</div>
                     </div>
-                    <button class="btn-ghost" style="font-size:12px;flex-shrink:0;" onclick="openLocation('${g.location ? g.location.id : ""}')">Open</button>
+                    ${/* TAGB-1. Was openLocation — it now opens these photos to tag
+                         one by one; the location is the path to the left. */""}
+                    <button class="btn-ghost" style="font-size:12px;flex-shrink:0;" onclick="openFileBatch('${batchLocId}', ${idList})">Open</button>
                   </div>
-                  ${strip(g.photos)}
+                  ${strip(g.photos, (id) => `openFileBatch('${batchLocId}', ${idList}, '${id}')`)}
                   ${g.only ? `
                     <div class="file-suggest">
                       <div style="flex:1;min-width:0;">
@@ -12646,24 +12666,33 @@ function plantsAssignedToPhoto(photoId) {
   return ids.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean);
 }
 
-async function assignPlantToPhoto(photoId, plantId) {
+/* TAGB-1. `{ local: true }` merges the returned rows into state instead of
+   calling loadAll(). Tagging a batch is ~20 taps, and loadAll is ~550 KB of
+   egress each against a free tier shared with another project (EGRESS-2).
+   Only the batch tagger passes it; every other caller still reloads. */
+async function assignPlantToPhoto(photoId, plantId, { local = false } = {}) {
   const ph = state.photos.find((x) => x.id === photoId);
   if (!ph) return;
   try {
     if (!ph.plant_id) {
-      await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
+      const rows = await restPatch("photos", `id=eq.${photoId}`, { plant_id: plantId });
+      if (local) mergeRows("photos", rows);
     } else if (ph.plant_id !== plantId && !state.photoPlants.some((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
-      await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
+      const rows = await restPost("photo_plants", { photo_id: photoId, plant_id: plantId });
+      if (local) state.photoPlants.push(...rows);
     }
     notePlantUse(plantId);
+    if (local) { render(); return; }
     toast("Plant assigned");
     await loadAll();
-  } catch (e) { toast(e.message, true); }
+  } catch (e) { toast(e.message, true); if (local) await loadAll(); }
 }
 
-async function unassignPlantFromPhoto(photoId, plantId) {
+async function unassignPlantFromPhoto(photoId, plantId, { local = false } = {}) {
   const ph = state.photos.find((x) => x.id === photoId);
   if (!ph) return;
+  // Deleted photo_plants ids, dropped from state at the end in local mode.
+  const gone = new Set();
   try {
     if (ph.plant_id === plantId) {
       // Unassigning the primary promotes the next assigned plant rather than
@@ -12675,20 +12704,43 @@ async function unassignPlantFromPhoto(photoId, plantId) {
       // guards above stop new ones; this makes the action correct even on a
       // photo that already carries one.
       const next = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id !== plantId);
-      await restPatch("photos", `id=eq.${photoId}`, { plant_id: next ? next.plant_id : null });
-      if (next) await restDelete("photo_plants", `id=eq.${next.id}`);
+      const rows = await restPatch("photos", `id=eq.${photoId}`, { plant_id: next ? next.plant_id : null });
+      if (local) mergeRows("photos", rows);
+      if (next) { await restDelete("photo_plants", `id=eq.${next.id}`); gone.add(next.id); }
       // And drop any leftover tag for the plant just unassigned, or the next
       // promotion resurrects it.
       for (const stale of state.photoPlants.filter((pp) => pp.photo_id === photoId && pp.plant_id === plantId)) {
         await restDelete("photo_plants", `id=eq.${stale.id}`);
+        gone.add(stale.id);
       }
     } else {
       const row = state.photoPlants.find((pp) => pp.photo_id === photoId && pp.plant_id === plantId);
-      if (row) await restDelete("photo_plants", `id=eq.${row.id}`);
+      if (row) { await restDelete("photo_plants", `id=eq.${row.id}`); gone.add(row.id); }
+    }
+    if (local) {
+      state.photoPlants = state.photoPlants.filter((pp) => !gone.has(pp.id));
+      render();
+      return;
     }
     toast("Plant unassigned");
     await loadAll();
-  } catch (e) { toast(e.message, true); }
+  } catch (e) { toast(e.message, true); if (local) await loadAll(); }
+}
+
+// TAGB-1. One chip tap in the batch tagger. The busy flag stops a second tap
+// landing while the first is in flight: both would read the same stale state,
+// and two taps on an untagged photo would each try to become its primary.
+async function toggleBatchPlant(photoId, plantId) {
+  if (state.fileBatchBusy) return;
+  state.fileBatchBusy = true;
+  try {
+    const on = plantsAssignedToPhoto(photoId).some((pl) => pl.id === plantId);
+    if (on) await unassignPlantFromPhoto(photoId, plantId, { local: true });
+    else await assignPlantToPhoto(photoId, plantId, { local: true });
+  } finally {
+    state.fileBatchBusy = false;
+    render();
+  }
 }
 
 // "Move to another plant" was a separate modal for what is really this.
@@ -14116,20 +14168,24 @@ function renderLightbox() {
   const isLocation = state.lightbox.mode === "location";
   const isGallery = state.lightbox.mode === "gallery";
   const isFiling = state.lightbox.mode === "filing";
+  const isBatch = state.lightbox.mode === "fileBatch";
   const { plantId, locationId, photoId } = state.lightbox;
   const list = lightboxPhotoList();
   const idx = list.findIndex((p) => p.id === photoId);
   const p = list[idx];
   if (!p) { state.lightbox = null; return ""; }
   const url = state.photoUrlCache[p.drive_file_id];
-  const pl = (!isInbox && !isLocation && !isGallery && !isFiling) ? state.plants.find((x) => x.id === plantId) : (isGallery && p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null);
+  const pl = (!isInbox && !isLocation && !isGallery && !isFiling && !isBatch) ? state.plants.find((x) => x.id === plantId) : (isGallery && p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null);
   const loc = isLocation ? locationById(locationId) : null;
   const isPrimary = isLocation ? loc?.primary_photo_id === p.id : pl?.primary_photo_id === p.id;
   const plantnetSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "PlantNet") : null;
   const claudeSuggestion = isInbox ? pendingIdentifications(p.id).find((s) => s.source === "Claude") : null;
   const isIdentifying = state.identifyingPhotoId === p.id;
 
-  const titleLine = isFiling
+  const batchLoc = isBatch ? locationById(locationId) : null;
+  const titleLine = isBatch
+    ? `<div style="font-size:13.5px;">Tag the plants in this photo</div><div style="font-size:11px;color:#9FB0A3;">${batchLoc ? escapeHtml(locationPath(batchLoc)) : "No location"}</div>`
+    : isFiling
     ? `<div style="font-size:13.5px;">${fmtDate(photoDate(p))}</div><div style="font-size:11px;color:#9FB0A3;">${p.location_id && locationById(p.location_id) ? escapeHtml(locationById(p.location_id).name) : "No location yet"}</div>`
     : isInbox
     ? `<div style="font-size:13.5px;">Unfiled photo</div>`
@@ -14145,7 +14201,27 @@ function renderLightbox() {
     </div>`;
 
   let bottomActions;
-  if (isFiling) {
+  if (isBatch) {
+    // Every plant at the location, plus any already on this photo from
+    // elsewhere — otherwise a tag made somewhere else could not be removed here.
+    const on = plantsAssignedToPhoto(p.id);
+    const onIds = new Set(on.map((x) => x.id));
+    const here = batchLoc ? plantsAtLocation(batchLoc.id) : [];
+    const chips = [...here, ...on.filter((x) => !here.some((h) => h.id === x.id))];
+    const tagged = list.filter((x) => plantsAssignedToPhoto(x.id).length).length;
+    bottomActions = `
+      <div style="text-align:center;font-size:12px;color:#9FB0A3;margin-bottom:8px;">${tagged} of ${list.length} tagged &middot; tap every plant you can see</div>
+      ${chips.length ? `
+      <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-height:30vh;overflow-y:auto;">
+        ${chips.map((c) => `
+          <button class="btn btn-sm ${onIds.has(c.id) ? "btn-primary" : "btn-secondary"}" ${state.fileBatchBusy ? "disabled" : ""}
+                  onclick="event.stopPropagation();toggleBatchPlant('${p.id}','${c.id}')">${onIds.has(c.id) ? `${icon("check")} ` : ""}${escapeHtml(plantPickerName(c).primary)} <span class="mono" style="opacity:0.7;">${c.accession_number.slice(-4)}</span></button>`).join("")}
+      </div>` : `<div class="subtle" style="text-align:center;font-size:12.5px;color:#9FB0A3;">No plants are recorded at this location.</div>`}
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+        ${list.length > 1 ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();lightboxStep(1)">Next photo</button>` : ""}
+        <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();closeLightbox()">Done</button>
+      </div>`;
+  } else if (isFiling) {
     // Looking, not acting: every filing control is on the page behind.
     bottomActions = `<div class="subtle" style="text-align:center;font-size:12px;color:#9FB0A3;">Close to keep filing &middot; Esc</div>`;
   } else if (isInbox) {

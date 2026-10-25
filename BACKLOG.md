@@ -908,6 +908,13 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.57.0 — TAGB-1: tag a location's photos one by one
+On Photos needing a plant, Open (and any thumbnail) opens the lightbox over that card's photos with a chip per active
+plant at the location; tap to tag/untag, several per photo. Location page moved to the path text. The id list is a
+snapshot — tagging removes a photo from the queue, and a live list would close the lightbox under her.
+`assignPlantToPhoto`/`unassignPlantFromPhoto` gained `{ local: true }` (merge rows, no loadAll) for egress; only the
+tagger passes it. **Gotcha:** test.mjs `t()` does not await — async cases use `ta()`.
+
 ### v2.56.0 — DUPE-2: "Not duplicates" on Duplicate plants and Duplicate photos
 Each group gets a button; confirmed groups drop out of the tile, the window, Select extras and the google_photos_id
 carry-over, and sit under "N confirmed as different" with Flag again. Stored as exact id sets in

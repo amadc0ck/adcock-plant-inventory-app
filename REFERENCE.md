@@ -877,6 +877,7 @@ One system (`state.lightbox = { mode, photoId, plantId?/locationId? }`) covering
 - **`plant`** — a plant's photo timeline, with "Set as profile picture" and location editing
 - **`location`** — a container's photos, with "Set as main photo" and location editing
 - **`gallery`** — the Gallery's filtered result set, with View plant / View location jumps
+- **`fileBatch`** (v2.57.0, TAGB-1) — one "Photos needing a plant" card, tagged photo by photo with a chip per plant at the location. Carries `photoIds`, a **snapshot**: tagging removes a photo from the queue, so a live list would close the lightbox mid-batch. Tags via `assignPlantToPhoto`/`unassignPlantFromPhoto` with `{ local: true }`, which merges returned rows instead of `loadAll()` (~550 KB each).
 
 `lightboxPhotoList()` branches by mode to build the navigable list.
 

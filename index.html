@@ -491,6 +491,9 @@
   .todo-tasks{min-width:0;}
   .row-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(37,41,37,0.10);}
   .row-act{background:var(--parchment-dim);border:none;border-radius:20px;padding:5px 11px;font-size:12px;color:var(--ink);cursor:pointer;font-family:inherit;}
+  /* CHK-1. Inline icons in check-in rows and row buttons; an unsized <svg>
+     otherwise stretches to its container (see the .btn svg note). */
+  .row-act svg,.checkin-list svg{width:13px;height:13px;vertical-align:-2px;}
   .row-act:hover{background:var(--moss);color:#12200F;}
   /* One back link, used by every drilled-in screen. The label is now the place
      it returns to rather than always a tab name, so it can be long — "Names to
@@ -954,7 +957,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.57.0";
+const APP_VERSION = "2.58.0";
 const APP_UPDATED = "2026-10-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -4623,6 +4626,10 @@ function lastPhotoDateForPlant(plantId) {
   if (!dates.length) return null;
   return dates.sort().slice(-1)[0];
 }
+function lastCareNoteDateForPlant(plantId) {
+  const dates = state.careNotes.filter((c) => c.plant_id === plantId).map((c) => c.noted_on || c.created_at).filter(Boolean);
+  return dates.length ? dates.sort().slice(-1)[0] : null;
+}
 function checkInStatus(pl) {
   if (pl.status !== "active") return null;      // a dead or given-away plant is not a chore
   if (pl.next_check_date) {
@@ -4631,16 +4638,20 @@ function checkInStatus(pl) {
       ? { due: true, reason: "scheduled", days: over, label: over === 0 ? "Due today" : `${over}d overdue` }
       : { due: false, reason: "scheduled", days: over, label: `Due ${fmtDate(pl.next_check_date)}` };
   }
-  const last = lastPhotoDateForPlant(pl.id);
+  const lastPhoto = lastPhotoDateForPlant(pl.id);
   const interval = checkInIntervalDays();
   // Never photographed is a real gap, but it is a different one — it belongs to
   // the "no photos" queue, not here, or every new specimen would be overdue on
   // the day it is created.
-  if (!last) return null;
+  if (!lastPhoto) return null;
+  // CHK-1 (v2.58.0, Amanda's call): a care note is evidence she looked, so it
+  // resets the clock as a photo does. Scheduled dates above are unaffected —
+  // those still take "Checked it", as they always did for photos too.
+  const lastNote = lastCareNoteDateForPlant(pl.id);
+  const last = lastNote && String(lastNote).slice(0, 10) > String(lastPhoto).slice(0, 10) ? lastNote : lastPhoto;
+  const what = last === lastPhoto ? "a photo" : "a note";
   const age = daysBetween(last, todayISO());
-  return age >= interval
-    ? { due: true, reason: "stale", days: age, label: `${age}d since a photo` }
-    : { due: false, reason: "stale", days: age, label: `${age}d since a photo` };
+  return { due: age >= interval, reason: "stale", days: age, label: `${age}d since ${what}` };
 }
 function plantsNeedingCheckIn() {
   return state.plants
@@ -7580,7 +7591,7 @@ function reportSections() {
     // RPT-3. Two reasons a specimen wants a look, in one list: a scheduled
     // next_check_date that has arrived, or nothing photographed for longer
     // than the interval (14 days by default, adjustable in Settings).
-    { key: "checkIns", title: "Due for a check-in", sub: `Scheduled, or nothing photographed in ${checkInIntervalDays()} days`,
+    { key: "checkIns", title: "Due for a check-in", sub: `Scheduled, or no photo or note in ${checkInIntervalDays()} days`,
       items: plantsNeedingCheckIn().map((x) => x.pl)
         .filter((pl) => !openTasksForSubject("plant", pl.id).length), kind: "plant" },
     { key: "locationsNoPlants", title: "Locations not catalogued", sub: "Photographed, but no specimens recorded",
@@ -7684,6 +7695,8 @@ function taskGroup() {
 // do things. Reports as a separate destination was a place to look at work
 // rather than a place to work.
 function workQueue() {
+  // CHK-1. Seeing the To Do dashboard ends a check-in round; see checkInList().
+  state.checkInSession = null;
   const sections = reportSections();
   const duplicateGroups = findDuplicatePlantGroups();
   // Photo gaps route to the Gallery rather than an inline list — it already has
@@ -8172,6 +8185,7 @@ function workQueueDetail() {
         })()}
         ${open.items.length === 0
           ? `<div class="empty"><div class="display">Nothing here</div><div>Everything in this category is either in good shape or has a task.</div></div>`
+          : open.key === "checkIns" ? checkInList(open.items)
           : `<div class="card-grid">${open.items.map(renderItem).join("")}</div>`}
       </div>
     </div>`;
@@ -8318,6 +8332,68 @@ function reportRowActions(pl) {
   if (v === "recentlyWorked") out.push(btn("Add a note", `openModal('addCareNote',{plantId:'${pl.id}'})`));
   out.push(btn("Make a task", `openModal('newTask',{subject:{kind:'plant',id:'${pl.id}'}})`));
   return out.join("");
+}
+
+/* CHK-1. The check-in list as a walk through the garden: grouped by location
+   path, one compact row per plant, Note and Photo on every row.
+
+   Rows are held for the whole round. Adding a photo or a note is what takes a
+   plant OFF this list, so a live list would drop the row she just dealt with
+   and shift everything under her thumb — the WORK-1 problem again. Plants due
+   when she arrived stay, faded and ticked, until she is back on To Do
+   (workQueue() clears the session). Opening a plant and coming back keeps it. */
+function checkInList(dueNow) {
+  const sess = state.checkInSession || (state.checkInSession = []);
+  dueNow.forEach((pl) => { if (!sess.includes(pl.id)) sess.push(pl.id); });
+  const dueIds = new Set(dueNow.map((pl) => pl.id));
+  const groups = new Map();
+  sess.map((id) => state.plants.find((x) => x.id === id)).filter(Boolean).forEach((pl) => {
+    const loc = pl.location_id ? locationById(pl.location_id) : null;
+    const key = loc ? loc.id : "";
+    if (!groups.has(key)) groups.set(key, { loc, path: loc ? locationPath(loc) : "", plants: [] });
+    groups.get(key).plants.push(pl);
+  });
+  // Path order puts sublocations under their parent; no location goes last.
+  const ordered = [...groups.values()].sort((a, b) =>
+    (!a.loc) - (!b.loc) || a.path.localeCompare(b.path));
+  const done = sess.length - dueIds.size;
+  return `
+    <div class="checkin-list">
+    ${done ? `<p class="subtle" style="margin:-8px 0 12px;font-size:12.5px;">${icon("check")} ${done} done this round</p>` : ""}
+    <div class="stack">
+      ${ordered.map((g) => `
+        <div class="tag-card" style="padding:10px 14px;">
+          <div class="tag-id" style="${g.loc ? "cursor:pointer;" : ""}" ${g.loc ? `onclick="openLocation('${g.loc.id}')"` : ""}>${g.loc ? escapeHtml(g.path.replace(/ > /g, " \u203A ")) : "No location"}</div>
+          ${g.plants.map((pl) => checkInRow(pl, !dueIds.has(pl.id))).join("")}
+        </div>`).join("")}
+    </div>
+    </div>`;
+}
+function checkInRow(pl, isDone) {
+  const st = checkInStatus(pl);
+  const more = state.checkInMoreOpen === pl.id;
+  const btn = (label, onclick) =>
+    `<button class="row-act" onclick="event.stopPropagation();${onclick}">${label}</button>`;
+  return `
+    <div style="border-top:1px solid rgba(37,41,37,0.10);margin-top:8px;padding-top:8px;${isDone ? "opacity:0.5;" : ""}">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:160px;cursor:pointer;" onclick="openFromReport('plant','${pl.id}','checkIns')">
+          <span style="font-size:14px;">${isDone ? `${icon("check")} ` : ""}${plantDisplayHtml(pl)}</span>
+          <span class="mono subtle" style="font-size:11px;margin-left:4px;">${escapeHtml(pl.accession_number.slice(-4))}</span>
+          <div class="subtle" style="font-size:11.5px;">${isDone ? "Done" : st ? escapeHtml(st.label) + (st.reason === "scheduled" ? " (scheduled)" : "") : ""}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          ${btn("Note", `openModal('addCareNote',{plantId:'${pl.id}'})`)}
+          ${btn(`${icon("camera")} Photo`, `openModal('upload',{plantId:'${pl.id}'})`)}
+          ${btn("\u22EF", `state.checkInMoreOpen=${more ? "null" : `'${pl.id}'`};render()`)}
+        </div>
+      </div>
+      ${more ? `<div class="row-acts" style="border-top:none;margin-top:6px;padding-top:0;">
+        ${btn("Checked it", `clearCheckIn('${pl.id}')`)}
+        ${btn("Remind me in 14d", `snoozeCheckIn('${pl.id}', 14)`)}
+        ${btn("Make a task", `openModal('newTask',{subject:{kind:'plant',id:'${pl.id}'}})`)}
+      </div>` : ""}
+    </div>`;
 }
 
 function reportPlantItem(pl) {

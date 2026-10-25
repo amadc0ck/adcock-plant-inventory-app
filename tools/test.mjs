@@ -612,5 +612,30 @@ await ta("local untag of the primary promotes the tag and drops its row", async 
   eq(ctx.__eval("state.photoPlants.length"), 0);
 });
 
+/* ---------- Check-ins (CHK-1, v2.58.0) ---------- */
+const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+const chk = (notes) => setState(ctx, {
+  appSettings: {}, photoPlants: [], careNotes: notes,
+  plants: [{ id: "p", status: "active", location_id: "L", accession_number: "ABG-2026-0001" }],
+  photos: [{ id: "ph", plant_id: "p", taken_at: daysAgo(40) }] });
+
+t("a recent care note clears a stale check-in", () => {
+  // Amanda's call, 2026-10-25: a note is evidence she looked.
+  chk([{ plant_id: "p", noted_on: daysAgo(2) }]);
+  no(ctx.checkInStatus(ctx.__eval("state.plants[0]")).due);
+});
+t("an old care note does not", () => {
+  chk([{ plant_id: "p", noted_on: daysAgo(30) }]);
+  ok(ctx.checkInStatus(ctx.__eval("state.plants[0]")).due);
+});
+t("a done plant stays on the list for the rest of the round", () => {
+  // Filing the photo removes it from the queue; the row must not vanish.
+  chk([]);
+  setState(ctx, { checkInSession: null });
+  ctx.checkInList([ctx.__eval("state.plants[0]")]);
+  const html = ctx.checkInList([]);
+  ok(html.includes("1 done this round") && html.includes(">Done<"));
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

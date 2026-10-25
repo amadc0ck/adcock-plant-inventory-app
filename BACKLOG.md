@@ -908,6 +908,12 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.58.0 — CHK-1: Due for a check-in as a grouped list, notes count
+Rows grouped by location path (sublocations under parents, No location last) with Note, Photo (upload form, plant
+prefilled) and ⋯ (Checked it / snooze / task). Rows done this round stay, faded, until To Do is shown again —
+`state.checkInSession`, cleared in `workQueue()`. **Amanda's call 2026-10-25:** a care note now resets the stale
+clock like a photo (`lastCareNoteDateForPlant`). Scheduled `next_check_date` still needs Checked it.
+
 ### v2.57.0 — TAGB-1: tag a location's photos one by one
 On Photos needing a plant, Open (and any thumbnail) opens the lightbox over that card's photos with a chip per active
 plant at the location; tap to tag/untag, several per photo. Location page moved to the path text. The id list is a

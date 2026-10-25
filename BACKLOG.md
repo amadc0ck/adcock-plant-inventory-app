@@ -908,6 +908,13 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.56.0 — DUPE-2: "Not duplicates" on Duplicate plants and Duplicate photos
+Each group gets a button; confirmed groups drop out of the tile, the window, Select extras and the google_photos_id
+carry-over, and sit under "N confirmed as different" with Flag again. Stored as exact id sets in
+`app_settings.confirmed_not_duplicates` (JSON, no SQL). Hidden only while every member is in one confirmed set, so a
+new record joining the group brings it back. Duplicate species deliberately left out — same-name taxa are real dupes.
+**Gotcha:** `escapeHtml` does not escape `"`, so ids go into onclick comma-joined, never as JSON.
+
 ### v2.55.0 — UPL-2: specimen "+ Add photos" opens the upload form
 Plant and its location prefilled, so uploads and Google Photos imports land filed. The old target (attach photos
 already in To Do) is a link inside the upload form.

@@ -538,5 +538,34 @@ t("no GPS IFD means no location", () => {
   eq(ctx.parseExifGps(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer), null);
 });
 
+/* ---------- Not duplicates (DUPE-2, v2.56.0) ---------- */
+const dupePlants = (ids) => ids.map((id) => ({ id, taxa_id: "t1", location_id: "L" }));
+const confirmed = (sets) => ({ confirmed_not_duplicates: JSON.stringify(sets) });
+
+t("a confirmed plant group stops being flagged", () => {
+  setState(ctx, { plants: dupePlants(["a", "b"]), appSettings: confirmed([{ kind: "plant", ids: ["a", "b"] }]) });
+  eq(ctx.findDuplicatePlantGroups().length, 0);
+  eq(ctx.findDuplicatePlantGroups({ confirmed: true }).length, 1);
+});
+t("a new plant joining a confirmed group brings it back", () => {
+  // Nobody checked "c" against the other two. Hiding on any overlap would
+  // bury exactly the duplicate the tile exists to catch.
+  setState(ctx, { plants: dupePlants(["a", "b", "c"]), appSettings: confirmed([{ kind: "plant", ids: ["a", "b"] }]) });
+  eq(ctx.findDuplicatePlantGroups().length, 1);
+});
+t("merging one away keeps the rest of a confirmed group hidden", () => {
+  setState(ctx, { plants: dupePlants(["a", "b"]), appSettings: confirmed([{ kind: "plant", ids: ["a", "b", "c"] }]) });
+  eq(ctx.findDuplicatePlantGroups().length, 0);
+});
+t("a plant confirmation does not hide photos with the same ids", () => {
+  setState(ctx, { photos: [{ id: "a", taken_at: "2026-01-01T00:00:00Z" }, { id: "b", taken_at: "2026-01-01T00:00:00Z" }],
+    appSettings: confirmed([{ kind: "plant", ids: ["a", "b"] }]) });
+  eq(ctx.findDuplicatePhotoGroups().length, 1);
+});
+t("a junk confirmations value degrades to nothing confirmed", () => {
+  setState(ctx, { plants: dupePlants(["a", "b"]), appSettings: { confirmed_not_duplicates: "{not json" } });
+  eq(ctx.findDuplicatePlantGroups().length, 1);
+});
+
 console.log(`\n  ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

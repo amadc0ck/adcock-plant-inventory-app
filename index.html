@@ -954,8 +954,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.55.0";
-const APP_UPDATED = "2026-10-04";
+const APP_VERSION = "2.56.0";
+const APP_UPDATED = "2026-10-25";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -7407,7 +7407,47 @@ function screenLocationDetail() {
   </div>`;
 }
 
-function findDuplicatePlantGroups() {
+/* DUPE-2. "Not duplicates." Both checks below are heuristics — same taxon in
+   one bucket, same capture second — and both have real false positives: Curio
+   repens 0150 and Bucket 40 were confirmed as different plants by hand, and a
+   burst shares a second. Without a way to say so, a checked group stays
+   flagged forever and the tile learns her to ignore it.
+
+   Stored as the exact SET she looked at, in one app_settings row (JSON list
+   of {kind, ids}) — no schema change, and backup/restore already carry it.
+   A group is hidden only while every member is inside one confirmed set: a
+   new third plant joining the bucket brings the group back, because nobody
+   checked that one; a member merged or deleted away keeps the rest hidden.
+   Stale ids from deleted records are harmless. */
+function confirmedDistinctSets() {
+  try {
+    const v = JSON.parse(state.appSettings.confirmed_not_duplicates || "[]");
+    return Array.isArray(v) ? v.filter((e) => e && Array.isArray(e.ids)) : [];
+  } catch (_) { return []; } // a junk value degrades to "nothing confirmed"
+}
+function isConfirmedDistinct(kind, ids) {
+  return confirmedDistinctSets().some((e) => e.kind === kind && ids.every((id) => e.ids.includes(id)));
+}
+// ids arrive comma-joined from an onclick: escapeHtml does not escape double
+// quotes, so a JSON array inside the attribute would end it early.
+async function setConfirmedDistinct(kind, idList, confirmed) {
+  const ids = String(idList).split(",").filter(Boolean);
+  const key = [...ids].sort().join(",");
+  const rest = confirmedDistinctSets().filter((e) => !(e.kind === kind && [...e.ids].sort().join(",") === key));
+  // Un-confirming removes every set that covers this group, or a superset
+  // left behind would keep it hidden and the undo would look broken.
+  const kept = confirmed ? rest : rest.filter((e) => !(e.kind === kind && ids.every((id) => e.ids.includes(id))));
+  const next = confirmed ? [...kept, { kind, ids: [...ids].sort() }] : kept;
+  const value = JSON.stringify(next);
+  try {
+    await restUpsert("app_settings", [{ key: "confirmed_not_duplicates", value, updated_at: new Date().toISOString() }], "key");
+    state.appSettings.confirmed_not_duplicates = value;
+    toast(confirmed ? "Marked as not duplicates" : "Flagged again");
+    render();
+  } catch (e) { toast(e.message, true); }
+}
+
+function findDuplicatePlantGroups({ confirmed = false } = {}) {
   const groups = {};
   state.plants.forEach((pl) => {
     // Keyed on the taxon now: two specimens of the same kind in one place are
@@ -7417,7 +7457,9 @@ function findDuplicatePlantGroups() {
     const key = `${pl.location_id || "none"}|${nameKey}`;
     (groups[key] = groups[key] || []).push(pl);
   });
-  return Object.values(groups).filter((g) => g.length > 1);
+  // confirmed:true returns only the groups she has marked "Not duplicates".
+  return Object.values(groups).filter((g) => g.length > 1
+    && isConfirmedDistinct("plant", g.map((pl) => pl.id)) === confirmed);
 }
 
 // Reports is a list of gaps, each drilled into rather than all expanded at
@@ -7430,7 +7472,7 @@ function findDuplicatePlantGroups() {
 //
 // The case this catches in practice is importing from Google Photos something
 // already uploaded from the phone. Both carry the same createTime/EXIF date.
-function findDuplicatePhotoGroups() {
+function findDuplicatePhotoGroups({ confirmed = false } = {}) {
   const byTime = new Map();
   state.photos.forEach((p) => {
     if (!p.taken_at) return; // upload dates collide constantly and mean nothing
@@ -7438,8 +7480,11 @@ function findDuplicatePhotoGroups() {
     if (!byTime.has(key)) byTime.set(key, []);
     byTime.get(key).push(p);
   });
+  // Confirmed groups drop out of every caller, carryOverGooglePhotosIds
+  // included: a burst shot she confirmed is a different photo, and must not
+  // donate its google_photos_id to its neighbour.
   return Array.from(byTime.values())
-    .filter((g) => g.length > 1)
+    .filter((g) => g.length > 1 && isConfirmedDistinct("photo", g.map((p) => p.id)) === confirmed)
     .sort((a, b) => new Date(photoDate(b[0])) - new Date(photoDate(a[0])));
 }
 
@@ -8847,6 +8892,23 @@ function screenSettings() {
 }
 
 
+// DUPE-2. The undo for "Not duplicates": groups she confirmed, collapsed by
+// default so they do not crowd the ones still waiting on a decision.
+function confirmedDistinctList(kind, groups, describe) {
+  if (!groups.length) return "";
+  return `
+    <details style="margin-top:16px;">
+      <summary class="subtle" style="cursor:pointer;font-size:12.5px;">${countLabel(groups.length, "group", "groups")} confirmed as different</summary>
+      <div class="stack" style="margin-top:8px;">
+        ${groups.map((g) => `
+          <div class="row surface" style="padding:10px 12px;gap:10px;">
+            <div style="min-width:0;flex:1;">${describe(g)}</div>
+            <button class="btn-ghost" style="padding:0;font-size:12px;flex-shrink:0;" onclick="setConfirmedDistinct('${kind}','${g.map((x) => x.id).join(",")}',false)">Flag again</button>
+          </div>`).join("")}
+      </div>
+    </details>`;
+}
+
 function modalContent() {
   if (!state.modal) return "";
   const { type, data } = state.modal;
@@ -9737,6 +9799,7 @@ function modalContent() {
 
   if (type === "duplicatePhotos") {
     const groups = findDuplicatePhotoGroups();
+    const confirmedGroups = findDuplicatePhotoGroups({ confirmed: true });
     const extras = groups.reduce((n, g) => n + g.length - 1, 0);
     const sel = state.dupeSelected;
     return `
@@ -9758,7 +9821,10 @@ function modalContent() {
             const keepId = bestCopyOf(g).id;
             return `
             <div class="surface" style="padding:12px;">
-              <div class="mono subtle" style="font-size:11px;margin-bottom:8px;">${fmtDate(g[0].taken_at)} · ${countLabel(g.length, "copy", "copies")}</div>
+              <div class="row" style="margin-bottom:8px;">
+                <div class="mono subtle" style="font-size:11px;">${fmtDate(g[0].taken_at)} · ${countLabel(g.length, "copy", "copies")}</div>
+                <button class="btn btn-secondary btn-sm" style="flex-shrink:0;" onclick="setConfirmedDistinct('photo','${g.map((p) => p.id).join(",")}',true)" title="These are different photos — stop flagging them">Not duplicates</button>
+              </div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
                 ${g.map((p) => {
                   const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
@@ -9783,6 +9849,11 @@ function modalContent() {
             </div>`;
           }).join("")}
         </div>`}
+      ${confirmedDistinctList("photo", confirmedGroups, (g) => `
+        <div style="display:flex;gap:6px;">
+          ${g.map((p) => `<div class="card-media ratio-3x4" style="width:44px;border-radius:4px;cursor:pointer;" onclick="closeModal();openGalleryLightbox('${p.id}')">${photoImg(p)}</div>`).join("")}
+        </div>
+        <span class="mono subtle" style="font-size:11px;">${fmtDate(g[0].taken_at)}</span>`)}
       <button class="btn-ghost" style="margin-top:16px;" onclick="state.dupeSelected=new Set();closeModal()">Done</button>`;
   }
 
@@ -9908,10 +9979,11 @@ function modalContent() {
 
   if (type === "duplicatePlants") {
     const groups = findDuplicatePlantGroups();
+    const confirmedGroups = findDuplicatePlantGroups({ confirmed: true });
     return `
       <div class="modal-handle"></div>
       <h3 class="display" style="font-size:18px;font-weight:500;margin:0 0 2px;">Possible duplicate plants</h3>
-      <p class="subtle" style="margin:0 0 14px;">Same name in the same location — likely one plant entered twice. "Keep this" merges the others into it; photos, tags and history move across.</p>
+      <p class="subtle" style="margin:0 0 14px;">Same name in the same location — likely one plant entered twice. "Keep this" merges the others into it; photos, tags and history move across. "Not duplicates" stops flagging a group you have checked.</p>
       ${groups.length === 0 ? `<p class="subtle">No duplicates found.</p>` : `
         <div class="stack">
           ${groups.map((group) => `
@@ -9927,8 +9999,12 @@ function modalContent() {
                       <button class="btn btn-secondary btn-sm" onclick="mergePlants('${pl.id}','${other.id}')" title="Keep ${pl.accession_number}, merge ${other.accession_number} into it">Keep this</button>`).join("")}
                   </div>
                 </div>`).join("")}
+              <button class="btn-ghost" style="padding:8px 0 0;font-size:12px;" onclick="setConfirmedDistinct('plant','${group.map((pl) => pl.id).join(",")}',true)" title="These are different plants — stop flagging them">Not duplicates</button>
             </div>`).join("")}
         </div>`}
+      ${confirmedDistinctList("plant", confirmedGroups, (g) => `
+        <span style="font-size:12.5px;min-width:0;">${g.map((pl) => `<span class="mono" style="font-size:11px;opacity:0.7;cursor:pointer;" onclick="closeModal();openPlant('${pl.id}')">${pl.accession_number}</span>`).join(", ")}
+          ${escapeHtml(plantDisplayName(g[0]))}</span>`)}
       <button class="btn-ghost" style="margin-top:16px;" onclick="closeModal()">Done</button>`;
   }
 

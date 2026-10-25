@@ -533,6 +533,8 @@ All three FKs are `on delete set null`, so a wishlist row never blocks deleting 
 Key/value, one row per setting, RLS on (v1.84.0). Holds `check_in_interval_days`
 and, since v2.11.0, the weather configuration: `garden_latitude`,
 `garden_longitude`, `frost_watch_f`, `frost_alert_f`, `heat_advisory_f` (§14).
+Since v2.56.0 also `confirmed_not_duplicates`: a JSON list of `{kind: "plant"|"photo", ids: [...]}`, the groups
+Amanda marked "Not duplicates". A duplicate group is hidden only while all its ids sit inside one set (DUPE-2).
 Adding a setting is an insert, never a migration — which is why WEATHER-1
 shipped with no SQL at all. Read into `state.appSettings` as a plain object at load; `settingInt()` coerces and falls back, so a missing table, a missing key or a junk value all degrade to the built-in default rather than breaking.
 

@@ -538,6 +538,18 @@ order by location_count desc;
 
 ## Open — verified 2026-08-28, end of session
 
+### GUEST-1 — read-only guest access for a few named people — `ready`
+
+Chosen 2026-09-21 over a public static site; supersedes the 2026-08-31 three-tier sketch.
+**The publishable key ships in `index.html`, so UI gating is cosmetic** — restriction lives in the DB.
+RLS is row-level: denying a table or rows by JWT email needs no new role; hiding a **column** needs
+`grant select (cols)` to a separate role. Tier 1, no roles: split the 18 `loadAll()` tables into select +
+`not is_viewer()` writes; deny `locations`; deny `app_settings` `garden_latitude`/`garden_longitude`
+(**her coordinates, readable by any guest — found 2026-09-21**); limit `photos` to `primary_photo_id`
+or `is_favorite`, which is both the hero-photo rule and the egress cap. Tier 2, deferred: a
+`garden_viewer` role + column grants for `plants.acquisition_*`. **The failure mode is HER OWN writes
+silently narrowing** — verify every write path as herself. Open: viewer emails; which photo rule.
+
 ### AI-4 — cite San Marcos Growers when researching a species — `ready`
 
 Requested 2026-09-03. Species facts suggested by AI arrive unattributed, so
@@ -896,6 +908,16 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.55.0 — UPL-2: specimen "+ Add photos" opens the upload form
+Plant and its location prefilled, so uploads and Google Photos imports land filed. The old target (attach photos
+already in To Do) is a link inside the upload form.
+
+### v2.54.0 — GAL-7 all photos + date range, GPS-0 probe
+Gallery: "All N photos" button; results paged 60 at a time (was every match at once); newest/oldest toggle shared by
+grid and lightbox; Filters gains From/To date (photoDate, inclusive) plus Last 30 days / This year / year shortcuts.
+GPS-0: Edit photo → "Check for a location in the photo file" parses EXIF GPS from get-photo bytes. Nothing stored.
+**Open:** Amanda checks a few photos. If GPS is present → GPS-1: `photos.gps_lat/gps_lng`, backfill, read at upload; deny to guests.
+
 ### v2.53.0 — UPL-1: optional location and plant on every upload
 Upload form has Location (searchable) and Plant fields, preset from the page it was opened from; both apply to every
 selected file, and a plant fills an empty location from where it lives. Google Photos import now sends plantId too
@@ -908,16 +930,6 @@ Now `state.filingElsewhereOpen` (ontoggle) or any active filter holds it open, a
 `open` from a kept <details>. Rule: a <details> containing inputs must take its open state from `state`.
 
 ### v2.51.0 — NAME-6: "Echeveria Canadian" could not be created
-### v2.55.0 — UPL-2: specimen "+ Add photos" opens the upload form
-Plant and its location prefilled, so uploads and Google Photos imports land filed. The old target (attach photos
-already in To Do) is a link inside the upload form.
-
-### v2.54.0 — GAL-7 all photos + date range, GPS-0 probe
-Gallery: "All N photos" button; results paged 60 at a time (was every match at once); newest/oldest toggle shared by
-grid and lightbox; Filters gains From/To date (photoDate, inclusive) plus Last 30 days / This year / year shortcuts.
-GPS-0: Edit photo → "Check for a location in the photo file" parses EXIF GPS from get-photo bytes. Nothing stored.
-**Open:** Amanda checks a few photos. If GPS is present → GPS-1: `photos.gps_lat/gps_lng`, backfill, read at upload; deny to guests.
-
 An unquoted cultivar parsed as genus only, so the row's identity key equalled the bare-Echeveria taxon; the unique
 index refused it and findTaxonByName() could not explain why. Failed in batch add (2026-10-03) and from File photos.
 `parseBotanicalName()` now returns `complete`; `ensureTaxonForName()` stores parts only from a complete parse, else the
@@ -947,18 +959,6 @@ Check-ins · Recents (plant). Filter persists per stage across photos; key numbe
 
 ### v2.46.0 — FILE-1 follow-up: smaller queue, row-aware location picks
 Queue was 2,000+: a plant is now required only where the location holds plants and is not an archive (or inside one).
-compact rows carry `data-anchor`; add it to any other list whose upper content changes height on a toggle.
-
-### v2.43.0 — LOC-10: add a location from inside a location
-"+ Add location here" on every location page opens New location with the parent preset (and named in the title).
-Shown even with no children — the first pot is when it is needed. No schema change. `app_errors` SQL ran 2026-10-04.
-
-### v2.42.0 — LOG-1 + BATCH-2: error history, batch rows fail alone
-LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
-BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
-failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
-Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
-Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
 Location picks: Claude → same as last → next / previous sibling (numeric name sort) → locations with check-ups due → recents.
 Plants here are listed check-up-due first. Anchor is the last location filed on the page, else the most recent anywhere.
 
@@ -971,6 +971,18 @@ Writes merge into state (no loadAll) except via the assign / new-plant modals, a
 ### v2.44.0 — SELECT-1: To Do no longer jumps on Select / Cancel
 Select mode hides the work queue, weather and undo strip above the grid; scrollY was kept, so the grid slid a row or more.
 `renderKeepingAnchor()` pins the first visible `[data-anchor]` card to its screen position instead. Inbox cards and
+compact rows carry `data-anchor`; add it to any other list whose upper content changes height on a toggle.
+
+### v2.43.0 — LOC-10: add a location from inside a location
+"+ Add location here" on every location page opens New location with the parent preset (and named in the title).
+Shown even with no children — the first pot is when it is needed. No schema change. `app_errors` SQL ran 2026-10-04.
+
+### v2.42.0 — LOG-1 + BATCH-2: error history, batch rows fail alone
+LOG-1: every error toast and uncaught error goes to `app_errors`, queued locally first; Settings → Error history. SQL in REFERENCE.
+BATCH-2: createBatch's single try stopped at the first failure (11 entered, 6 saved, 2026-10-03). Each row now fails alone;
+failures stay in the form with their reason. Scheduled repaints wait while a pointer is down, so a click cannot be eaten.
+Gotcha: other `onchange="...render()"` fields can still eat the next click; convert to scheduleRender() as found.
+Open: what actually failed on 2026-10-03 — unrecorded; query `plants` created that day once signed in.
 
 ### v2.41.0 — CROP-1 + RENDER-1: portrait crops, typing no longer jumps
 CROP-1: every photo crop is 3:4 (iPhone portrait), was 1:1 / 4:3. Landscape shots crop harder; use the focal point.
@@ -1005,18 +1017,6 @@ missing. Do not reopen the is_hybrid half.
 `taxa_identity_uniq` is live — **read back from `pg_indexes` 2026-09-11**, all
 five key expressions and the partial predicate intact. Identity is
 `(genus, species_epithet, infraspecific, cultivar, working_label)` lowercased
-  rest of the restore with them.
-
-`isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
-`taxa` may grow another unique index, and bare 23505 would then send her to
-Merge over something unrelated.
-
-**Testing note worth keeping:** the first version of its SQLSTATE test used a
-message containing the word "duplicate", and a mutant matching only that word
-survived it. The test now carries neither the name nor the prose, so it can
-only pass through the branch it is testing. A test that cannot fail the mutation
-it was written for is not evidence.
-
 and trimmed, cultivar de-quoted, partial on a present genus. Built clean:
 157 rows, 157 distinct keys.
 
@@ -1029,6 +1029,18 @@ Three paths can now hit it, and `restPost("taxa")` was only one of them:
   with the same identity under a different id would have died mid-restore on a
   raw error. It now names what is in the way. **It does not skip the row:**
   the plants referencing that `taxa_id` would fail the FK next and take the
+  rest of the restore with them.
+
+`isTaxonIdentityClash()` matches the CONSTRAINT NAME first, SQLSTATE second —
+`taxa` may grow another unique index, and bare 23505 would then send her to
+Merge over something unrelated.
+
+**Testing note worth keeping:** the first version of its SQLSTATE test used a
+message containing the word "duplicate", and a mutant matching only that word
+survived it. The test now carries neither the name nor the prose, so it can
+only pass through the branch it is testing. A test that cannot fail the mutation
+it was written for is not evidence.
+
 **Residual gap:** a taxon created from a common name alone parses no genus and
 is outside the partial index. Unchanged, and still not covered.
 
@@ -1069,18 +1081,6 @@ so *Xerosicyos* is untouched). Eight tests, both halves mutation-verified.
 are on survives, matching "Keep this" on the duplicates tile. `mergePlants()`
 gained `opts.locationId`, asked for **only when the two are in different
 places** — the duplicates-in-one-bucket case must not learn her to click past a
-**Species with no specimens.** `ensureTaxonForName()` writes the taxon before
-linking the specimen, so a failed link orphans one that no screen can reach.
-Wished-for species are excluded: having no specimen is what a wish is.
-
-**Duplicate species**, grouped on `nameKey()` of the composed name only.
-Common names are deliberately out — two unrelated plants are both "Ghost
-Plant", and a tile that cries wolf stops being read.
-
-`mergeTaxa()` moves specimens, suggestions (`taxa_id` AND `value_id`), wishes
-and task subjects, then **fills only BLANK fields** on the survivor from the
-loser — discarding a filled-in `soil` would undo PROF work and buy another AI
-call. Six tests, mutation-verified.
 question. A survivor with no location silently inherits the other's.
 
 **Locations.** `mergeLocations()` is entirely new; `deleteLocation()`
@@ -1093,6 +1093,18 @@ never offered. Two tests, mutation-verified.
 
 ### v2.35.0 — two species-hygiene tiles, and mergeTaxa
 
+**Species with no specimens.** `ensureTaxonForName()` writes the taxon before
+linking the specimen, so a failed link orphans one that no screen can reach.
+Wished-for species are excluded: having no specimen is what a wish is.
+
+**Duplicate species**, grouped on `nameKey()` of the composed name only.
+Common names are deliberately out — two unrelated plants are both "Ghost
+Plant", and a tile that cries wolf stops being read.
+
+`mergeTaxa()` moves specimens, suggestions (`taxa_id` AND `value_id`), wishes
+and task subjects, then **fills only BLANK fields** on the survivor from the
+loser — discarding a filled-in `soil` would undo PROF work and buy another AI
+call. Six tests, mutation-verified.
 
 
 ### v2.34.0 — DEDUPE-1: three renders stopped hand-rolling "which plants does this photo show"
@@ -1123,18 +1135,6 @@ most readable — the reason to prefer it is that it looks right, and the contra
 is a bonus rather than the argument.
 
 **Accents darkened in HSL, preserving hue.** Darkening them toward the brand
-
-Amanda reads the app on an iPad **in the garden, in direct sun**, where a dark
-screen washes out. Different problem from "light mode"; the answer is contrast.
-
-Two layers. **Brand** holds the eight logo colours, fixed. **Semantic** says what
-a colour is FOR — `--ground`, `--on-ground`, `--panel`, `--on-panel` — the
-permanent fix for the bug that shipped three times: a component naming `--ink`
-rather than "text on whatever I am on" inverts when moved. Old names stay as
-aliases so ~500 references keep working and migrate gradually.
-
-`--on-ground-muted` (#B2BAA7) is new and had to be — AUDIT F7: nothing reached
-AA on the dark ground but two near-whites and orange. Daylight accents are
 green was tried first and muddied everything: Bloom Orange went khaki, Terra
 Cotta went brown. In HSL they stay recognisably themselves at 4.6:1+.
 
@@ -1147,6 +1147,18 @@ was starting from the logo instead of from a target ratio.
 Every other screen themes through the aliases and has not been seen in daylight.
 
 ### v2.33.0 — THEME-1, a daylight theme and the token layer under it
+
+Amanda reads the app on an iPad **in the garden, in direct sun**, where a dark
+screen washes out. Different problem from "light mode"; the answer is contrast.
+
+Two layers. **Brand** holds the eight logo colours, fixed. **Semantic** says what
+a colour is FOR — `--ground`, `--on-ground`, `--panel`, `--on-panel` — the
+permanent fix for the bug that shipped three times: a component naming `--ink`
+rather than "text on whatever I am on" inverts when moved. Old names stay as
+aliases so ~500 references keep working and migrate gradually.
+
+`--on-ground-muted` (#B2BAA7) is new and had to be — AUDIT F7: nothing reached
+AA on the dark ground but two near-whites and orange. Daylight accents are
 darkened to 4.6–6.2:1.
 
 **Two traps, both caught by LOOKING, not reasoning.** `--bg:var(--ground)`
@@ -4380,6 +4392,10 @@ alter table photos add column if not exists is_favorite boolean not null default
 create index if not exists photos_favorite_idx on photos (is_favorite) where is_favorite;
 ```
 
+**This SQL was never run until 2026-10-04** — Favourite failed with "column does not exist" from v1.62.0
+on. Ran and verified live that day. `schema-check.mjs` reported 0 missing throughout: it does not
+pick up `is_favorite` from `toggleFavorite()`'s computed body, so a clean run does not cover every write.
+
 ### v1.61.0
 
 **LOCP-4 and TAXP-1 — closing the filing loop.** Schema: none.
@@ -4392,10 +4408,6 @@ create index if not exists photos_favorite_idx on photos (is_favorite) where is_
 ### v1.60.0
 
 **Timeline as a journey; edit a photo from anywhere.** Schema: none.
-**This SQL was never run until 2026-10-04** — Favourite failed with "column does not exist" from v1.62.0
-on. Ran and verified live that day. `schema-check.mjs` reported 0 missing throughout: it does not
-pick up `is_favorite` from `toggleFavorite()`'s computed body, so a clean run does not cover every write.
-
 
 - **The specimen timeline is chronological, split where the location changes.** Per-location columns made sense when one plant record stood for several physical plants; since SPECIES-2 a specimen lives in one place at a time, and what actually varies is *when it moved*. Amanda's Santa Rita has photos across four former homes — read in order, that is the plant's life story, which columns hid.
 - Each run is headed with the location and its date span. A plant that moved away and came back shows **two separate stays**, not one merged block.

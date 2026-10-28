@@ -34,10 +34,9 @@ Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
 
 **Sequencing chosen by Amanda:** pickers first (done), then the rest.
 
-### OUTSTANDING SQL — WALL-1 migration, 2026-10-28
-v2.59.0 ships before it and degrades cleanly: no Cup colour view until `cup_paints` exists. The migration is in
-REFERENCE → `cup_paints`. Verify with the per-row count (Top 31 / Middle 30 / Bottom 31, colours as on the map,
-no "(no colour)" rows). Any cup it missed is a name with no number or a row not typed `row`.
+### OUTSTANDING SQL — NOTHING OUTSTANDING
+WALL-1 migration **ran 2026-10-28** and verified: per-row counts match the colour map exactly (31 / 30 / 31, no
+"(no colour)" rows). Paint changes from here on are made in the app, not in SQL.
 
 ### Previous — one statement, held deliberately
 

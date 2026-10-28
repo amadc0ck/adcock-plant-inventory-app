@@ -937,6 +937,58 @@
     .detail-split .detail-media{width:34%;max-width:420px;}
     .detail-split .detail-actions{width:270px;flex-shrink:0;padding:18px 18px 18px 0;}
   }
+
+  /* WALL-1. The wall map on an area whose children are rows of cups. Each row
+     is its own grid so a 30-cup row spans the same width as a 31-cup one, the
+     way the paint map draws it. The box scrolls sideways on a phone rather than
+     shrinking 31 cups to 9px. Paint swatches come from cup_paints as data, so
+     no paint colour lives in this stylesheet. */
+  .wall-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;}
+  .wall-tools .search-input{flex:1 1 220px;min-width:0;margin-bottom:0;}
+  .wall-box{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;overflow-x:auto;}
+  .wall-box.painting .wall-cup{cursor:crosshair;}
+  .wall-inner{min-width:760px;padding:14px 12px 10px;display:flex;flex-direction:column;gap:12px;}
+  .wall-row{display:grid;grid-template-columns:70px minmax(0,1fr);gap:10px;align-items:center;}
+  .wall-row-label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.4px;text-transform:uppercase;color:var(--on-ground-muted);line-height:1.3;}
+  .wall-row-label span{display:block;color:var(--moss);}
+  .wall-cups{display:grid;gap:4px;}
+  .wall-cup{position:relative;aspect-ratio:3/4;padding:0;border:1px solid var(--line);background:rgba(112,134,107,0.22);color:var(--on-ground-muted);
+    border-radius:3px 3px 40% 40% / 3px 3px 26% 26%;cursor:pointer;display:flex;justify-content:center;align-items:flex-start;}
+  .wall-cup .n{font-family:'IBM Plex Mono',monospace;font-size:10px;margin-top:3px;font-variant-numeric:tabular-nums;}
+  .wall-cup .dot{position:absolute;left:50%;top:60%;width:56%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:var(--dot);}
+  .wall-cup.hollow .dot{background:transparent;box-shadow:inset 0 0 0 2px var(--dot);}
+  .wall-cup.empty{background:transparent;border-style:dashed;}
+  .wall-cup.empty .dot{display:none;}
+  .wall-cup.painted{background:var(--paint);border:1px solid rgba(0,0,0,0.35);color:var(--paint-ink);}
+  .wall-cup.painted .dot{display:none;}
+  .wall-cup.hammered,.wall-sw.hammered,.wall-legend i.hammered{background-image:radial-gradient(circle at 30% 30%,rgba(255,255,255,0.18) 0 18%,transparent 19%),radial-gradient(circle at 70% 65%,rgba(0,0,0,0.14) 0 16%,transparent 17%);}
+  .wall-cup.dim{opacity:0.22;}
+  .wall-cup.hit{box-shadow:0 0 0 2px var(--orange);}
+  .wall-cup.current{box-shadow:0 0 0 2px var(--cream);transform:translateY(-3px);opacity:1;z-index:1;}
+  .wall-cup:focus-visible,.wall-sw:focus-visible,.wall-nb:focus-visible{outline:2px solid var(--orange);outline-offset:2px;}
+  .wall-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--on-ground-muted);margin:8px 2px 14px;}
+  .wall-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px;background:var(--c);}
+  .wall-legend i.hollow{background:transparent;box-shadow:inset 0 0 0 2px var(--c);}
+  .wall-legend i.cupi{width:12px;height:15px;border-radius:2px 2px 40% 40%;border:1px solid rgba(0,0,0,0.35);}
+  .wall-legend i.emptyi{border:1px dashed var(--on-ground-muted);border-radius:2px;background:transparent;}
+  .wall-brush{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-size:12.5px;color:var(--on-ground-muted);margin-bottom:10px;}
+  .wall-swatches{display:flex;flex-wrap:wrap;gap:6px;}
+  .wall-sw{width:24px;height:30px;padding:0;border-radius:3px 3px 40% 40% / 3px 3px 26% 26%;border:1px solid rgba(0,0,0,0.35);cursor:pointer;background:var(--paint);}
+  .wall-sw.on{outline:2px solid var(--orange);outline-offset:2px;}
+  .wall-card{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px 26px;align-items:start;}
+  .wall-card > div{min-width:0;display:flex;flex-direction:column;gap:10px;}
+  .wall-paintline{display:flex;align-items:center;gap:8px;font-size:13px;}
+  .wall-paintline i{width:14px;height:18px;border-radius:2px 2px 40% 40%;border:1px solid rgba(0,0,0,0.35);flex:none;background:var(--paint);}
+  .wall-plant{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px;}
+  .wall-compass{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:280px;}
+  .wall-nb{font:inherit;font-size:12px;padding:7px 4px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--cream);cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0;}
+  .wall-nb small{font-size:10px;color:var(--on-ground-muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .wall-nb:disabled{opacity:0.3;cursor:default;}
+  .wall-nb.here{border:0;color:var(--on-ground-muted);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:default;justify-content:center;}
+  .wall-compass .up{grid-column:2;grid-row:1;} .wall-compass .left{grid-column:1;grid-row:2;} .wall-compass .here{grid-column:2;grid-row:2;}
+  .wall-compass .right{grid-column:3;grid-row:2;} .wall-compass .down{grid-column:2;grid-row:3;}
+  @media (prefers-reduced-motion:reduce){ .wall-cup.current{transform:none;} }
 </style>
 </head>
 <body>
@@ -957,8 +1009,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.58.0";
-const APP_UPDATED = "2026-10-25";
+const APP_VERSION = "2.59.0";
+const APP_UPDATED = "2026-10-28";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -998,6 +1050,13 @@ const state = {
   taxaNeverAskedOnly: true,
   wateringEvents: [],
   wishlist: [],               // WISH-1     // WATER-1
+  cupPaints: [],              // WALL-1 — rows of cup_paints; empty before the migration
+  wallView: "map",            // WALL-1 — map | list, on an area whose children are rows
+  wallLens: "paint",          // paint | health | photo | bloom | empty
+  wallSelected: null,         // the cup's location id shown in the card under the map
+  wallSearch: "",
+  wallBrush: null,            // a cup_paints id while Repaint is on
+  wallUndo: null,             // {id, from} — the last repaint, for one-step undo
   waterDraft: null,       // {ids:[], label, date, notes, locationId} while the modal is open
   lastWaterBatch: null,   // {batchId, count, label} — powers Undo on To Do
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
@@ -1371,7 +1430,7 @@ async function exportFullBackup() {
   try {
     toast("Preparing backup…");
     const [locations, plants, photos, identifications, photoPlants, photoLocations, counters, careNotes, taxa, plantLocationHistory, listOptions, suggestionsAll,
-           bloomEvents, tasks, taskSubjects, appSettings, wateringEvents, wishlistRows] = await Promise.all([
+           bloomEvents, tasks, taskSubjects, appSettings, wateringEvents, wishlistRows, cupPaints] = await Promise.all([
       restGetAll("locations", "?select=*"),
       restGetAll("plants", "?select=*"),
       restGetAll("photos", "?select=*"),
@@ -1402,6 +1461,8 @@ async function exportFullBackup() {
       // WISH-1. Added here in the same commit as the migration, which is the
       // rule REFERENCE states in bold after four occurrences of forgetting.
       restGetAll("wishlist", "?select=*").catch(() => []),
+      // WALL-1. Same rule, same commit as the migration.
+      restGetAll("cup_paints", "?select=*").catch(() => []),
     ]);
     const backup = {
       exported_at: new Date().toISOString(),
@@ -1420,6 +1481,7 @@ async function exportFullBackup() {
       app_settings: appSettings,
       watering_events: wateringEvents,
       wishlist: wishlistRows,
+      cup_paints: cupPaints,
     };
     downloadFile(
       `adcock-botanical-garden-backup-${new Date().toISOString().slice(0, 10)}.json`,
@@ -1476,6 +1538,8 @@ async function handleImportBackup() {
 
     toast("Importing — this may take a moment…");
 
+    // WALL-1. Before locations — locations.paint_id is a hard FK into it.
+    if (data.cup_paints?.length) await restoreUpsert("cup_paints", data.cup_paints);
     // Locations: two passes to satisfy self-referencing parent_location_id
     // (a child can't be inserted before its parent exists yet).
     if (data.locations?.length) {
@@ -1960,7 +2024,7 @@ async function loadAll() {
   state.loading = true;
   render();
   try {
-    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory, wateringEvents, wishlist, askedTaxa] = await Promise.all([
+    const [photos, plants, locations, tokens, photoPlants, identifications, photoLocations, careNotes, taxa, listOptions, bloomEvents, suggestions, tasks, taskSubjects, appSettings, locHistory, wateringEvents, wishlist, askedTaxa, cupPaints] = await Promise.all([
       restGetAll("photos", "?select=*&order=uploaded_at.desc"),
       restGetAll("plants", "?select=*&order=accession_number.asc"),
       restGetAll("locations", "?select=*&order=sort_order.asc,name.asc"),
@@ -2009,6 +2073,9 @@ async function loadAll() {
          species" — an accepted or dismissed row means it HAS. One column, every
          status, so the cost is small even as the table grows. */
       optional("suggestion_history", restGetAll("suggestions", "?select=taxa_id&taxa_id=not.is.null")),
+      // WALL-1. Seven rows. Resilient like every table added after the app
+      // existed: before the migration the wall map simply has no Cup colour view.
+      optional("cup_paints", restGetAll("cup_paints", "?select=*&order=sort_order.asc,name.asc")),
     ]);
     state.photos = photos;
     state.plants = plants;
@@ -2029,6 +2096,7 @@ async function loadAll() {
     state.wateringEvents = wateringEvents || [];
     state.wishlist = wishlist || [];
     state.taxaAskedIds = new Set((askedTaxa || []).map((r) => r.taxa_id).filter(Boolean));
+    state.cupPaints = cupPaints || [];
   } catch (e) {
     toast(e.message, true);
   }
@@ -7126,6 +7194,369 @@ function screenLocations() {
   </div>`;
 }
 
+/* ==================== WALL MAP (WALL-1) ==================== */
+/* WALL-1, v2.59.0. The wall was reached by drilling Wall Collection › a row ›
+   31 cards that differ only by number, so she navigated by name while standing
+   in front of the thing by position. The map draws the wall as it hangs, and
+   the card under it walks to physical neighbours.
+
+   Generic on purpose: any area whose children are rows of containers gets it.
+   Row and cup order are directChildLocations() order — sort_order, then name —
+   the order every list in the app already uses. If a row's sort_order
+   disagrees with the wall left to right, the list was already wrong the same
+   way; fix sort_order, not this. */
+function wallRowsFor(l) {
+  if (!l) return [];
+  return directChildLocations(l.id)
+    .filter((r) => r.type === "row" && !r.archived)
+    .map((row) => ({ row, cups: directChildLocations(row.id).filter((c) => !c.archived) }))
+    .filter((x) => x.cups.length);
+}
+// The wall a cup or a row hangs on, for "Show on the wall" from its own page.
+function wallHomeFor(l) {
+  if (!l) return null;
+  const row = l.type === "row" ? l : locationById(l.parent_location_id);
+  if (!row || row.type !== "row") return null;
+  const wall = locationById(row.parent_location_id);
+  return wall && wallRowsFor(wall).length ? wall : null;
+}
+function openWallAt(wallId, cupId) {
+  state.wallView = "map";
+  if (cupId) state.wallSelected = cupId;
+  openLocation(wallId);
+}
+function cupPaintById(id) {
+  return state.cupPaints.find((p) => p.id === id) || null;
+}
+// A swatch goes into a style attribute, so only a plain #rrggbb gets through.
+function cupPaintHex(p) {
+  return p && /^#[0-9a-f]{6}$/i.test(p.hex || "") ? p.hex : null;
+}
+function cupPaintHammered(p) {
+  return !!p && /hammer/i.test(p.finish || "");
+}
+// The cup's number colour: charcoal on the pale paints, cream on the rest.
+function cupPaintInk(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.53 ? "var(--brand-charcoal)" : "var(--brand-cream)";
+}
+function cupNumber(c) {
+  const m = String(c.name || "").match(/\d+/);
+  return m ? String(Number(m[0])) : "";
+}
+// escapeHtml leaves quotes alone, which is fine in text and not in an attribute.
+function wallAttr(s) {
+  return escapeHtml(s).replace(/"/g, "&quot;");
+}
+
+/* Latest photo per location and per plant, in one pass. Per cup it was 92 ×
+   every photo, twice, on every arrow key. Tags count, and so does a bucket shot
+   filed to the container: either is a photo of what is in the cup. */
+function wallPhotoIndex() {
+  const dateOf = new Map(state.photos.map((p) => [p.id, photoDate(p)]));
+  const byLoc = new Map(), byPlant = new Map();
+  const bump = (m, k, d) => { if (k && d && (!m.has(k) || d > m.get(k))) m.set(k, d); };
+  for (const p of state.photos) { const d = dateOf.get(p.id); bump(byLoc, p.location_id, d); bump(byPlant, p.plant_id, d); }
+  for (const t of state.photoLocations) bump(byLoc, t.location_id, dateOf.get(t.photo_id));
+  for (const t of state.photoPlants) bump(byPlant, t.plant_id, dateOf.get(t.photo_id));
+  return { byLoc, byPlant };
+}
+
+// A cup with two plants shows the one that needs her most.
+const WALL_HEALTH_RANK = { urgent: 4, watch: 3, recovery: 2, unknown: 1, healthy: 0 };
+const WALL_HEALTH_COLOUR = { healthy: "var(--moss)", watch: "var(--orange)", urgent: "var(--terracotta)", recovery: "var(--blue)", unknown: "var(--on-ground-muted)" };
+function wallHealthOf(p) {
+  return HEALTH_LABELS[p.health_status] ? p.health_status : "unknown";
+}
+
+function wallCupInfo(c, idx) {
+  const plants = plantsAtLocation(c.id);
+  let health = null;
+  for (const p of plants) {
+    const h = wallHealthOf(p);
+    if (health === null || WALL_HEALTH_RANK[h] > WALL_HEALTH_RANK[health]) health = h;
+  }
+  const dates = [idx.byLoc.get(c.id), ...plants.map((p) => idx.byPlant.get(p.id))].filter(Boolean).sort();
+  const last = dates.length ? dates[dates.length - 1] : null;
+  return {
+    plants, health,
+    photoDays: last ? daysBetween(last, todayISO()) : null,
+    bloom: plants.some((p) => activeBloom(p.id)),
+    paint: c.paint_id ? cupPaintById(c.paint_id) : null,
+  };
+}
+
+// Digits are a cup number ("22", "bucket 22"); four or more may also be the
+// tail of an accession. Anything else searches paint, then what is planted.
+function wallCupMatches(c, q) {
+  const plants = plantsAtLocation(c.id);
+  const n = q.replace(/^bucket\s*/, "");
+  if (/^\d+$/.test(n)) {
+    return cupNumber(c) === String(Number(n))
+      || (n.length >= 4 && plants.some((p) => String(p.accession_number || "").endsWith(n)));
+  }
+  const paint = c.paint_id ? cupPaintById(c.paint_id) : null;
+  if (paint && String(paint.name).toLowerCase().includes(q)) return true;
+  return plants.some((p) => plantSearchText(p).includes(q));
+}
+
+function wallCupLook(lens, info) {
+  const cls = [], st = [];
+  if (lens === "paint") {
+    const hex = cupPaintHex(info.paint);
+    if (hex) {
+      cls.push("painted");
+      if (cupPaintHammered(info.paint)) cls.push("hammered");
+      st.push(`--paint:${hex}`, `--paint-ink:${cupPaintInk(hex)}`);
+    } else st.push("--dot:transparent");
+    return { cls, st };
+  }
+  if (!info.plants.length) { cls.push("empty"); return { cls, st }; }
+  if (lens === "health") {
+    st.push(`--dot:${WALL_HEALTH_COLOUR[info.health]}`);
+    if (info.health === "unknown") cls.push("hollow");
+  } else if (lens === "photo") {
+    const d = info.photoDays;
+    st.push(`--dot:${d === null || d >= 90 ? "var(--terracotta)" : d >= 30 ? "var(--orange)" : "var(--blue)"}`);
+    if (d === null) cls.push("hollow");
+  } else if (lens === "bloom") {
+    st.push(`--dot:${info.bloom ? "var(--pink)" : "var(--moss-dim)"}`);
+    if (!info.bloom) cls.push("dim");
+  } else {
+    st.push("--dot:var(--moss-dim)");
+    cls.push("dim");
+  }
+  return { cls, st };
+}
+
+function wallLegend(lens, cups) {
+  const dot = (c, label, hollow) => `<span><i class="${hollow ? "hollow" : ""}" style="--c:${c}"></i>${label}</span>`;
+  const empties = cups.filter((x) => !x.info.plants.length).length;
+  const emptyItem = `<span><i class="emptyi"></i>Empty${lens === "empty" ? ` · ${empties}` : ""}</span>`;
+  if (lens === "paint") {
+    const items = state.cupPaints.map((p) => {
+      const hex = cupPaintHex(p);
+      if (!hex) return "";
+      const n = cups.filter((x) => x.c.paint_id === p.id).length;
+      return `<span><i class="cupi${cupPaintHammered(p) ? " hammered" : ""}" style="background-color:${hex}"></i>${escapeHtml(p.name)}${p.finish ? ` · ${escapeHtml(p.finish)}` : ""} · ${n}</span>`;
+    });
+    const none = cups.filter((x) => !cupPaintHex(x.info.paint)).length;
+    if (none) items.push(`<span><i class="cupi" style="--c:transparent"></i>No colour set · ${none}</span>`);
+    return items.join("");
+  }
+  if (lens === "health") {
+    return Object.keys(WALL_HEALTH_RANK).reverse().map((h) => dot(WALL_HEALTH_COLOUR[h], HEALTH_LABELS[h], h === "unknown")).join("") + emptyItem;
+  }
+  if (lens === "photo") {
+    return dot("var(--blue)", "Under 30 days") + dot("var(--orange)", "30–90 days") + dot("var(--terracotta)", "Over 90 days")
+      + dot("var(--terracotta)", "No photo yet", true) + emptyItem;
+  }
+  if (lens === "bloom") return dot("var(--pink)", "In bloom") + dot("var(--moss-dim)", "Not flowering") + emptyItem;
+  return dot("var(--moss-dim)", `Planted · ${cups.length - empties}`) + emptyItem;
+}
+
+// Rows of different lengths span the same width, so up and down match by
+// position along the row rather than by index.
+function wallNeighbour(rows, ri, ci, dir) {
+  if (dir === "left") return rows[ri].cups[ci - 1] || null;
+  if (dir === "right") return rows[ri].cups[ci + 1] || null;
+  const to = rows[ri + (dir === "up" ? -1 : 1)];
+  if (!to) return null;
+  const n = rows[ri].cups.length, m = to.cups.length;
+  return to.cups[Math.min(m - 1, Math.max(0, Math.round(((ci + 0.5) / n) * m - 0.5)))];
+}
+
+function wallCard(rows, cur, idx) {
+  const c = cur.c, info = cur.info, row = rows[cur.ri];
+  const hex = cupPaintHex(info.paint);
+  const undo = state.wallUndo && state.wallUndo.id === c.id ? state.wallUndo : null;
+  const undoFrom = undo ? cupPaintById(undo.from) : null;
+  const swatches = state.cupPaints.map((p) => {
+    const h = cupPaintHex(p);
+    if (!h) return "";
+    const on = p.id === c.paint_id;
+    return `<button class="wall-sw${on ? " on" : ""}${cupPaintHammered(p) ? " hammered" : ""}" style="--paint:${h}" onclick="setCupPaint('${c.id}','${p.id}')"
+      title="${wallAttr(p.name + (p.finish ? " · " + p.finish : ""))}" aria-label="Paint ${wallAttr(c.name)} ${wallAttr(p.name)}" aria-pressed="${on}"></button>`;
+  }).join("");
+  const nb = (dir, arrow) => {
+    const t = wallNeighbour(rows, cur.ri, cur.ci, dir);
+    if (!t) return `<button class="wall-nb ${dir}" disabled aria-label="No cup ${dir}">${arrow}<small>edge</small></button>`;
+    const tp = t.paint_id ? cupPaintById(t.paint_id) : null;
+    const what = tp ? tp.name : plantsAtLocation(t.id).length ? "planted" : "empty";
+    return `<button class="wall-nb ${dir}" onclick="wallSelect('${t.id}')" aria-label="Go ${dir} to ${wallAttr(t.name)}">${arrow} ${escapeHtml(cupNumber(t) || t.name)}<small>${escapeHtml(what)}</small></button>`;
+  };
+  const plants = info.plants.length ? info.plants.map((p) => {
+    const h = wallHealthOf(p);
+    const ck = checkInStatus(p);
+    const lastPhoto = idx.byPlant.get(p.id);
+    const facts = [
+      `<span style="color:${WALL_HEALTH_COLOUR[h]};font-weight:600;">${HEALTH_LABELS[h]}</span>`,
+      `last photo ${fmtDaysAgo(lastPhoto ? daysBetween(lastPhoto, todayISO()) : null)}`,
+      activeBloom(p.id) ? `<span style="color:var(--pink);">in bloom</span>` : "",
+      ck && ck.due ? `<span style="color:var(--orange);">check-in ${escapeHtml(ck.label)}</span>` : "",
+    ].filter(Boolean).join(" · ");
+    return `
+      <div class="wall-plant">
+        <div style="font-family:'Fraunces',serif;font-size:16px;cursor:pointer;" onclick="openPlant('${p.id}')">${plantDisplayHtml(p)}</div>
+        <div class="mono" style="font-size:11px;color:var(--moss);">${escapeHtml(p.accession_number || "")}</div>
+        <div style="font-size:12.5px;color:var(--on-ground-muted);">${facts}</div>
+        <div class="wrap-gap">
+          <button class="btn btn-accent btn-sm" onclick="openModal('upload',{plantId:'${p.id}'})">+ Photos</button>
+          ${/* Only a scheduled check-in is cleared by "Checked it"; a stale one
+               is answered by a photo or a note, and the button would do nothing. */""}
+          ${ck && ck.due && ck.reason === "scheduled" ? `<button class="btn btn-secondary btn-sm" onclick="clearCheckIn('${p.id}')">Checked it</button>` : ""}
+          <button class="btn btn-secondary btn-sm" onclick="openPlant('${p.id}')">Open plant</button>
+        </div>
+      </div>`;
+  }).join("") : `
+      <p class="subtle" style="margin:0;">Nothing planted here.</p>
+      <div class="wrap-gap"><button class="btn btn-accent btn-sm" onclick="openModal('newSpecimenHere',{locationId:'${c.id}'})">+ New specimen here</button></div>`;
+  return `
+    <div class="section-card wall-card">
+      <div>
+        <div class="mono" style="font-size:11px;letter-spacing:0.6px;text-transform:uppercase;color:var(--moss);">${escapeHtml(row.row.name)} · ${cur.ci + 1} of ${row.cups.length}</div>
+        <div class="display" style="font-size:22px;font-weight:600;cursor:pointer;" onclick="openLocation('${c.id}')">${escapeHtml(c.name)}</div>
+        ${hex ? `<div class="wall-paintline"><i style="--paint:${hex}"></i>${escapeHtml(info.paint.name)} cup${info.paint.finish ? ` <span class="subtle">· ${escapeHtml(info.paint.finish)}</span>` : ""}</div>`
+              : state.cupPaints.length ? `<div class="subtle">No cup colour set</div>` : ""}
+        ${swatches ? `<div class="wall-swatches" role="group" aria-label="Cup colour">${swatches}</div>` : ""}
+        ${undo ? `<div class="subtle">Was ${undoFrom ? escapeHtml(undoFrom.name) : "no colour"} · <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="undoCupPaint()">Undo</button></div>` : ""}
+        <div><button class="btn btn-secondary btn-sm" onclick="openLocation('${c.id}')">Open ${escapeHtml(c.name)}</button></div>
+      </div>
+      <div>${plants}</div>
+      <div>
+        <div class="wall-compass" aria-label="Neighbouring cups">
+          ${nb("up", "↑")}${nb("left", "←")}<span class="wall-nb here">here</span>${nb("right", "→")}${nb("down", "↓")}
+        </div>
+        <div class="subtle" style="font-size:11.5px;">Arrow keys move along the wall.</div>
+      </div>
+    </div>`;
+}
+
+function wallMapSection(l) {
+  const rows = wallRowsFor(l);
+  const idx = wallPhotoIndex();
+  const cups = rows.flatMap((r, ri) => r.cups.map((c, ci) => ({ c, ri, ci, info: wallCupInfo(c, idx) })));
+  const hasPaints = state.cupPaints.some(cupPaintHex);
+  const lens = state.wallLens === "paint" && !hasPaints ? "health" : state.wallLens;
+  const q = state.wallSearch.trim().toLowerCase();
+  const hits = q ? new Set(cups.filter((x) => wallCupMatches(x.c, q)).map((x) => x.c.id)) : null;
+  const cur = cups.find((x) => x.c.id === state.wallSelected) || cups[0];
+  const brush = lens === "paint" ? cupPaintById(state.wallBrush) : null;
+
+  const lensBtn = (k, label) => `<button class="btn btn-sm ${lens === k ? "btn-primary" : "btn-secondary"}" onclick="state.wallLens='${k}';state.wallBrush=null;render()">${label}</button>`;
+  const brushBar = lens === "paint" ? `
+    <div class="wall-brush">
+      <span>Repaint:</span>
+      <div class="wall-swatches">${state.cupPaints.map((p) => {
+        const h = cupPaintHex(p);
+        if (!h) return "";
+        const on = brush && brush.id === p.id;
+        return `<button class="wall-sw${on ? " on" : ""}${cupPaintHammered(p) ? " hammered" : ""}" style="--paint:${h}" onclick="state.wallBrush=${on ? "null" : `'${p.id}'`};render()"
+          title="${wallAttr(p.name)}" aria-label="Repaint with ${wallAttr(p.name)}" aria-pressed="${!!on}"></button>`;
+      }).join("")}</div>
+      <span>${brush ? `Tap cups to paint them ${escapeHtml(brush.name)}. Tap the swatch again to stop.` : "Pick a colour, then tap cups to repaint several at once."}</span>
+    </div>` : "";
+
+  const rowHtml = rows.map((r, ri) => {
+    const mine = cups.filter((x) => x.ri === ri);
+    const first = cupNumber(mine[0].c), last = cupNumber(mine[mine.length - 1].c);
+    return `
+      <div class="wall-row">
+        <div class="wall-row-label">${escapeHtml(r.row.name)}${first && last ? `<span>${first}–${last}</span>` : ""}</div>
+        <div class="wall-cups" style="grid-template-columns:repeat(${mine.length},minmax(0,1fr));">
+          ${mine.map((x) => {
+            const { cls, st } = wallCupLook(lens, x.info);
+            cls.unshift("wall-cup");
+            if (hits) cls.push(hits.has(x.c.id) ? "hit" : "dim");
+            if (x === cur) cls.push("current");
+            const label = `${x.c.name}${x.info.paint ? `, ${x.info.paint.name} cup` : ""}, ${x.info.plants.length ? x.info.plants.map(plantDisplayName).join(", ") : "empty"}`;
+            return `<button class="${cls.join(" ")}" style="${st.join(";")}" onclick="wallTap('${x.c.id}')" title="${wallAttr(label)}" aria-label="${wallAttr(label)}"${x === cur ? ' aria-current="true"' : ""}><span class="n">${escapeHtml(cupNumber(x.c) || "·")}</span><span class="dot"></span></button>`;
+          }).join("")}
+        </div>
+      </div>`;
+  }).join("");
+
+  return `
+    <div class="wall-tools">
+      <input class="search-input" id="wall-search" placeholder="Find a plant, cup colour or number" value="${wallAttr(state.wallSearch)}" oninput="wallSearchInput(this.value)" />
+      <div class="wrap-gap" role="group" aria-label="Colour the wall by">
+        ${hasPaints ? lensBtn("paint", "Cup colour") : ""}${lensBtn("health", "Health")}${lensBtn("photo", "Last photo")}${lensBtn("bloom", "In bloom")}${lensBtn("empty", "Empty")}
+      </div>
+    </div>
+    ${brushBar}
+    <div class="wall-box${brush ? " painting" : ""}" aria-label="The wall, as it hangs"><div class="wall-inner">${rowHtml}</div></div>
+    <div class="wall-legend">${hits ? `<span><b style="color:var(--orange);">${hits.size}</b> match${hits.size === 1 ? "" : "es"} “${escapeHtml(state.wallSearch.trim())}”</span>` : ""}${wallLegend(lens, cups)}</div>
+    ${cur ? wallCard(rows, cur, idx) : ""}`;
+}
+
+function wallSelect(id) {
+  state.wallSelected = id;
+  render();
+}
+function wallTap(id) {
+  if (state.wallLens === "paint" && state.wallBrush) return setCupPaint(id, state.wallBrush);
+  wallSelect(id);
+}
+function wallStep(dir) {
+  const rows = wallRowsFor(locationById(state.currentLocationId));
+  if (!rows.length) return;
+  let ri = 0, ci = 0;
+  rows.forEach((r, i) => { const j = r.cups.findIndex((c) => c.id === state.wallSelected); if (j >= 0) { ri = i; ci = j; } });
+  const t = wallNeighbour(rows, ri, ci, dir);
+  if (t) wallSelect(t.id);
+}
+// Typing jumps the card to the first match, so "copper" or "22" lands somewhere.
+function wallSearchInput(v) {
+  state.wallSearch = v;
+  const q = v.trim().toLowerCase();
+  if (q) {
+    const first = wallRowsFor(locationById(state.currentLocationId)).flatMap((r) => r.cups).find((c) => wallCupMatches(c, q));
+    if (first) state.wallSelected = first.id;
+  }
+  scheduleRender();
+}
+
+/* Only `locations` changes, and nothing else follows from paint_id, so the
+   returned row goes straight into state rather than a full reload — Repaint
+   can be a dozen taps in a row (EGRESS-1). */
+async function setCupPaint(locationId, paintId) {
+  const loc = locationById(locationId);
+  if (!loc || (loc.paint_id || null) === (paintId || null)) { state.wallSelected = locationId; render(); return; }
+  const from = loc.paint_id || null;
+  try {
+    const rows = await restPatch("locations", `id=eq.${locationId}`, { paint_id: paintId || null });
+    mergeRows("locations", rows);
+    state.wallUndo = { id: locationId, from };
+    state.wallSelected = locationId;
+    render();
+  } catch (e) { toast(e.message, true); }
+}
+async function undoCupPaint() {
+  const u = state.wallUndo;
+  if (!u) return;
+  await setCupPaint(u.id, u.from);
+  state.wallUndo = null;
+  render();
+}
+
+// Attached once at boot, like wireFilingKeys. Inert unless the wall map is
+// showing with no modal and no field focused.
+function wireWallKeys() {
+  document.addEventListener("keydown", (e) => {
+    if (state.tab !== "locationDetail" || state.wallView !== "map" || state.modal || state.lightbox) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (!wallRowsFor(locationById(state.currentLocationId)).length) return;
+    if (e.key === "Escape" && state.wallBrush) { e.preventDefault(); state.wallBrush = null; render(); return; }
+    const dir = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" }[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    wallStep(dir);
+  });
+}
+
 function screenLocationDetail() {
   const l = locationById(state.currentLocationId);
   if (!l) return `<div class="screen container"><p>Location not found.</p></div>`;
@@ -7202,6 +7633,12 @@ function screenLocationDetail() {
             </button>
           </div>` : ""}
 
+          ${(() => {
+            // WALL-1. A cup's own page is one tap from its place on the wall.
+            const wall = wallHomeFor(l);
+            return wall ? `<div style="margin-top:12px;"><button class="btn btn-secondary btn-on-cream btn-sm" onclick="openWallAt('${wall.id}','${l.type === "row" ? "" : l.id}')">Show on the wall</button></div>` : "";
+          })()}
+
           <div style="margin-top:14px;">
             <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="openModal('editLocation',{locationId:'${l.id}'})">Edit location</button>
             <button class="btn-ghost" style="padding:0 0 0 14px;font-size:12.5px;" onclick="openModal('mergeLocationPick',{locationId:'${l.id}'})">Merge another in</button>
@@ -7252,14 +7689,22 @@ function screenLocationDetail() {
         // since the first child is exactly when it is needed.
         const addHere = `<button class="btn btn-secondary btn-sm" onclick="openModal('newLocation',{parentId:'${l.id}'})">+ Add location here</button>`;
         if (children.length === 0) return `<div class="wrap-gap" style="margin-top:24px;">${addHere}</div>`;
+        // WALL-1. Rows of cups draw as the wall; anything else inside (a pot
+        // below the wall, say) still lists as a card underneath.
+        const wallRows = wallRowsFor(l);
+        const asMap = wallRows.length > 0 && state.wallView === "map";
+        const rowIds = new Set(wallRows.map((r) => r.row.id));
+        const listed = asMap ? children.filter((c) => !rowIds.has(c.id)) : children;
+        const viewBtn = (k, label) => `<button class="btn btn-sm ${state.wallView === k ? "btn-primary" : "btn-secondary"}" onclick="state.wallView='${k}';render()">${label}</button>`;
         return `
           <div class="row" style="margin-top:24px;margin-bottom:12px;">
             <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Inside this ${locationTypeLabel(l.type).toLowerCase()}</h3>
             <span class="subtle">${children.length} total</span>
           </div>
-          <div class="wrap-gap" style="margin-bottom:12px;">${addHere}</div>
-          <div class="card-grid">
-            ${children.map((c) => {
+          <div class="wrap-gap" style="margin-bottom:12px;">${wallRows.length ? viewBtn("map", "Wall map") + viewBtn("list", "List") : ""}${addHere}</div>
+          ${asMap ? wallMapSection(l) : ""}
+          ${listed.length ? `<div class="card-grid"${asMap ? ' style="margin-top:14px;"' : ""}>
+            ${listed.map((c) => {
               const count = aggregatePlantCount(c.id);
               const photoCount = aggregatePhotoCount(c.id);
               const grandchildren = directChildLocations(c.id);
@@ -7280,7 +7725,7 @@ function screenLocationDetail() {
                 </div>
               </div>`;
             }).join("")}
-          </div>`;
+          </div>` : ""}`;
       })()}
 
       ${/* LOC-6. An area like The Wall holds no plants of its own — its photos
@@ -13953,7 +14398,9 @@ function captureScroll() {
   // The Gallery's rows scroll sideways, and they die with the DOM exactly the
   // way the page does. Captured by position because render() rebuilds the rows
   // rather than moving them, so there is no node identity to key on.
-  const rows = [...document.querySelectorAll(".gal-scroll")].map((el) => el.scrollLeft);
+  // WALL-1: the wall map scrolls sideways on a phone and needs the same, or
+  // tapping a cup at the right-hand end threw the wall back to cup 1.
+  const rows = [...document.querySelectorAll(".gal-scroll, .wall-box")].map((el) => el.scrollLeft);
   return { page: window.scrollY || 0, modal: modal ? modal.scrollTop : 0, rows };
 }
 
@@ -13966,7 +14413,7 @@ function restoreScroll(snap, what) {
   if (w.page) {
     if (snap.page) window.scrollTo(0, snap.page);
     if (snap.rows && snap.rows.some(Boolean)) {
-      const rows = document.querySelectorAll(".gal-scroll");
+      const rows = document.querySelectorAll(".gal-scroll, .wall-box");
       snap.rows.forEach((left, i) => { if (left && rows[i]) rows[i].scrollLeft = left; });
     }
   }
@@ -14963,6 +15410,7 @@ async function boot() {
   wireErrorLogging();
   wireRenderHold();
   wireFilingKeys();
+  wireWallKeys();
 
   // Not awaited: a slow or failed check must never delay the app starting.
   checkForNewVersion();

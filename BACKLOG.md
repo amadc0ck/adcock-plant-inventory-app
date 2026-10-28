@@ -34,7 +34,12 @@ Five items arrived as a document ("ABG App: Bugs, Quirks & Feature Requests").
 
 **Sequencing chosen by Amanda:** pickers first (done), then the rest.
 
-### OUTSTANDING SQL — one statement, held deliberately
+### OUTSTANDING SQL — WALL-1 migration, 2026-10-28
+v2.59.0 ships before it and degrades cleanly: no Cup colour view until `cup_paints` exists. The migration is in
+REFERENCE → `cup_paints`. Verify with the per-row count (Top 31 / Middle 30 / Bottom 31, colours as on the map,
+no "(no colour)" rows). Any cup it missed is a name with no number or a row not typed `row`.
+
+### Previous — one statement, held deliberately
 
 **NOTHING OUTSTANDING.** Both 2026-09-11 statements ran and were verified: the
 NAME-5 data fix (9 rows, all four audit checks now return 0) and
@@ -907,6 +912,14 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.59.0 — WALL-1: wall map with cup colours
+An area whose children are rows of cups (Wall Collection) opens on a Wall map: the wall as it hangs, colour views
+(Cup colour / Health / Last photo / In bloom / Empty), search, and a card that walks to physical neighbours (arrows
+or keys). Cup colour is editable per cup or with Repaint, one-step Undo. New `cup_paints` + `locations.paint_id`.
+Order is `directChildLocations()` (sort_order, then name) — if the map is wrong, sort_order is. Up/down matches by
+position along the row since rows are 31/30/31. Cups and rows get "Show on the wall".
+**Gotcha:** schema-check misses `paint_id` — a `${}` in the filter template is taken as the body object.
 
 ### v2.58.0 — CHK-1: Due for a check-in as a grouped list, notes count
 Rows grouped by location path (sublocations under parents, No location last) with Note, Photo (upload form, plant

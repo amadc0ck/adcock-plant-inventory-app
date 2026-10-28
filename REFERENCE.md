@@ -63,6 +63,7 @@ Physical containers and spaces. Self-referencing hierarchy (Front Yard → Wall 
 - `parent_location_id` uuid FK → locations.id — enables the tree
 - `sort_order` int, nullable — physical-order display, not alphabetical
 - `code` text, nullable — e.g. `W-T-14`
+- `paint_id` uuid FK → cup_paints.id, nullable, `on delete set null` (v2.59.0, WALL-1) — the colour the cup is painted. Only wall cups carry one.
 - `primary_photo_id` uuid FK → photos.id, nullable — the location's hero image
 - `notes` text, nullable
 - `created_at` timestamptz
@@ -528,6 +529,87 @@ WISH-1 (v2.24.0). Plants Amanda is looking for but does not own.
 **Marking one acquired creates a real specimen** and closes the entry rather than deleting it — `acquireWishlistEntry()` inherits `taxa_id` so the species is not retyped from free text, and carries `source` into `acquisition_source_name`. The entry stays as the record that this was wanted and when it arrived.
 
 All three FKs are `on delete set null`, so a wishlist row never blocks deleting a plant, photo or taxon.
+
+### `cup_paints`
+WALL-1 (v2.59.0). The paints on the wall cups — seven rows: `id`, `name` (unique), `finish`, `hex` (checked
+`#rrggbb`), `sort_order`, `created_at`. RLS as every other table. **Swatches are data, not brand tokens** — they live
+here so the CSS palette rule (CLAUDE.md #5) holds; correct a swatch by editing the row, not the stylesheet. Hex
+values were sampled from Amanda's colour-map image, so they are close, not paint-chip exact. The app escapes nothing
+into a style attribute that is not `#rrggbb` (`cupPaintHex`). Loaded with `optional()`, in the JSON backup, and
+restored **before** locations because `locations.paint_id` points into it.
+
+The migration, as run (seeds the 92 cups from the colour map; re-runnable, only fills cups with no colour):
+
+```sql
+-- WALL-1 (v2.59.0): cup paint colours for the wall map. Safe to re-run:
+-- every step checks first, and the seed only fills cups that have no colour yet.
+begin;
+
+create table if not exists cup_paints (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  finish text,
+  hex text not null check (hex ~ '^#[0-9A-Fa-f]{6}$'),
+  sort_order int,
+  created_at timestamptz not null default now()
+);
+
+alter table cup_paints enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'cup_paints' and policyname = 'cup_paints all') then
+    create policy "cup_paints all" on cup_paints for all to authenticated using (true) with check (true);
+  end if;
+end $$;
+
+alter table locations add column if not exists paint_id uuid references cup_paints(id) on delete set null;
+
+insert into cup_paints (name, finish, hex, sort_order) values
+  ('Ocean Mist', 'Gloss', '#A8D8D1', 1),
+  ('Seaside', 'Gloss', '#2EB6C0', 2),
+  ('Vintage Teal', 'Satin', '#5B9097', 3),
+  ('Lagoon', 'Satin', '#0D7C86', 4),
+  ('Deep Teal', 'Ultra Matte', '#0B4A55', 5),
+  ('Cinnamon', 'Satin', '#B9654B', 6),
+  ('Copper', 'Hammered', '#B87333', 7)
+on conflict (name) do nothing;
+
+-- The paint map, cup number to colour. Matches only containers inside a row of
+-- Wall Collection, by the number in the cup name ("Bucket 07" is cup 7).
+update locations cup
+set paint_id = p.id
+from (values
+  (1, 'Deep Teal'), (2, 'Ocean Mist'), (3, 'Seaside'), (4, 'Cinnamon'), (5, 'Lagoon'), (6, 'Vintage Teal'),
+  (7, 'Deep Teal'), (8, 'Copper'), (9, 'Seaside'), (10, 'Ocean Mist'), (11, 'Lagoon'), (12, 'Deep Teal'),
+  (13, 'Vintage Teal'), (14, 'Seaside'), (15, 'Cinnamon'), (16, 'Ocean Mist'), (17, 'Deep Teal'), (18, 'Lagoon'),
+  (19, 'Seaside'), (20, 'Vintage Teal'), (21, 'Ocean Mist'), (22, 'Copper'), (23, 'Deep Teal'), (24, 'Seaside'),
+  (25, 'Lagoon'), (26, 'Cinnamon'), (27, 'Vintage Teal'), (28, 'Deep Teal'), (29, 'Ocean Mist'), (30, 'Seaside'),
+  (31, 'Lagoon'), (32, 'Lagoon'), (33, 'Deep Teal'), (34, 'Ocean Mist'), (35, 'Seaside'), (36, 'Vintage Teal'),
+  (37, 'Cinnamon'), (38, 'Lagoon'), (39, 'Deep Teal'), (40, 'Seaside'), (41, 'Ocean Mist'), (42, 'Vintage Teal'),
+  (43, 'Lagoon'), (44, 'Deep Teal'), (45, 'Seaside'), (46, 'Ocean Mist'), (47, 'Lagoon'), (48, 'Vintage Teal'),
+  (49, 'Deep Teal'), (50, 'Seaside'), (51, 'Ocean Mist'), (52, 'Lagoon'), (53, 'Deep Teal'), (54, 'Vintage Teal'),
+  (55, 'Seaside'), (56, 'Ocean Mist'), (57, 'Cinnamon'), (58, 'Lagoon'), (59, 'Deep Teal'), (60, 'Cinnamon'),
+  (61, 'Seaside'), (62, 'Deep Teal'), (63, 'Ocean Mist'), (64, 'Seaside'), (65, 'Lagoon'), (66, 'Vintage Teal'),
+  (67, 'Deep Teal'), (68, 'Cinnamon'), (69, 'Ocean Mist'), (70, 'Seaside'), (71, 'Lagoon'), (72, 'Copper'),
+  (73, 'Vintage Teal'), (74, 'Deep Teal'), (75, 'Ocean Mist'), (76, 'Seaside'), (77, 'Lagoon'), (78, 'Cinnamon'),
+  (79, 'Vintage Teal'), (80, 'Deep Teal'), (81, 'Ocean Mist'), (82, 'Seaside'), (83, 'Lagoon'), (84, 'Copper'),
+  (85, 'Vintage Teal'), (86, 'Deep Teal'), (87, 'Ocean Mist'), (88, 'Seaside'), (89, 'Lagoon'), (90, 'Cinnamon'),
+  (91, 'Vintage Teal'), (92, 'Deep Teal')
+) as m(num, paint)
+join cup_paints p on p.name = m.paint
+where cup.paint_id is null
+  and not coalesce(cup.archived, false)
+  and substring(cup.name from '[0-9]+')::int = m.num
+  and cup.parent_location_id in (
+    select r.id
+    from locations r
+    join locations w on w.id = r.parent_location_id
+    where w.name = 'Wall Collection' and r.type = 'row'
+  );
+
+commit;
+```
 
 ### `app_settings`
 Key/value, one row per setting, RLS on (v1.84.0). Holds `check_in_interval_days`

@@ -675,13 +675,15 @@
   .photo-feed.size-small{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
   .photo-feed.size-small .photo-feed-card{border-radius:6px;}
   .photo-feed.size-small .photo-feed-body{display:none;}
-  .photo-feed.size-list{display:flex;flex-direction:column;gap:6px;}
+  /* Compact cards that fill the width, not a single shrink-wrapped column: the
+     wide tiers' align-items:start was sizing each row to its own content. */
+  .photo-feed.size-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:8px;align-items:stretch;}
   .photo-feed.size-list .photo-feed-card{display:flex;align-items:flex-start;border-radius:8px;}
   .photo-feed.size-list .photo-feed-media{width:60px;flex:none;}
   .photo-feed.size-list .photo-feed-body{flex:1;min-width:0;padding:8px 12px;display:flex;flex-direction:column;}
   .photo-feed.size-list .photo-feed-meta{order:-1;margin:0 0 3px;}
   .photo-feed.size-list .photo-feed-cap{font-size:13px;}
-  .photo-feed.size-list .photo-feed-actions{order:3;margin:6px 0 0;gap:14px;}
+  .photo-feed.size-list .photo-feed-actions{order:3;margin:6px 0 0;gap:8px 14px;flex-wrap:wrap;}
   .photo-feed.size-list .photo-feed-actions .icon-only svg{width:17px;height:17px;}
   .photo-img:not([src]){opacity:0;}
   .card-media-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
@@ -1106,7 +1108,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.66.0";
+const APP_VERSION = "2.67.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 

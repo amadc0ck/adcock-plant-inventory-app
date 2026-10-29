@@ -912,6 +912,9 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.67.0 — VIEW-1 fix: List fills the width
+List was one shrink-wrapped column (the wide tiers' `align-items:start` sized each card to its content). Now an auto-fill grid of compact cards, `minmax(min(300px,100%),1fr)` so a 320px phone does not overflow; action icons wrap.
+
 ### v2.66.0 — ROUTE-1: reload stays on the page
 Page lives in the URL hash (`#plant/<id>`, `#species/<id>`, `#location/<id>`, `#gallery`…) via replaceState, applied at boot before data and checked in `loadAll` (inside the try — a failed load keeps the route). Deleted records fall back to their list. Empty-stack Back now goes up a level (`navUp`) as the labels always claimed, instead of Plants. Not routed: modals, filters, scroll, Filing, wall cup selection. `#drive-connected` is handled before routing and never matches it.
 

@@ -664,6 +664,25 @@
   .photo-feed-actions .spacer{margin-left:auto;}
   .photo-feed-cap{font-size:13.5px;color:var(--cream);line-height:1.45;}
   .photo-feed-meta{font-size:11px;letter-spacing:0.4px;text-transform:uppercase;color:var(--moss-dim);margin-top:8px;font-family:'IBM Plex Mono',monospace;}
+  /* VIEW-1, v2.62.0. Small and List are the SAME cards restyled, not second
+     renderers — selection, captions, actions and the lightbox cannot differ
+     between sizes because there is only one markup. Two classes, so these beat
+     the single-class .photo-feed breakpoint rules wherever they sit. */
+  .view-switch{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .view-switch button{background:none;border:none;color:var(--on-ground-muted);font:inherit;font-size:12.5px;font-weight:600;padding:6px 12px;cursor:pointer;}
+  .view-switch button + button{border-left:1px solid var(--line);}
+  .view-switch button.on{background:var(--bg-raised);color:var(--on-ground);}
+  .photo-feed.size-small{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+  .photo-feed.size-small .photo-feed-card{border-radius:6px;}
+  .photo-feed.size-small .photo-feed-body{display:none;}
+  .photo-feed.size-list{display:flex;flex-direction:column;gap:6px;}
+  .photo-feed.size-list .photo-feed-card{display:flex;align-items:flex-start;border-radius:8px;}
+  .photo-feed.size-list .photo-feed-media{width:60px;flex:none;}
+  .photo-feed.size-list .photo-feed-body{flex:1;min-width:0;padding:8px 12px;display:flex;flex-direction:column;}
+  .photo-feed.size-list .photo-feed-meta{order:-1;margin:0 0 3px;}
+  .photo-feed.size-list .photo-feed-cap{font-size:13px;}
+  .photo-feed.size-list .photo-feed-actions{order:3;margin:6px 0 0;gap:14px;}
+  .photo-feed.size-list .photo-feed-actions .icon-only svg{width:17px;height:17px;}
   .photo-img:not([src]){opacity:0;}
   .card-media-empty{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--moss-dim);}
   .card-media-empty svg{width:36px;height:36px;}
@@ -952,6 +971,7 @@
       max-height:86vh;padding:24px 26px;}
     .modal-handle{display:none;}
     .photo-feed{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;align-items:start;}
+    .photo-feed.size-small{grid-template-columns:repeat(4,1fr);gap:8px;}
     .section-grid > *{display:inline-block;vertical-align:top;width:100%;margin-bottom:14px;}
   }
   /* DESK-1. From 1000px the bottom tab bar becomes a left sidebar and the
@@ -994,6 +1014,7 @@
     /* Columns, not grid: photos are shown at their own aspect ratio, so cell
        heights vary wildly and a grid would leave every short one over a hole. */
     .photo-feed{grid-template-columns:repeat(3,1fr);gap:16px;}
+    .photo-feed.size-small{grid-template-columns:repeat(6,1fr);gap:8px;}
     .section-grid > *{margin-bottom:16px;}
     /* Actions become the hero's third column only when there is room. */
     .detail-split .detail-media{width:34%;max-width:420px;}
@@ -1010,6 +1031,7 @@
     .split-wrap:not(.collapsed) .split-main .section-grid{columns:2;column-gap:14px;}
     .split-wrap:not(.collapsed) .split-main .section-grid > *{margin-bottom:14px;}
     .split-wrap:not(.collapsed) .split-main .photo-feed{grid-template-columns:repeat(2,1fr);gap:14px;}
+    .split-wrap:not(.collapsed) .split-main .photo-feed.size-small{grid-template-columns:repeat(4,1fr);gap:8px;}
     .split-wrap:not(.collapsed) .split-main .detail-split .detail-media{width:42%;max-width:400px;}
     .split-wrap:not(.collapsed) .split-main .detail-split{flex-wrap:wrap;}
     .split-wrap:not(.collapsed) .split-main .detail-split .detail-actions{flex-basis:100%;width:auto;flex-shrink:1;padding:0 18px 18px 22px;}
@@ -1086,7 +1108,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.61.0";
+const APP_VERSION = "2.62.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1134,6 +1156,9 @@ const state = {
   wallSearch: "",
   wallBrush: null,            // a cup_paints id while Repaint is on
   wallPaintEdit: false,       // WALL-2: colour controls shown only after "Change colour"
+  // VIEW-1. {listKey: "large" | "small" | "list"}, per device — the right size
+  // on the iPad outside is not the right size on the laptop.
+  listViews: (() => { try { return JSON.parse(localStorage.getItem("abg-list-views") || "{}") || {}; } catch (e) { return {}; } })(),
   wallUndo: null,             // {id, from} — the last repaint, for one-step undo
   // DESK-1. Per device like the theme: hiding the list pane is about this
   // screen's width, not the account.
@@ -7287,6 +7312,27 @@ function screenLocations() {
   </div>`;
 }
 
+/* VIEW-1, v2.62.0. A Large / Small / List switch for a list, keyed so each list
+   remembers its own size. Generic on purpose: Location photos is the first
+   user, and another list opts in with a key and three CSS modifiers on the
+   list's own container class (see .photo-feed.size-*). */
+const LIST_VIEW_KEY = "abg-list-views";
+const LIST_VIEW_LABELS = { large: "Large", small: "Small", list: "List" };
+function listView(key) {
+  const v = state.listViews[key];
+  return LIST_VIEW_LABELS[v] ? v : "large";
+}
+function setListView(key, v) {
+  state.listViews = { ...state.listViews, [key]: v };
+  try { localStorage.setItem(LIST_VIEW_KEY, JSON.stringify(state.listViews)); } catch (e) { /* private mode */ }
+  render();
+}
+function listViewSwitch(key) {
+  const cur = listView(key);
+  return `<div class="view-switch" role="group" aria-label="Display size">${Object.keys(LIST_VIEW_LABELS).map((v) =>
+    `<button type="button" class="${v === cur ? "on" : ""}" aria-pressed="${v === cur}" onclick="setListView('${key}','${v}')">${LIST_VIEW_LABELS[v]}</button>`).join("")}</div>`;
+}
+
 /* ==================== WALL MAP (WALL-1) ==================== */
 /* WALL-1, v2.59.0. The wall was reached by drilling Wall Collection › a row ›
    31 cards that differ only by number, so she navigated by name while standing
@@ -7891,6 +7937,8 @@ function screenLocationDetail() {
           <button class="btn btn-secondary btn-sm" onclick="openModal('upload',{locationId:'${l.id}'})">${icon("photoPlus")}</button>
         </div>
       </div>
+      ${/* VIEW-1. Its own line: beside Select and upload it overflowed a phone. */""}
+      ${photos.length && !locationHoldsPlants(l) ? `<div style="display:flex;justify-content:flex-end;margin:-2px 0 12px;">${listViewSwitch("locationPhotos")}</div>` : ""}
       ${/* LOCP-4. Filing a run of twenty archive shots onto one specimen was
            twenty trips through the same modal. The Gallery's select machinery
            is photo-generic despite the name, so it is reused wholesale rather
@@ -7913,7 +7961,7 @@ function screenLocationDetail() {
              containers": cross-tagging a whole-area view into buckets is noise,
              which is what LOCP-1 said when it left photo_locations unused for
              exactly this case. */""}
-        <div class="photo-feed">
+        <div class="photo-feed size-${listView("locationPhotos")}">
           ${photos.map((p) => {
             // DEDUPE-1. See the note on Plant Detail above.
             const shown = plantsAssignedToPhoto(p.id);

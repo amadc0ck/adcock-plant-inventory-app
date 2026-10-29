@@ -912,6 +912,9 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.62.0 — VIEW-1: Large / Small / List switch, first on Location photos
+`listViewSwitch(key)` + `listView(key)`, remembered per device in `abg-list-views`. Sizes are CSS modifiers on the one renderer (`.photo-feed.size-small|list`), never second markup, so select/caption/lightbox behave identically. Only the area/archive feed has it — bucket pages use the identification card grid, which needs its own small/list design. Other lists opt in with a key plus three modifiers on their container class.
+
 ### v2.61.0 — WALL-2: cup colour controls behind a button
 Card swatches and the Repaint bar were always open, so a stray tap repainted a cup. Both now wait behind "Change colour" on the cup card (Done / Escape closes, clears the brush). Opening switches the map to Cup colour; it stays open while stepping cups and resets on leaving the location. `state.wallPaintEdit`.
 

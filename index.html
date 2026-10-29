@@ -1106,7 +1106,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.65.0";
+const APP_VERSION = "2.66.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2201,6 +2201,7 @@ async function loadAll() {
     state.wishlist = wishlist || [];
     state.taxaAskedIds = new Set((askedTaxa || []).map((r) => r.taxa_id).filter(Boolean));
     state.cupPaints = cupPaints || [];
+    checkRoute();   // inside the try: a failed load must not throw the route away
   } catch (e) {
     toast(e.message, true);
   }
@@ -4956,7 +4957,7 @@ function navPush() {
 
 function navBack() {
   const snap = state.navStack.pop();
-  if (!snap) { goTab("plants"); return; }
+  if (!snap) { navUp(); return; }
   Object.assign(state, {
     tab: snap.tab,
     reportView: snap.reportView,
@@ -4973,6 +4974,67 @@ function navBack() {
   render();
   // After the DOM exists again, not before.
   requestAnimationFrame(() => window.scrollTo(0, snap.scrollY || 0));
+}
+
+// ROUTE-1. Nothing to pop — a reload, or a link straight in — so Back goes
+// where its label already said: a plant's species, a location's parent. It
+// used to drop to Plants from everywhere, which a reload made the common case.
+function navUp() {
+  if (state.tab === "plantDetail") {
+    const pl = state.plants.find((x) => x.id === state.currentPlantId);
+    if (pl && pl.taxa_id && taxonById(pl.taxa_id)) return splitGo("taxon", pl.taxa_id);
+    return goTab("plants");
+  }
+  if (state.tab === "locationDetail") {
+    const l = locationById(state.currentLocationId);
+    const parent = l && l.parent_location_id ? locationById(l.parent_location_id) : null;
+    return parent ? splitGo("loc", parent.id) : goTab("locations");
+  }
+  if (state.tab === "filing") return goTab("inbox");
+  goTab("plants");
+}
+
+/* ROUTE-1, v2.66.0. The page lives in the URL hash so a reload reopens it,
+   each browser tab keeps its own, and a bookmark goes straight to a bucket.
+   replaceState, not pushState: the browser's Back button keeps leaving the
+   app as it always has, and the in-app Back keeps its own stack. Modals,
+   filters and scroll are not routed — a reload lands on the page, at the top. */
+const ROUTE_LISTS = ["inbox", "plants", "locations", "gallery", "settings"];
+const ROUTE_DETAILS = {
+  plantDetail: ["plant", "currentPlantId"],
+  taxonDetail: ["species", "currentTaxonId"],
+  locationDetail: ["location", "currentLocationId"],
+};
+function routeHash() {
+  const d = ROUTE_DETAILS[state.tab];
+  if (d) return state[d[1]] ? `#${d[0]}/${state[d[1]]}` : "";
+  return ROUTE_LISTS.includes(state.tab) ? `#${state.tab}` : "";
+}
+function syncRoute() {
+  const h = routeHash();
+  if (h && window.location.hash !== h) history.replaceState(null, "", h);
+}
+function applyRoute(hash) {
+  const m = /^#([a-z]+)(?:\/([0-9A-Za-z-]+))?$/.exec(hash || "");
+  if (!m) return false;
+  if (!m[2]) {
+    if (!ROUTE_LISTS.includes(m[1])) return false;
+    state.tab = m[1];
+    return true;
+  }
+  const tab = Object.keys(ROUTE_DETAILS).find((t) => ROUTE_DETAILS[t][0] === m[1]);
+  if (!tab) return false;
+  state.tab = tab;
+  state[ROUTE_DETAILS[tab][1]] = m[2];
+  return true;
+}
+// Once data is in: a saved link to a record that has since been deleted or
+// merged away lands on its list, not on "not found".
+function checkRoute() {
+  const gone = (state.tab === "plantDetail" && !state.plants.some((p) => p.id === state.currentPlantId))
+    || (state.tab === "taxonDetail" && !taxonById(state.currentTaxonId))
+    || (state.tab === "locationDetail" && !locationById(state.currentLocationId));
+  if (gone) { state.navStack = []; state.tab = state.tab === "locationDetail" ? "locations" : "plants"; }
 }
 
 // The label for the button itself: where popping would actually land you.
@@ -14988,6 +15050,7 @@ function render() {
   keepSplitPane(scrollSnapshot, samePage);
   lastRenderKey = currentViewKey();
   lastPageKey = pageViewKey();
+  syncRoute();
   observeLazyPhotos();
 }
 
@@ -15720,7 +15783,14 @@ async function boot() {
   const cameFromDriveConnect = window.location.hash === "#drive-connected";
   if (cameFromDriveConnect) {
     history.replaceState(null, "", window.location.pathname);
+  } else {
+    applyRoute(window.location.hash);
   }
+  // A hash edited or pasted into the address bar, without a reload.
+  window.addEventListener("hashchange", () => {
+    if (window.location.hash === routeHash()) return;
+    if (applyRoute(window.location.hash)) { state.navStack = []; state.modal = null; checkRoute(); render(); window.scrollTo(0, 0); }
+  });
 
   // Attached once — delegated from document, so it survives every re-render.
   wireHoverCards();

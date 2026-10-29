@@ -912,6 +912,9 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.66.0 — ROUTE-1: reload stays on the page
+Page lives in the URL hash (`#plant/<id>`, `#species/<id>`, `#location/<id>`, `#gallery`…) via replaceState, applied at boot before data and checked in `loadAll` (inside the try — a failed load keeps the route). Deleted records fall back to their list. Empty-stack Back now goes up a level (`navUp`) as the labels always claimed, instead of Plants. Not routed: modals, filters, scroll, Filing, wall cup selection. `#drive-connected` is handled before routing and never matches it.
+
 ### v2.65.0 — DESK-3: "photos with no plant" folded into the location header
 The separate card between the children and Location photos is now one line in the header panel: button + "N photos with no plant". Orange Assign where the location holds plants (it is owed work), plain Tag a plant on areas/archives. The area's long explanatory sentence was dropped; the panel already says plants live in the containers inside.
 

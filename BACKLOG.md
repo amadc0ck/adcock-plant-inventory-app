@@ -912,6 +912,9 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.61.0 — WALL-2: cup colour controls behind a button
+Card swatches and the Repaint bar were always open, so a stray tap repainted a cup. Both now wait behind "Change colour" on the cup card (Done / Escape closes, clears the brush). Opening switches the map to Cup colour; it stays open while stepping cups and resets on leaving the location. `state.wallPaintEdit`.
+
 ### v2.60.0 — DESK-1: desktop / iPad layout
 Sidebar from 1000px; list + detail split from 1180px on species, specimens and locations; wide tier moved 1100 → 1280 because the sidebar takes 188px. Phone untouched — no new nodes render below 1000 except hidden nav pieces.
 Also fixed: plant hero actions crushing the name at 700–1279 (existing bug on iPad portrait), and the cream logo vanishing in daylight (`brandLogoSrc()`).

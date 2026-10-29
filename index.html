@@ -1086,7 +1086,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.60.0";
+const APP_VERSION = "2.61.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1133,6 +1133,7 @@ const state = {
   wallSelected: null,         // the cup's location id shown in the card under the map
   wallSearch: "",
   wallBrush: null,            // a cup_paints id while Repaint is on
+  wallPaintEdit: false,       // WALL-2: colour controls shown only after "Change colour"
   wallUndo: null,             // {id, from} — the last repaint, for one-step undo
   // DESK-1. Per device like the theme: hiding the list pane is about this
   // screen's width, not the account.
@@ -5382,7 +5383,7 @@ function openLocation(id) {
   // Select mode is per-screen. Carrying it across meant arriving somewhere new
   // with a selection you could no longer see.
   navPush();
-  state.gallerySelectMode = false; state.gallerySelected = new Set(); state.tab = "locationDetail"; state.currentLocationId = id; render(); window.scrollTo(0, 0); }
+  state.gallerySelectMode = false; state.gallerySelected = new Set(); state.wallPaintEdit = false; state.wallBrush = null; state.tab = "locationDetail"; state.currentLocationId = id; render(); window.scrollTo(0, 0); }
 
 function plantPhotosOrdered(plantId) {
   const taggedPhotoIds = new Set(state.photoPlants.filter((pp) => pp.plant_id === plantId).map((pp) => pp.photo_id));
@@ -7509,9 +7510,13 @@ function wallCard(rows, cur, idx) {
       <div>
         <div class="mono" style="font-size:11px;letter-spacing:0.6px;text-transform:uppercase;color:var(--moss);">${escapeHtml(row.row.name)} · ${cur.ci + 1} of ${row.cups.length}</div>
         <div class="display" style="font-size:22px;font-weight:600;cursor:pointer;" onclick="openLocation('${c.id}')">${escapeHtml(c.name)}</div>
-        ${hex ? `<div class="wall-paintline"><i style="--paint:${hex}"></i>${escapeHtml(info.paint.name)} cup${info.paint.finish ? ` <span class="subtle">· ${escapeHtml(info.paint.finish)}</span>` : ""}</div>`
-              : state.cupPaints.length ? `<div class="subtle">No cup colour set</div>` : ""}
-        ${swatches ? `<div class="wall-swatches" role="group" aria-label="Cup colour">${swatches}</div>` : ""}
+        ${/* WALL-2, v2.61.0. The swatches sat open on every cup, so a stray tap
+             while reading the card repainted it. They and the Repaint bar now
+             wait behind one button, and stay open while stepping cup to cup so
+             a run of corrections is still one tap each. */""}
+        ${hex ? `<div class="wall-paintline"><i style="--paint:${hex}"></i>${escapeHtml(info.paint.name)} cup${info.paint.finish ? ` <span class="subtle">· ${escapeHtml(info.paint.finish)}</span>` : ""}${swatches ? wallPaintEditBtn() : ""}</div>`
+              : state.cupPaints.length ? `<div class="wall-paintline subtle">No cup colour set${swatches ? wallPaintEditBtn() : ""}</div>` : ""}
+        ${swatches && state.wallPaintEdit ? `<div class="wall-swatches" role="group" aria-label="Cup colour">${swatches}</div>` : ""}
         ${undo ? `<div class="subtle">Was ${undoFrom ? escapeHtml(undoFrom.name) : "no colour"} · <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="undoCupPaint()">Undo</button></div>` : ""}
         <div><button class="btn btn-secondary btn-sm" onclick="openLocation('${c.id}')">Open ${escapeHtml(c.name)}</button></div>
       </div>
@@ -7534,10 +7539,10 @@ function wallMapSection(l) {
   const q = state.wallSearch.trim().toLowerCase();
   const hits = q ? new Set(cups.filter((x) => wallCupMatches(x.c, q)).map((x) => x.c.id)) : null;
   const cur = cups.find((x) => x.c.id === state.wallSelected) || cups[0];
-  const brush = lens === "paint" ? cupPaintById(state.wallBrush) : null;
+  const brush = lens === "paint" && state.wallPaintEdit ? cupPaintById(state.wallBrush) : null;
 
   const lensBtn = (k, label) => `<button class="btn btn-sm ${lens === k ? "btn-primary" : "btn-secondary"}" onclick="state.wallLens='${k}';state.wallBrush=null;render()">${label}</button>`;
-  const brushBar = lens === "paint" ? `
+  const brushBar = lens === "paint" && state.wallPaintEdit ? `
     <div class="wall-brush">
       <span>Repaint:</span>
       <div class="wall-swatches">${state.cupPaints.map((p) => {
@@ -7586,8 +7591,19 @@ function wallSelect(id) {
   state.wallSelected = id;
   render();
 }
+function wallPaintEditBtn() {
+  return ` <button class="btn-ghost" style="margin-left:auto;font-size:12.5px;color:var(--blue);padding:2px 0;" onclick="wallPaintEditToggle()" aria-pressed="${state.wallPaintEdit}">${state.wallPaintEdit ? "Done" : "Change colour"}</button>`;
+}
+// Opening switches the map to Cup colour, since that is the view a repaint
+// shows; closing drops any brush so the next tap selects rather than paints.
+function wallPaintEditToggle() {
+  state.wallPaintEdit = !state.wallPaintEdit;
+  state.wallBrush = null;
+  if (state.wallPaintEdit && state.cupPaints.some(cupPaintHex)) state.wallLens = "paint";
+  render();
+}
 function wallTap(id) {
-  if (state.wallLens === "paint" && state.wallBrush) return setCupPaint(id, state.wallBrush);
+  if (state.wallLens === "paint" && state.wallPaintEdit && state.wallBrush) return setCupPaint(id, state.wallBrush);
   wallSelect(id);
 }
 function wallStep(dir) {
@@ -7641,7 +7657,7 @@ function wireWallKeys() {
     const t = e.target;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     if (!wallRowsFor(locationById(state.currentLocationId)).length) return;
-    if (e.key === "Escape" && state.wallBrush) { e.preventDefault(); state.wallBrush = null; render(); return; }
+    if (e.key === "Escape" && state.wallPaintEdit) { e.preventDefault(); wallPaintEditToggle(); return; }
     const dir = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" }[e.key];
     if (!dir) return;
     e.preventDefault();
@@ -14792,7 +14808,7 @@ function splitGo(kind, id) {
   state.modal = null;
   if (kind === "taxon") { state.tab = "taxonDetail"; state.currentTaxonId = id; state.taxonPhotoLimit = 24; }
   else if (kind === "plant") { state.tab = "plantDetail"; state.currentPlantId = id; }
-  else { state.gallerySelectMode = false; state.gallerySelected = new Set(); state.tab = "locationDetail"; state.currentLocationId = id; }
+  else { state.gallerySelectMode = false; state.gallerySelected = new Set(); state.wallPaintEdit = false; state.wallBrush = null; state.tab = "locationDetail"; state.currentLocationId = id; }
   render();
   window.scrollTo(0, 0);
 }

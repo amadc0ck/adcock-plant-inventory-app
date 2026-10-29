@@ -1106,7 +1106,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.63.0";
+const APP_VERSION = "2.64.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -7838,7 +7838,11 @@ function screenLocationDetail() {
         const wallRows = wallRowsFor(l);
         const asMap = wallRows.length > 0 && state.wallView === "map";
         const rowIds = new Set(wallRows.map((r) => r.row.id));
-        const listed = asMap ? children.filter((c) => !rowIds.has(c.id)) : children;
+        // DESK-2. With the list pane open, every child is already a row in the
+        // tree beside this page, so the cards only repeated it. Kept wherever
+        // the pane is not showing — phone, iPad portrait, or collapsed.
+        const inPane = splitActive() && !state.splitCollapsed;
+        const listed = inPane ? [] : asMap ? children.filter((c) => !rowIds.has(c.id)) : children;
         // WALL-3. Map / List and Add sit in the header row rather than a row of
         // their own — one less band of buttons above the wall.
         const viewBtn = (k, label) => `<button type="button" class="${state.wallView === k ? "on" : ""}" aria-pressed="${state.wallView === k}" onclick="state.wallView='${k}';render()">${label}</button>`;
@@ -7851,6 +7855,7 @@ function screenLocationDetail() {
             </div>
           </div>
           ${asMap ? wallMapSection(l) : ""}
+          ${inPane && !asMap ? `<p class="subtle" style="margin:0;font-size:12.5px;">Listed in the panel on the left.</p>` : ""}
           ${listed.length ? `<div class="card-grid"${asMap ? ' style="margin-top:14px;"' : ""}>
             ${listed.map((c) => {
               const count = aggregatePlantCount(c.id);

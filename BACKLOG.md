@@ -912,6 +912,9 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.64.0 — DESK-2: no child cards beside the list pane
+When the split pane is open, a location's children are already rows in its tree, so the "Inside this…" cards are hidden (a one-line pointer replaces them on non-wall pages). Shown again on phone, iPad portrait, or with the pane collapsed. Lost while hidden: per-child cover thumbnail and plant/photo counts — the pane shows sub-location counts only.
+
 ### v2.63.0 — WALL-3: condensed wall section
 Compass removed (tap a cup instead; arrow keys still walk the wall via `wallNeighbour`). Map/List + Add moved into the "Inside this area" header; lenses are one `.view-switch` segmented control beside search; cup card is two columns, name and row position on one line. Lens switch shrinks below 560px so all five fit on a phone.
 

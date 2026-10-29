@@ -672,9 +672,35 @@
   .view-switch button{background:none;border:none;color:var(--on-ground-muted);font:inherit;font-size:12.5px;font-weight:600;padding:6px 12px;cursor:pointer;}
   .view-switch button + button{border-left:1px solid var(--line);}
   .view-switch button.on{background:var(--bg-raised);color:var(--on-ground);}
-  .photo-feed.size-small{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
-  .photo-feed.size-small .photo-feed-card{border-radius:6px;}
-  .photo-feed.size-small .photo-feed-body{display:none;}
+  /* VIEW-2, v2.68.0. The sizes everywhere photos or plants are listed.
+     Small is ONE shared tile grid (photoTiles) — a tile is the same thing on
+     every list, only the tap differs. List is compact cards filling the width.
+     Large is each list's own big card; the two that were thumbnail rows
+     (.photo-row cards on a plant and a bucket) are restyled by .pv-big rather
+     than re-rendered, so their actions cannot drift between sizes. */
+  .pv-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px;}
+  .pv-tile{position:relative;aspect-ratio:3/4;border-radius:6px;overflow:hidden;cursor:pointer;background:var(--parchment-dim);}
+  .pv-tile.picked{outline:3px solid var(--moss);outline-offset:-3px;}
+  .pv-tile .select-check{top:5px;left:5px;z-index:2;}
+  .pv-fill, .card-grid.pv-fill{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:8px;align-items:stretch;}
+  .pv-big .photo-row{flex-direction:column;flex:1;min-width:0;gap:10px;}
+  .pv-big .photo-row > div{width:100%;}
+  .pv-big .photo-icon{height:auto;aspect-ratio:3/4;border-radius:8px;overflow:hidden;}
+  .pv-rows .tag-card{display:flex;align-items:flex-start;}
+  .pv-rows .card-media{width:60px;flex:none;}
+  .pv-rows .tag-card > div:last-child{flex:1;min-width:0;}
+  /* Plant cards (.plant-list-card) share one shape, so their sizes are CSS on
+     it. .pl-text is the text column; past its type line and name it is detail
+     that Small and List leave out. */
+  .card-grid.plv-small{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;}
+  .plv-small .plant-list-card{flex-direction:column;padding:8px;gap:6px;}
+  .plv-small .plant-list-thumb{width:100%;height:auto;aspect-ratio:3/4;}
+  .plv-small .pl-text > :nth-child(n+3), .plv-list .pl-text > :nth-child(n+3){display:none;}
+  .plv-small .pl-text > :nth-child(2){font-size:13.5px !important;}
+  .card-grid.plv-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:8px;}
+  .plv-list .plant-list-card{padding:8px 12px;gap:12px;align-items:center;}
+  .plv-list .plant-list-thumb{width:39px;height:52px;}
+  .plv-list .pl-text > :nth-child(2){font-size:14.5px !important;}
   /* Compact cards that fill the width, not a single shrink-wrapped column: the
      wide tiers' align-items:start was sizing each row to its own content. */
   .photo-feed.size-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:8px;align-items:stretch;}
@@ -973,7 +999,6 @@
       max-height:86vh;padding:24px 26px;}
     .modal-handle{display:none;}
     .photo-feed{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;align-items:start;}
-    .photo-feed.size-small{grid-template-columns:repeat(4,1fr);gap:8px;}
     .section-grid > *{display:inline-block;vertical-align:top;width:100%;margin-bottom:14px;}
   }
   /* DESK-1. From 1000px the bottom tab bar becomes a left sidebar and the
@@ -1016,7 +1041,6 @@
     /* Columns, not grid: photos are shown at their own aspect ratio, so cell
        heights vary wildly and a grid would leave every short one over a hole. */
     .photo-feed{grid-template-columns:repeat(3,1fr);gap:16px;}
-    .photo-feed.size-small{grid-template-columns:repeat(6,1fr);gap:8px;}
     .section-grid > *{margin-bottom:16px;}
     /* Actions become the hero's third column only when there is room. */
     .detail-split .detail-media{width:34%;max-width:420px;}
@@ -1033,7 +1057,6 @@
     .split-wrap:not(.collapsed) .split-main .section-grid{columns:2;column-gap:14px;}
     .split-wrap:not(.collapsed) .split-main .section-grid > *{margin-bottom:14px;}
     .split-wrap:not(.collapsed) .split-main .photo-feed{grid-template-columns:repeat(2,1fr);gap:14px;}
-    .split-wrap:not(.collapsed) .split-main .photo-feed.size-small{grid-template-columns:repeat(4,1fr);gap:8px;}
     .split-wrap:not(.collapsed) .split-main .detail-split .detail-media{width:42%;max-width:400px;}
     .split-wrap:not(.collapsed) .split-main .detail-split{flex-wrap:wrap;}
     .split-wrap:not(.collapsed) .split-main .detail-split .detail-actions{flex-basis:100%;width:auto;flex-shrink:1;padding:0 18px 18px 22px;}
@@ -1108,7 +1131,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.67.0";
+const APP_VERSION = "2.68.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1192,7 +1215,6 @@ const state = {
   photosImport: null,
   resumableImport: null,
   attachPhotoLimit: 24,
-  galleryView: "grid",
   gallerySelectMode: false,
   gallerySelected: new Set(),
   dupeSelected: new Set(),
@@ -5651,7 +5673,6 @@ function saveInboxPrefs() {
   } catch (e) {}
 }
 function setInboxPageSize(n) { state.inboxPageSize = n; state.inboxLimit = n; saveInboxPrefs(); render(); }
-function setInboxView(v) { state.inboxView = v; saveInboxPrefs(); render(); }
 
 // Sorting on capture date, not upload date. After a bulk import everything
 // shares an upload timestamp, so upload order says nothing — whereas capture
@@ -6253,9 +6274,7 @@ function screenInbox() {
           <input id="search-inbox" placeholder="Search notes…" value="${escapeHtml(state.inboxSearch || "")}"
                  style="width:auto;flex:1;min-width:130px;font-size:13px;padding:7px 9px;"
                  oninput="state.inboxSearch=this.value;state.inboxLimit=${pageSize};scheduleRender()" />
-          <button class="btn btn-secondary btn-sm icon-btn" onclick="setInboxView('${state.inboxView === "compact" ? "grid" : "compact"}')" title="Switch between full cards and compact rows">
-            ${state.inboxView === "compact" ? icon("photo") + " Full" : icon("clipboard") + " Compact"}
-          </button>
+          ${listViewSwitch("photos")}
           ${/* INB-2. Last in the row, so entering select mode does not reflow
                the controls to its left. Accented while active because in select
                mode a tap means something different everywhere on the screen. */""}
@@ -6298,8 +6317,11 @@ function screenInbox() {
         <div class="empty"><div class="display">${filtered ? "No matches" : "No unfiled photos"}</div>
         <div>${filtered ? "Try a different year or search." : "Everything you have uploaded is filed. Tap the camera button to add more."}</div>
         ${filtered ? `<button class="btn btn-secondary btn-sm" style="margin-top:12px;" onclick="state.inboxYear='';state.inboxSearch='';render()">Clear filters</button>` : ""}</div>` : `
-        ${state.inboxView === "compact"
-          ? `<div class="stack">${visible.map((p) => inboxCompactRow(p, selectMode)).join("")}</div>`
+        ${listView("photos") === "list"
+          ? `<div class="pv-fill">${visible.map((p) => inboxCompactRow(p, selectMode)).join("")}</div>`
+          : listView("photos") === "small" ? photoTiles(visible, {
+              selecting: selectMode, picked: (p) => state.inboxSelected.has(p.id),
+              toggle: (p) => `toggleInboxPhotoSelected('${p.id}')`, open: (p) => `openInboxLightbox('${p.id}')` })
           : `<div class="card-grid">${visible.map((p) => photoRow(p, selectMode)).join("")}</div>`}
         ${remaining > 0 ? `<button class="btn btn-secondary btn-block" style="margin-top:16px;" onclick="state.inboxLimit=(state.inboxLimit||${pageSize})+${pageSize};render()">Show ${Math.min(remaining, pageSize)} more (${remaining} left)</button>` : ""}`}
     </div>
@@ -6481,7 +6503,7 @@ function taxonCard(t) {
       <div class="plant-list-thumb">
         ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
       </div>
-      <div style="flex:1;min-width:0;">
+      <div class="pl-text" style="flex:1;min-width:0;">
         <div class="tag-id">${escapeHtml(listOptionsFor("plant_type")[t.plant_type] || t.plant_type || "Unclassified")}</div>
         <div style="font-family:'Fraunces',serif;font-size:16px;font-weight:600;margin-top:2px;line-height:1.25;">${taxonDisplayHtml(t)}${isFrostTender(t) ? " " + frostBadge() : ""}</div>
         ${(() => {
@@ -6625,6 +6647,7 @@ function screenTaxa() {
           <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="state.taxaOnlySuggestions=false;render()">Show all</button>
         </div>` : ""}
       <input class="search-input" placeholder="Search name, genus, family…" value="${escapeHtml(state.taxaSearch || "")}" id="search-taxa" oninput="state.taxaSearch=this.value;scheduleRender()" />
+      <div style="display:flex;justify-content:flex-end;margin:-4px 0 12px;">${listViewSwitch("plants")}</div>
       ${/* The counts and the two buttons moved into screenHeader() in v2.1.0 and
            this row was left behind, so the whole lot rendered twice. Only the
            filtered count was unique to it, and that now lives in the header. */""}
@@ -6632,7 +6655,7 @@ function screenTaxa() {
       ${list.length === 0 ? `
         <div class="empty"><div class="display">${state.taxa.length === 0 ? "No plants yet" : "No matches"}</div>
         <div>${state.taxa.length === 0 ? "Add your first plant from a photo." : "Try a different search."}</div></div>` : `
-        <div class="card-grid">${list.map(taxonCard).join("")}</div>`}
+        <div class="card-grid plv-${listView("plants")}">${list.map(taxonCard).join("")}</div>`}
 
       ${/* This tab lists taxa, so a specimen with no taxon would otherwise be
            unreachable. Surface them rather than letting them disappear. */""}
@@ -6645,7 +6668,7 @@ function screenTaxa() {
           <span class="subtle">${countLabel(orphans.length, "specimen", "specimens")}</span>
         </div>
         <p class="subtle" style="margin:-4px 0 12px;">Open one and use Edit full record to give it a name, or link it from the species record.</p>
-        <div class="card-grid">${orphans.map(plantRow).join("")}</div>`;
+        <div class="card-grid plv-${listView("plants")}">${orphans.map(plantRow).join("")}</div>`;
       })()}
     </div>
   </div>`;
@@ -6867,11 +6890,18 @@ function screenTaxonDetail() {
         const limit = state.taxonPhotoLimit || 24;
         const shown = shots.slice(0, limit);
         return `
-        <div class="row" style="margin-top:26px;margin-bottom:8px;">
+        <div class="row" style="margin-top:26px;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
           <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photos</h3>
-          <span class="subtle">${countLabel(shots.length, "photo", "photos")} across ${countLabel(all.length, "specimen", "specimens")}</span>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;">
+            <span class="subtle">${countLabel(shots.length, "photo", "photos")} across ${countLabel(all.length, "specimen", "specimens")}</span>
+            ${listViewSwitch("photos")}
+          </div>
         </div>
-        <div class="card-grid">
+        ${listView("photos") === "small" ? (() => {
+          const owner = new Map(shown.map((x) => [x.photo.id, x.specimen.id]));
+          return photoTiles(shown.map((x) => x.photo), { selecting: false, open: (p) => `openLightbox('${owner.get(p.id)}','${p.id}')` });
+        })() : `
+        <div class="card-grid ${listView("photos") === "list" ? "pv-fill pv-rows" : ""}">
           ${shown.map(({ photo, specimen }) => {
             const loc = photo.location_id ? locationById(photo.location_id) : null;
             return `
@@ -6887,7 +6917,7 @@ function screenTaxonDetail() {
               </div>
             </div>`;
           }).join("")}
-        </div>
+        </div>`}
         ${shots.length > limit ? `<button class="btn btn-secondary btn-block" style="margin-top:12px;" onclick="state.taxonPhotoLimit=${limit + 24};render()">Show more — ${limit} of ${shots.length}</button>` : ""}`;
       })()}
     </div>
@@ -6910,7 +6940,7 @@ function plantRow(pl) {
     <div class="plant-list-thumb">
       ${cover ? photoImg(cover) : `<div class="plant-list-thumb-empty">${icon("photo")}</div>`}
     </div>
-    <div style="flex:1;min-width:0;">
+    <div class="pl-text" style="flex:1;min-width:0;">
       <div class="tag-id">${pl.accession_number}</div>
       <div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin-top:2px;line-height:1.25;">${plantDisplayHtml(pl)}${plantIsFrostTender(pl) ? " " + frostBadge() : ""}</div>
       ${(() => {
@@ -7201,10 +7231,11 @@ function screenPlantDetail() {
         </div>`;
       })()}
 
-      <div class="row" style="margin-top:26px;margin-bottom:4px;">
+      <div class="row" style="margin-top:26px;margin-bottom:4px;flex-wrap:wrap;gap:8px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Photo timeline</h3>
-        <div style="display:flex;align-items:center;gap:12px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;">
           <span class="subtle">${timelinePhotos.length} total</span>
+          ${timelinePhotos.length ? listViewSwitch("photos") : ""}
           <button class="btn-ghost" style="font-size:12px;" onclick="state.timelineOldestFirst=!state.timelineOldestFirst;render()">
             ${state.timelineOldestFirst ? "Oldest first ↑" : "Newest first ↓"}
           </button>
@@ -7232,7 +7263,8 @@ function screenPlantDetail() {
             if (!stay) return "";
             return `<div class="timeline-move">${icon("pin")} Recorded move &mdash; ${escapeHtml(stayRange(stay))}${stay.notes ? ` &middot; ${escapeHtml(stay.notes)}` : ""}</div>`;
           })()}
-          <div class="card-grid">
+          ${listView("photos") === "small" ? photoTiles(group.photos, { selecting: false, open: (p) => `openLightbox('${pl.id}','${p.id}')` }) : `
+          <div class="card-grid ${listView("photos") === "list" ? "pv-fill" : "pv-big"}">
             ${group.photos.map((p) => {
               /* DEDUPE-1. Was a hand-rolled [primary, ...tagged] that neither
                  deduped nor excluded the plant whose page this is. A photo both
@@ -7269,7 +7301,7 @@ function screenPlantDetail() {
                 </div>
               </div>`;
             }).join("")}
-          </div>
+          </div>`}
           </div>
         `).join("")}
         </div>`}
@@ -7380,8 +7412,11 @@ function screenLocations() {
    list's own container class (see .photo-feed.size-*). */
 const LIST_VIEW_KEY = "abg-list-views";
 const LIST_VIEW_LABELS = { large: "Large", small: "Small", list: "List" };
+// VIEW-2: two keys, "photos" and "plants" — one choice per kind, set from
+// whichever list she is on. "locationPhotos" was VIEW-1's key and is read as
+// the photos choice until she picks again.
 function listView(key) {
-  const v = state.listViews[key];
+  const v = state.listViews[key] ?? (key === "photos" ? state.listViews.locationPhotos : undefined);
   return LIST_VIEW_LABELS[v] ? v : "large";
 }
 function setListView(key, v) {
@@ -7389,9 +7424,18 @@ function setListView(key, v) {
   try { localStorage.setItem(LIST_VIEW_KEY, JSON.stringify(state.listViews)); } catch (e) { /* private mode */ }
   render();
 }
+// Small for every photo list. `o.open(p)` and `o.toggle(p)` return the
+// onclick for that list; `o.selecting` and `o.picked(p)` drive select mode.
+function photoTiles(photos, o) {
+  return `<div class="pv-tiles">${photos.map((p) => {
+    const picked = o.selecting && o.picked(p);
+    return `<div class="pv-tile${picked ? " picked" : ""}" data-anchor="${p.id}" onclick="${o.selecting ? o.toggle(p) : o.open(p)}">
+      ${photoImg(p)}${o.selecting ? `<div class="select-check ${picked ? "checked" : ""}">${picked ? icon("check") : ""}</div>` : ""}</div>`;
+  }).join("")}</div>`;
+}
 function listViewSwitch(key) {
   const cur = listView(key);
-  return `<div class="view-switch" role="group" aria-label="Display size">${Object.keys(LIST_VIEW_LABELS).map((v) =>
+  return `<div class="view-switch" role="group" aria-label="${key === "plants" ? "Card size" : "Photo size"}">${Object.keys(LIST_VIEW_LABELS).map((v) =>
     `<button type="button" class="${v === cur ? "on" : ""}" aria-pressed="${v === cur}" onclick="setListView('${key}','${v}')">${LIST_VIEW_LABELS[v]}</button>`).join("")}</div>`;
 }
 
@@ -7977,7 +8021,10 @@ function screenLocationDetail() {
       ${(locationHoldsPlants(l) || plants.length) ? `
         <div class="row" style="margin-top:24px;margin-bottom:12px;">
           <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Plants here</h3>
-          <span class="subtle">${plants.length} total</span>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;">
+            <span class="subtle">${plants.length} total</span>
+            ${plants.length ? listViewSwitch("plants") : ""}
+          </div>
         </div>
         ${!locationHoldsPlants(l) && plants.length ? `
           <p class="subtle" style="margin:-6px 0 12px;">This ${locationTypeLabel(l.type).toLowerCase()} isn't set up to hold plants directly — ${countLabel(plants.length, "specimen", "specimens")} assigned here probably belong in a container inside it.</p>` : ""}
@@ -7986,7 +8033,7 @@ function screenLocationDetail() {
           <button class="btn btn-secondary btn-sm" onclick="openModal('linkPlantToLocation',{locationId:'${l.id}'})">Link existing plant</button>
         </div>
         ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
-          <div class="card-grid">${plants.map(plantRow).join("")}</div>`}` : ""}
+          <div class="card-grid plv-${listView("plants")}">${plants.map(plantRow).join("")}</div>`}` : ""}
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Location photos</h3>
@@ -7997,7 +8044,7 @@ function screenLocationDetail() {
         </div>
       </div>
       ${/* VIEW-1. Its own line: beside Select and upload it overflowed a phone. */""}
-      ${photos.length && !locationHoldsPlants(l) ? `<div style="display:flex;justify-content:flex-end;margin:-2px 0 12px;">${listViewSwitch("locationPhotos")}</div>` : ""}
+      ${photos.length ? `<div style="display:flex;justify-content:flex-end;margin:-2px 0 12px;">${listViewSwitch("photos")}</div>` : ""}
       ${/* LOCP-4. Filing a run of twenty archive shots onto one specimen was
            twenty trips through the same modal. The Gallery's select machinery
            is photo-generic despite the name, so it is reused wholesale rather
@@ -8013,14 +8060,17 @@ function screenLocationDetail() {
           </div>
         </div>` : ""}
 
-      ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : !locationHoldsPlants(l) ? `
+      ${photos.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No photos of this location yet.</div></div>` : listView("photos") === "small" ? photoTiles(photos, {
+          selecting: state.gallerySelectMode, picked: (p) => state.gallerySelected.has(p.id),
+          toggle: (p) => `toggleGalleryPhotoSelected('${p.id}')`, open: (p) => `openLightbox('${l.id}','${p.id}','location')` })
+        : !locationHoldsPlants(l) ? `
         ${/* LOCP-3. Feed view. On an Area or an Archive the photos ARE the
              content, not records waiting to be filed. Identify and Ask Claude
              are dropped — there is no plant here to name — and so is "other
              containers": cross-tagging a whole-area view into buckets is noise,
              which is what LOCP-1 said when it left photo_locations unused for
              exactly this case. */""}
-        <div class="photo-feed size-${listView("locationPhotos")}">
+        <div class="photo-feed size-${listView("photos")}">
           ${photos.map((p) => {
             // DEDUPE-1. See the note on Plant Detail above.
             const shown = plantsAssignedToPhoto(p.id);
@@ -8044,7 +8094,7 @@ function screenLocationDetail() {
             </div>`;
           }).join("")}
         </div>` : `
-        <div class="card-grid">
+        <div class="card-grid ${listView("photos") === "list" ? "pv-fill" : "pv-big"}">
           ${photos.map((p) => {
             const suggestions = pendingIdentifications(p.id);
             const plantnetSuggestion = suggestions.find((s) => s.source === "PlantNet");
@@ -9244,7 +9294,7 @@ function screenGallery() {
   // Compact rows fit roughly five times more on screen, which is the difference
   // between browsing and hunting once a filter returns hundreds.
   const listRows = (photos) => `
-    <div class="stack">
+    <div class="pv-fill">
       ${photos.map((p) => {
         const plant = p.plant_id ? state.plants.find((x) => x.id === p.plant_id) : null;
         const locs = allLocationsForPhoto(p);
@@ -9330,19 +9380,17 @@ function screenGallery() {
 
       <div class="sticky-controls">
       <input class="search-input" placeholder="Search notes, plant, location…" value="${escapeHtml(f.search || "")}" id="search-gallery" oninput="state.galleryFilters.search=this.value;scheduleRender()" />
-      <div class="row" style="margin-bottom:16px;">
+      <div class="row" style="margin-bottom:16px;flex-wrap:wrap;gap:8px;">
         <div style="display:flex;align-items:center;gap:8px;">
           <button class="btn btn-secondary btn-sm" onclick="openModal('galleryFilters')">
             Filters${activeFilterCount ? ` <span class="pill pill-orange" style="margin-left:4px;">${activeFilterCount}</span>` : ""}
           </button>
           ${searching ? "" : `<button class="btn btn-secondary btn-sm" onclick="showAllGalleryPhotos()">All ${state.photos.length} photos</button>`}
         </div>
-        <div style="display:flex;align-items:center;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;">
           ${searching ? `<button class="btn-ghost" style="font-size:12.5px;" onclick="clearGalleryView()">Clear</button>` : ""}
           ${searching ? `<button class="btn btn-secondary btn-sm" onclick="toggleGallerySelectMode()">${state.gallerySelectMode ? "Done" : "Select"}</button>` : ""}
-          <button class="btn btn-secondary btn-sm icon-btn" onclick="state.galleryView = state.galleryView === 'list' ? 'grid' : 'list';render()" title="Switch between large photos and compact rows">
-            ${state.galleryView === "list" ? icon("photo") + " Large" : icon("clipboard") + " Compact"}
-          </button>
+          ${listViewSwitch("photos")}
         </div>
       </div>
       </div>
@@ -9377,7 +9425,13 @@ function screenGallery() {
             </div>` : ""}
         ${matches.length === 0
           ? `<div class="empty"><div class="display">No photos match</div><div>Try a different search or filter.</div></div>`
-          : `${state.galleryView === "list" ? listRows(matches.slice(0, state.galleryLimit)) : grid(matches.slice(0, state.galleryLimit))}
+          : `${(() => {
+              const page = matches.slice(0, state.galleryLimit);
+              const v = listView("photos");
+              return v === "list" ? listRows(page) : v === "small" ? photoTiles(page, {
+                selecting: state.gallerySelectMode, picked: (p) => state.gallerySelected.has(p.id),
+                toggle: (p) => `toggleGalleryPhotoSelected('${p.id}')`, open: (p) => `openGalleryLightbox('${p.id}')` }) : grid(page);
+            })()}
              ${matches.length > state.galleryLimit ? `
                <div style="text-align:center;margin:18px 0 8px;">
                  <button class="btn btn-secondary btn-sm" onclick="state.galleryLimit += 60;render()">Show more &mdash; ${state.galleryLimit} of ${matches.length}</button>

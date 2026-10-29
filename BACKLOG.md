@@ -912,6 +912,10 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.68.0 — VIEW-2: Large / Small / List on every photo and plant list
+Two choices per device, `photos` and `plants` (Amanda chose per-kind over per-list); VIEW-1's `locationPhotos` is read as `photos` until re-picked. Photos: area feed, bucket photos, plant timeline, species photos, Gallery, To Do — Gallery's Large/Compact and To Do's Full/Compact were replaced (`galleryView`, `setInboxView` removed; inbox prefs still store a dead `view`). Small is the shared `photoTiles()`; List is `.pv-fill`; the thumbnail-row cards get Large by `.pv-big` CSS. Plants: Plants page, unlinked, Plants here — `.plv-small|list` on `.plant-list-card`, `.pl-text` holds the text column. Not switched: specimen lineage tree, pickers, work queue, Claude-proposed photos.
+Gotcha: base `.card-grid` is flex below 700, so a size modifier must set `display:grid` itself; and needs two classes to beat the tier rules.
+
 ### v2.67.0 — VIEW-1 fix: List fills the width
 List was one shrink-wrapped column (the wide tiers' `align-items:start` sized each card to its content). Now an auto-fill grid of compact cards, `minmax(min(300px,100%),1fr)` so a 320px phone does not overflow; action icons wrap.
 

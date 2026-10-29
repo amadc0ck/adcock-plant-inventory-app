@@ -912,6 +912,9 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.65.0 — DESK-3: "photos with no plant" folded into the location header
+The separate card between the children and Location photos is now one line in the header panel: button + "N photos with no plant". Orange Assign where the location holds plants (it is owed work), plain Tag a plant on areas/archives. The area's long explanatory sentence was dropped; the panel already says plants live in the containers inside.
+
 ### v2.64.0 — DESK-2: no child cards beside the list pane
 When the split pane is open, a location's children are already rows in its tree, so the "Inside this…" cards are hidden (a one-line pointer replaces them on non-wall pages). Shown again on phone, iPad portrait, or with the pane collapsed. Lost while hidden: per-child cover thumbnail and plant/photo counts — the pane shows sub-location counts only.
 

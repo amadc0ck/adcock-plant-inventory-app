@@ -1106,7 +1106,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.64.0";
+const APP_VERSION = "2.65.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -7778,6 +7778,30 @@ function screenLocationDetail() {
           </div>` : ""}
 
           ${(() => {
+            // The common case, not an edge one: a photo of a container gets filed
+            // to the container and never to the plant in it. 526 photos sit like
+            // this. Surfacing it where the answer is obvious — standing in the
+            // location, looking at what lives there — is the whole point.
+            // DESK-3: one line in this panel rather than a card of its own
+            // between the children and the photos.
+            const orphans = photosAtLocation(l.id).filter((p) => !p.plant_id);
+            if (!orphans.length) return "";
+            const here = plantsAtLocation(l.id);
+            // Where plants are not expected, the same photos are not a backlog.
+            // The bulk action stays — tagging an archive shot to a specimen is the
+            // point — but it reads as something available, not something owed.
+            const expected = locationHoldsPlants(l);
+            const note = expected
+              ? (here.length ? countLabel(here.length, "specimen lives", "specimens live") + " here" : "no specimens here yet")
+              : "";
+            return `
+            <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <button class="btn ${expected ? "btn-accent" : "btn-secondary btn-on-cream"} btn-sm" onclick="openModal('assignLocationPhotos',{locationId:'${l.id}'})">${expected ? "Assign" : "Tag a plant"}</button>
+              <span style="font-size:12.5px;color:var(--ink-soft);">${countLabel(orphans.length, "photo", "photos")} with no plant${note ? " · " + note : ""}</span>
+            </div>`;
+          })()}
+
+          ${(() => {
             // WALL-1. A cup's own page is one tap from its place on the wall.
             const wall = wallHomeFor(l);
             return wall ? `<div style="margin-top:12px;"><button class="btn btn-secondary btn-on-cream btn-sm" onclick="openWallAt('${wall.id}','${l.type === "row" ? "" : l.id}')">Show on the wall</button></div>` : "";
@@ -7899,34 +7923,6 @@ function screenLocationDetail() {
         </div>
         ${plants.length === 0 ? `<div class="empty" style="padding:30px 20px;"><div>No plants assigned here yet.</div></div>` : `
           <div class="card-grid">${plants.map(plantRow).join("")}</div>`}` : ""}
-
-      ${(() => {
-        // The common case, not an edge one: a photo of a container gets filed
-        // to the container and never to the plant in it. 526 photos sit like
-        // this. Surfacing it where the answer is obvious — standing in the
-        // location, looking at what lives there — is the whole point.
-        const orphans = photosAtLocation(l.id).filter((p) => !p.plant_id);
-        if (!orphans.length) return "";
-        const here = plantsAtLocation(l.id);
-        // Where plants are not expected, the same photos are not a backlog.
-        // The bulk action stays — tagging an archive shot to a specimen is the
-        // point — but it reads as something available, not something owed.
-        const expected = locationHoldsPlants(l);
-        return `
-        <div class="surface" style="padding:14px;margin-top:20px;${expected ? "border-color:var(--orange);" : ""}">
-          <div class="row">
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:600;font-size:14px;">${expected
-                ? `${countLabel(orphans.length, "photo", "photos")} here with no plant`
-                : `${countLabel(orphans.length, "photo", "photos")} here`}</div>
-              <div class="subtle" style="font-size:12px;margin-top:2px;">${expected
-                ? (here.length ? `${countLabel(here.length, "specimen lives", "specimens live")} here` : "No specimens here yet — add one first, or attach these to a plant elsewhere")
-                : `${locationTypeLabel(l.type)} views are not expected to name a plant. Tag one to a specimen anywhere in the collection to add it to that plant's timeline.`}</div>
-            </div>
-            <button class="btn ${expected ? "btn-accent" : "btn-secondary"} btn-sm" onclick="openModal('assignLocationPhotos',{locationId:'${l.id}'})">${expected ? "Assign" : "Tag a plant"}</button>
-          </div>
-        </div>`;
-      })()}
 
       <div class="row" style="margin-top:26px;margin-bottom:12px;">
         <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Location photos</h3>

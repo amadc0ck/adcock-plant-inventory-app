@@ -681,7 +681,7 @@
      The whole screen holds one shape regardless of which fields are filled:
      every section renders, every field renders, blanks show a dimmed dash. */
 
-  /* Third column of the hero on wide screens; full width below 1100px. */
+  /* Third column of the hero on wide screens; full width below 1280px. */
   .detail-actions{padding:0 18px 18px 22px;}
   /* Vertical action list at the right of the hero card. */
   .action-card{border:1px solid rgba(37,41,37,0.18);border-radius:10px;overflow:hidden;flex-shrink:0;}
@@ -875,6 +875,37 @@
   .lightbox-bottom{padding:16px 18px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:10px;}
   .lightbox-counter{color:#9FB0A3;font-size:12.5px;}
 
+  /* DESK-1, v2.60.0. Desktop and iPad landscape. The sidebar's extra pieces
+     are in the nav markup on every device and hidden here, so the phone
+     layout is the same nodes it always was. The split's list pane is only
+     rendered at all from 1180px (SPLIT_MQ), so none of .split-* reaches a
+     phone. The list pane is sticky and scrolls on its own; the detail beside
+     it still scrolls the WINDOW, so sticky headers, scroll memory and the
+     lightbox keep the one scroller they were all written against. */
+  :root{--side-w:188px;--split-w:260px;}
+  .nav-side-brand,.nav-side-tools,.nav-cam-label{display:none;}
+  .split-wrap{display:flex;align-items:flex-start;}
+  .split-main{flex:1;min-width:0;}
+  .split-list{position:sticky;top:var(--sticky-top,0px);width:var(--split-w);flex-shrink:0;
+    height:calc(100vh - var(--sticky-top,0px));height:calc(100dvh - var(--sticky-top,0px));
+    overflow-y:auto;overscroll-behavior:contain;border-right:1px solid var(--line);padding:16px 8px 28px 12px;}
+  .split-wrap.collapsed .split-list{width:48px;padding:16px 6px;overflow:hidden;}
+  .split-top{display:flex;align-items:center;gap:4px;margin-bottom:10px;}
+  .split-title{font-family:'Fraunces',serif;font-size:16px;font-weight:500;flex:1;min-width:0;
+    background:none;border:none;color:var(--on-ground);text-align:left;padding:0 4px;cursor:pointer;}
+  .split-list .search-input{margin-bottom:8px;font-size:13px;padding:8px 10px;}
+  .split-group{font-size:10.5px;letter-spacing:0.6px;text-transform:uppercase;color:var(--on-ground-muted);padding:14px 10px 4px;}
+  .split-item{display:flex;align-items:baseline;gap:8px;width:100%;background:none;border:none;color:var(--on-ground);
+    text-align:left;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:13.5px;line-height:1.3;font-family:inherit;}
+  .split-item.current{background:var(--bg-raised);box-shadow:inset 3px 0 0 var(--orange);font-weight:600;}
+  .split-item.sub{font-size:12.5px;color:var(--on-ground-muted);}
+  .split-item.sub.current{color:var(--on-ground);}
+  .split-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .split-count{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--on-ground-muted);flex-shrink:0;}
+  /* Hover only where there is a pointer: on the iPad a tapped row would keep
+     the hover tint after the finger lifts. */
+  @media (hover:hover){ .split-item:hover:not(.current){background:var(--hairline);} }
+
   /* ============================================================
      RESPONSIVE — mobile-first base above; from here up, use the
      extra real estate on tablet/laptop screens instead of just
@@ -891,9 +922,14 @@
     .container{max-width:900px;}
     .card-grid{display:grid;grid-template-columns:repeat(2, 1fr);gap:14px;align-items:start;}
     .plant-list-thumb{width:90px;height:120px;}
-    .detail-split{flex-direction:row;align-items:flex-start;}
+    .detail-split{flex-direction:row;align-items:flex-start;flex-wrap:wrap;}
     .detail-split .detail-media{width:42%;max-width:400px;}
     .detail-split .detail-body{flex:1;}
+    /* DESK-1. The actions were a third flex column here as well as at the wide
+       tier, which on an 820px iPad squeezed the name and path into a ~60px
+       strip beside them. Below the wide tier they take their own full-width
+       line under the photo and name, as the base comment always said. */
+    .detail-split .detail-actions{flex-basis:100%;}
     /* Columns, not grid. These cards have wildly different heights — Care
        notes with an empty state next to a four-row Collection — and a grid
        makes every cell in a row as tall as the tallest, leaving the short
@@ -918,7 +954,33 @@
     .photo-feed{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;align-items:start;}
     .section-grid > *{display:inline-block;vertical-align:top;width:100%;margin-bottom:14px;}
   }
-  @media (min-width: 1100px) {
+  /* DESK-1. From 1000px the bottom tab bar becomes a left sidebar and the
+     brand bar folds into it. 1000, not 700: iPad portrait (820) keeps the
+     bottom bar, which is where a thumb is when she holds it in the garden. */
+  @media (min-width: 1000px) {
+    body{padding-bottom:24px;padding-left:var(--side-w);}
+    .sticky-header-group .topbar{display:none;}
+    .navbar{top:0;right:auto;width:var(--side-w);border-top:none;border-right:1px solid var(--line);padding-bottom:0;overflow-y:auto;}
+    .navbar .container.nav-row{max-width:none;height:100%;margin:0;flex-direction:column;align-items:stretch;
+      justify-content:flex-start;gap:2px;padding:20px 12px 14px;}
+    .nav-side-brand{display:block;order:-2;padding:0 6px 16px;}
+    .nav-side-brand img{width:100%;max-width:160px;height:auto;display:block;}
+    .nav-camera-btn{order:-1;width:auto;height:auto;border-radius:8px;transform:none;box-shadow:none;
+      gap:8px;padding:10px 14px;margin:0 0 14px;font-weight:600;font-size:14px;}
+    .nav-camera-btn svg{width:18px;height:18px;}
+    .nav-cam-label{display:inline;}
+    .navbtn{flex-direction:row;gap:12px;font-size:14px;letter-spacing:0;padding:10px 12px;}
+    .navbtn.active{background:var(--hairline);}
+    .navbtn .badge{position:static;transform:none;margin-left:auto;}
+    .nav-side-tools{display:flex;order:99;margin-top:auto;gap:2px;padding-top:12px;border-top:1px solid var(--line);}
+    .task-banner{left:var(--side-w);}
+    .bulk-action-bar{left:var(--side-w);bottom:0;}
+    .fab{bottom:24px;}
+  }
+  /* Was 1100px. The tiers are about how wide the CONTENT is, and from 1000px
+     the sidebar takes 188px of the window — so this tier now starts where the
+     content reaches the same ~1070px it used to get at 1100. */
+  @media (min-width: 1280px) {
     .container{max-width:1280px;}
     .card-grid{grid-template-columns:repeat(3, 1fr);gap:16px;}
     .plant-list-thumb{width:105px;height:140px;}
@@ -935,7 +997,22 @@
     .section-grid > *{margin-bottom:16px;}
     /* Actions become the hero's third column only when there is room. */
     .detail-split .detail-media{width:34%;max-width:420px;}
-    .detail-split .detail-actions{width:270px;flex-shrink:0;padding:18px 18px 18px 0;}
+    .detail-split{flex-wrap:nowrap;}
+    .detail-split .detail-actions{flex-basis:auto;width:270px;flex-shrink:0;padding:18px 18px 18px 0;}
+  }
+  /* DESK-1. Beside the list pane the detail gets the window less the sidebar
+     and the pane, which is the 700px tier's width until about 1560. These put
+     the 700px values back inside the split for that band, so a 13" iPad does
+     not squeeze a three-column hero into 800px. A collapsed pane gives the
+     room back, so it is excluded. */
+  @media (min-width: 1280px) and (max-width: 1559px) {
+    .split-wrap:not(.collapsed) .split-main .card-grid{grid-template-columns:repeat(2,1fr);gap:14px;}
+    .split-wrap:not(.collapsed) .split-main .section-grid{columns:2;column-gap:14px;}
+    .split-wrap:not(.collapsed) .split-main .section-grid > *{margin-bottom:14px;}
+    .split-wrap:not(.collapsed) .split-main .photo-feed{grid-template-columns:repeat(2,1fr);gap:14px;}
+    .split-wrap:not(.collapsed) .split-main .detail-split .detail-media{width:42%;max-width:400px;}
+    .split-wrap:not(.collapsed) .split-main .detail-split{flex-wrap:wrap;}
+    .split-wrap:not(.collapsed) .split-main .detail-split .detail-actions{flex-basis:100%;width:auto;flex-shrink:1;padding:0 18px 18px 22px;}
   }
 
   /* WALL-1. The wall map on an area whose children are rows of cups. Each row
@@ -1009,8 +1086,8 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.59.0";
-const APP_UPDATED = "2026-10-28";
+const APP_VERSION = "2.60.0";
+const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
 /* ============================================================
@@ -1057,6 +1134,9 @@ const state = {
   wallSearch: "",
   wallBrush: null,            // a cup_paints id while Repaint is on
   wallUndo: null,             // {id, from} — the last repaint, for one-step undo
+  // DESK-1. Per device like the theme: hiding the list pane is about this
+  // screen's width, not the account.
+  splitCollapsed: (() => { try { return localStorage.getItem("abg-split-collapsed") === "1"; } catch (e) { return false; } })(),
   waterDraft: null,       // {ids:[], label, date, notes, locationId} while the modal is open
   lastWaterBatch: null,   // {batchId, count, label} — powers Undo on To Do
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
@@ -6342,9 +6422,11 @@ function taxonCard(t) {
     </div>`;
 }
 
-function screenTaxa() {
+// The Plants list as filtered and ordered right now. Shared with the DESK-1
+// list pane, which must show exactly what the Plants page would.
+function taxaListFiltered() {
   const q = (state.taxaSearch || "").toLowerCase();
-  const list = state.taxa.filter((t) => {
+  return state.taxa.filter((t) => {
     if (state.taxaOnlySuggestions && !suggestionsForTaxon(t.id).length) return false;
     if (state.taxaOnlyMissingParts && !taxonMissingNameParts(t)) return false;
     if (state.taxaNoCoverOnly && !(!t.primary_photo_id
@@ -6361,6 +6443,11 @@ function screenTaxa() {
       .filter(Boolean).join(" ").toLowerCase();
     return hay.includes(q);
   }).sort((a, b) => taxonDisplayName(a).localeCompare(taxonDisplayName(b)));
+}
+
+function screenTaxa() {
+  const q = (state.taxaSearch || "").toLowerCase();
+  const list = taxaListFiltered();
 
   return `
   <div class="screen">
@@ -7162,8 +7249,19 @@ function locationCard(l) {
     </div>`;
 }
 
+// Top-level locations in list order, split into current homes and archives.
+// Shared with the DESK-1 list pane so its tree and this page cannot disagree.
+function topLevelLocationGroups() {
+  const all = state.locations.filter((l) => !l.parent_location_id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
+  // A former home is not somewhere you file a plant today. Mixing the two
+  // meant scanning past five places the collection has left to reach the
+  // Front Yard, and it made "0 plants" look like a gap rather than a fact.
+  const isArchive = (l) => l.gallery_row === "archives" || l.archived;
+  return { all, active: all.filter((l) => !isArchive(l)), archived: all.filter(isArchive) };
+}
+
 function screenLocations() {
-  const topLevel = state.locations.filter((l) => !l.parent_location_id).sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
+  const { all: topLevel, active, archived } = topLevelLocationGroups();
 
   return `
   <div class="screen">
@@ -7174,12 +7272,6 @@ function screenLocations() {
       ${(() => {
         if (state.locations.length === 0) return `
           <div class="empty"><div class="display">No locations yet</div><div>Add areas, rows, or containers to organize your plants.</div></div>`;
-        // A former home is not somewhere you file a plant today. Mixing the two
-        // meant scanning past five places the collection has left to reach the
-        // Front Yard, and it made "0 plants" look like a gap rather than a fact.
-        const isArchive = (l) => l.gallery_row === "archives" || l.archived;
-        const active = topLevel.filter((l) => !isArchive(l));
-        const archived = topLevel.filter(isArchive);
         return `
           ${active.length ? `<div class="card-grid">${active.map(locationCard).join("")}</div>` : ""}
           ${archived.length ? `
@@ -14300,9 +14392,13 @@ function navBar() {
   ];
   return `
   <div class="navbar"><div class="container nav-row">
+    ${/* DESK-1. Brand, label and tools are hidden below 1000px; from there the
+         bar is a sidebar and CSS order puts brand and Add photo at the top. */""}
+    <div class="nav-side-brand"><img src="${brandLogoSrc()}" alt="Adcock Botanical Garden" /></div>
     ${leftTabs.map(navBtn).join("")}
-    <button class="nav-camera-btn" onclick="openModal('upload')" aria-label="Add photo">${icon("camera")}</button>
+    <button class="nav-camera-btn" onclick="openModal('upload')" aria-label="Add photo">${icon("camera")}<span class="nav-cam-label">Add photo</span></button>
     ${rightTabs.map(navBtn).join("")}
+    <div class="nav-side-tools">${headerControls()}</div>
   </div></div>`;
 }
 
@@ -14319,19 +14415,18 @@ function toggleTheme() {
   render();
 }
 
-function topBar() {
+// The cream-lettered logo vanished on the daylight ground; the green-lettered
+// one is the same lockup made for light backgrounds.
+function brandLogoSrc() {
+  return state.theme === "daylight" ? "assets/logo-horizontal.png" : "assets/logo-horizontal-dark.png";
+}
+
+// The brand bar's four global controls. Shared because from 1000px the brand
+// bar is hidden and the sidebar carries them instead (DESK-1) — one source, so
+// the two cannot drift.
+function headerControls() {
   const driveOk = !!state.driveToken;
-  // HEAD-1. To Do's title used to live here in the global top bar, which is why
-  // it was the one screen whose header did not match its siblings. It now uses
-  // screenHeader() like everything else, so the top bar carries only the brand
-  // and the three global controls on every screen.
   return `
-  <div class="sticky-header-group">
-    <div class="topbar"><div class="container topbar-row">
-      <div class="brand" style="justify-content:flex-start;flex:1;">
-        <img src="assets/logo-horizontal-dark.png" alt="Adcock Botanical Garden" style="max-width:200px;" />
-      </div>
-      <div class="topbar-right-group">
         ${/* THEME-1. In the header, not buried in Settings: the moment it is
              wanted is standing in the garden with the sun on the screen. */""}
         <button class="status-light-btn" onclick="toggleTheme()" title="${state.theme === "daylight" ? "Switch to the dark theme" : "Daylight — for reading outside"}">
@@ -14341,7 +14436,21 @@ function topBar() {
           ${driveOk ? icon("statusConnected") : icon("statusDisconnected")}
         </button>
         <button class="icon-only-btn" onclick="openModal('appInfo')" aria-label="App info">${icon("info")}</button>
-        <button class="icon-only-btn" onclick="goTab('settings')" aria-label="Settings">${icon("settings")}</button>
+        <button class="icon-only-btn" onclick="goTab('settings')" aria-label="Settings">${icon("settings")}</button>`;
+}
+
+function topBar() {
+  // HEAD-1. To Do's title used to live here in the global top bar, which is why
+  // it was the one screen whose header did not match its siblings. It now uses
+  // screenHeader() like everything else, so the top bar carries only the brand
+  // and the three global controls on every screen.
+  return `
+  <div class="sticky-header-group">
+    <div class="topbar"><div class="container topbar-row">
+      <div class="brand" style="justify-content:flex-start;flex:1;">
+        <img src="${brandLogoSrc()}" alt="Adcock Botanical Garden" style="max-width:200px;" />
+      </div>
+      <div class="topbar-right-group">${headerControls()}
       </div>
     </div></div>
   </div>`;
@@ -14401,7 +14510,8 @@ function captureScroll() {
   // WALL-1: the wall map scrolls sideways on a phone and needs the same, or
   // tapping a cup at the right-hand end threw the wall back to cup 1.
   const rows = [...document.querySelectorAll(".gal-scroll, .wall-box")].map((el) => el.scrollLeft);
-  return { page: window.scrollY || 0, modal: modal ? modal.scrollTop : 0, rows };
+  const pane = document.querySelector(".split-list");
+  return { page: window.scrollY || 0, modal: modal ? modal.scrollTop : 0, rows, pane: pane ? pane.scrollTop : 0 };
 }
 
 // `what` says which layers to put back. Page scroll survives a modal opening
@@ -14584,6 +14694,150 @@ function scheduleRender(delay = 90) {
   }, delay);
 }
 
+/* ==================== SPLIT VIEW (DESK-1) ==================== */
+/* DESK-1, v2.60.0. On a wide screen, opening a species, specimen or location
+   replaced the list with the page, so looking through ten plants was open,
+   back, find your place, open. From 1180px the list stays on the left and the
+   page opens beside it.
+
+   1180 is an 11" iPad in landscape. Below it the detail would get less than
+   the ~670px the 700px tier was laid out for; a 13" iPad and a laptop clear it.
+
+   Moves within the pane REPLACE the page rather than pushing it, so Back still
+   goes to wherever the pane was opened from, not through every plant stepped
+   past on the way. */
+const SPLIT_MQ = window.matchMedia ? window.matchMedia("(min-width: 1180px)") : null;
+const SPLIT_KEY = "abg-split-collapsed";
+const SPLIT_TABS = new Set(["taxonDetail", "plantDetail", "locationDetail"]);
+
+function splitActive() {
+  return !!(SPLIT_MQ && SPLIT_MQ.matches) && SPLIT_TABS.has(state.tab);
+}
+
+function splitItem(kind, id, label, extra, o) {
+  const opt = o || {};
+  const pad = opt.depth ? ` style="padding-left:${10 + opt.depth * 14}px"` : "";
+  return `<button type="button" class="split-item${opt.sub ? " sub" : ""}${opt.current ? " current" : ""}" data-go="${kind}:${id}"${pad} onclick="splitGo('${kind}','${id}')">
+    <span class="split-name">${escapeHtml(label)}</span>${extra !== "" && extra != null ? `<span class="split-count">${escapeHtml(String(extra))}</span>` : ""}</button>`;
+}
+
+function splitSpecimenLabel(sp) {
+  const loc = allLocationsForPlant(sp)[0];
+  return `${sp.accession_number || "Specimen"}${loc ? " · " + loc.name : ""}`;
+}
+
+// Species, with the open one's specimens under it. Same filter and order as
+// the Plants page, and the same search box state, so typing here is typing
+// there.
+function splitPaneTaxa() {
+  const pl = state.tab === "plantDetail" ? state.plants.find((x) => x.id === state.currentPlantId) : null;
+  const curTaxon = state.tab === "taxonDetail" ? state.currentTaxonId : (pl ? pl.taxa_id : null);
+  const list = taxaListFiltered();
+  const filtered = state.taxaOnlySuggestions || state.taxaOnlyMissingParts || state.taxaNoCoverOnly || state.taxaIncompleteOnly;
+  const specimenRows = (sps, depth) => sps.map((sp) => splitItem("plant", sp.id, splitSpecimenLabel(sp),
+    sp.status && sp.status !== "active" ? sp.status : "", { sub: true, depth, current: !!pl && pl.id === sp.id })).join("");
+  const orphans = state.plants.filter((p) => !p.taxa_id);
+  return `
+    <div class="split-top">
+      <button class="split-title" onclick="goTab('plants')" title="All plants">Plants</button>
+      <button class="icon-only-btn" onclick="toggleSplitPane()" aria-label="Hide the list" title="Hide the list">${icon("back")}</button>
+    </div>
+    <input class="search-input" id="split-search-taxa" placeholder="Search plants…" value="${escapeHtml(state.taxaSearch || "")}" oninput="state.taxaSearch=this.value;scheduleRender()" />
+    ${filtered ? `<div class="subtle" style="font-size:12px;padding:0 4px 6px;">Filtered list · <button class="btn-ghost" style="font-size:12px;color:var(--blue);padding:0;" onclick="state.taxaOnlySuggestions=false;state.taxaOnlyMissingParts=false;state.taxaNoCoverOnly=false;state.taxaIncompleteOnly=false;render()">Show all</button></div>` : ""}
+    ${list.length ? "" : `<div class="subtle" style="font-size:12.5px;padding:6px 4px;">No matches.</div>`}
+    ${list.map((t) => {
+      const sps = specimensOfTaxon(t.id);
+      const open = t.id === curTaxon;
+      return splitItem("taxon", t.id, taxonDisplayName(t), sps.length, { current: open && state.tab === "taxonDetail" })
+        + (open ? specimenRows(sps, 1) : "");
+    }).join("")}
+    ${orphans.length ? `<div class="split-group">Not linked to a species</div>${specimenRows(orphans, 0)}` : ""}`;
+}
+
+// The location tree, opened along the path to the current place and one level
+// into it. Collapsed everywhere else: the wall alone is 92 cups.
+function splitPaneLocations() {
+  const open = new Set();
+  let x = locationById(state.currentLocationId);
+  for (let guard = 0; x && guard < 20; guard++) { open.add(x.id); x = x.parent_location_id ? locationById(x.parent_location_id) : null; }
+  const node = (l, depth) => {
+    const kids = directChildLocations(l.id);
+    return splitItem("loc", l.id, l.name, kids.length || "", { depth, current: l.id === state.currentLocationId })
+      + (open.has(l.id) ? kids.map((k) => node(k, depth + 1)).join("") : "");
+  };
+  const { active, archived } = topLevelLocationGroups();
+  return `
+    <div class="split-top">
+      <button class="split-title" onclick="goTab('locations')" title="All locations">Locations</button>
+      <button class="icon-only-btn" onclick="toggleSplitPane()" aria-label="Hide the list" title="Hide the list">${icon("back")}</button>
+    </div>
+    ${active.map((l) => node(l, 0)).join("")}
+    ${archived.length ? `<div class="split-group">From the Archives</div>${archived.map((l) => node(l, 0)).join("")}` : ""}`;
+}
+
+function splitPane() {
+  if (state.splitCollapsed) return `
+    <aside class="split-list"><button class="icon-only-btn" onclick="toggleSplitPane()" aria-label="Show the list" title="Show the list">${icon("chevronRight")}</button></aside>`;
+  return `<aside class="split-list">${state.tab === "locationDetail" ? splitPaneLocations() : splitPaneTaxa()}</aside>`;
+}
+
+function toggleSplitPane() {
+  state.splitCollapsed = !state.splitCollapsed;
+  try { localStorage.setItem(SPLIT_KEY, state.splitCollapsed ? "1" : ""); } catch (e) { /* private mode */ }
+  render();
+}
+
+// openTaxon / openPlant / openLocation without the navPush. See the banner.
+function splitGo(kind, id) {
+  state.modal = null;
+  if (kind === "taxon") { state.tab = "taxonDetail"; state.currentTaxonId = id; state.taxonPhotoLimit = 24; }
+  else if (kind === "plant") { state.tab = "plantDetail"; state.currentPlantId = id; }
+  else { state.gallerySelectMode = false; state.gallerySelected = new Set(); state.tab = "locationDetail"; state.currentLocationId = id; }
+  render();
+  window.scrollTo(0, 0);
+}
+
+// The pane is rebuilt on every render like everything else, so its scroll is
+// put back each time — across navigation too, which is the whole point. On
+// arriving somewhere new, the current row is brought into view if it is not.
+function keepSplitPane(snap, samePage) {
+  const pane = document.querySelector(".split-list");
+  if (!pane) return;
+  if (snap && snap.pane) pane.scrollTop = snap.pane;
+  if (samePage) return;
+  const cur = pane.querySelector(".split-item.current");
+  if (!cur) return;
+  const top = cur.offsetTop, bottom = top + cur.offsetHeight;
+  if (top < pane.scrollTop || bottom > pane.scrollTop + pane.clientHeight) pane.scrollTop = Math.max(0, top - pane.clientHeight / 3);
+}
+
+// Up / Down step through the pane. Space and Page Down still scroll the page.
+// The wall map owns the arrows on its own page, so the pane yields there.
+function wireSplitKeys() {
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    if (!splitActive() || state.splitCollapsed || state.modal || state.lightbox) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (document.querySelector(".wall-box")) return;
+    const items = [...document.querySelectorAll(".split-list .split-item")];
+    if (!items.length) return;
+    const at = items.findIndex((b) => b.classList.contains("current"));
+    const next = items[at < 0 ? 0 : at + (e.key === "ArrowDown" ? 1 : -1)];
+    if (!next) return;
+    e.preventDefault();
+    const [kind, id] = next.dataset.go.split(":");
+    splitGo(kind, id);
+  });
+  // Rotating the iPad or resizing the window across 1180 adds or drops the pane.
+  if (SPLIT_MQ) {
+    const re = () => render();
+    if (SPLIT_MQ.addEventListener) SPLIT_MQ.addEventListener("change", re);
+    else if (SPLIT_MQ.addListener) SPLIT_MQ.addListener(re);
+  }
+}
+
 function render() {
   // A pending debounce is now redundant — this render supersedes it.
   if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
@@ -14644,9 +14898,12 @@ function render() {
   else if (state.tab === "settings") screen = screenSettings();
   else if (state.tab === "filing") screen = screenFiling();
 
+  const main = splitActive()
+    ? `<div class="split-wrap${state.splitCollapsed ? " collapsed" : ""}">${splitPane()}<div class="split-main">${screen}</div></div>`
+    : screen;
   const html = `
     ${topBar()}
-    ${screen}
+    ${main}
     ${navBar()}
     ${taskBanner()}
     ${state.modal ? `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${modalContent()}</div></div>` : ""}
@@ -14669,6 +14926,7 @@ function render() {
     restoreScroll(scrollSnapshot, { page: true, modal: sameView });
     reapplyClampedScroll(scrollSnapshot);
   } else window.scrollTo(0, 0);
+  keepSplitPane(scrollSnapshot, samePage);
   lastRenderKey = currentViewKey();
   lastPageKey = pageViewKey();
   observeLazyPhotos();
@@ -15411,6 +15669,7 @@ async function boot() {
   wireRenderHold();
   wireFilingKeys();
   wireWallKeys();
+  wireSplitKeys();
 
   // Not awaited: a slow or failed check must never delay the app starting.
   checkForNewVersion();

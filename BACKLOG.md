@@ -912,6 +912,11 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.60.0 — DESK-1: desktop / iPad layout
+Sidebar from 1000px; list + detail split from 1180px on species, specimens and locations; wide tier moved 1100 → 1280 because the sidebar takes 188px. Phone untouched — no new nodes render below 1000 except hidden nav pieces.
+Also fixed: plant hero actions crushing the name at 700–1279 (existing bug on iPad portrait), and the cream logo vanishing in daylight (`brandLogoSrc()`).
+Verified in Chrome with synthetic data at 390 / 820 / 1180 / 1366, not yet on Amanda's iPad with real data. Gotcha: a new 1280-tier detail rule needs a revert in the split band — see REFERENCE "Desktop / iPad landscape".
+
 ### v2.59.0 — WALL-1: wall map with cup colours
 An area whose children are rows of cups (Wall Collection) opens on a Wall map: the wall as it hangs, colour views
 (Cup colour / Health / Last photo / In bloom / Empty), search, and a card that walks to physical neighbours (arrows

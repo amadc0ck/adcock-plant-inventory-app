@@ -912,6 +912,11 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.72.0 — PERF-1 select lag; LOC-NB neighbours in every location picker
+Each tap in select mode re-rendered the page, and isInboxPhoto scanned photoPlants per photo (photos x tags). Now: a tap redraws only its card (`patchInboxSelection`; full render only when crossing zero); junction tables indexed (`junctionIndex`, keyed on array + length); photo-by-plant/location lookups memoised for ONE render (`renderMemo`) because photo rows are patched in place by Object.assign. Synthetic 4k photos: select screen 94→13ms, tap <1ms, To Do queue 675→148ms.
+LOC-NB: the "90 / 92 next to 91" suggestion lived only on File one by one; `siblingNeighbours()` now feeds the shared picker too ("Next to Bucket 91", above Recently used).
+Pre-existing: split-test "Plants page still renders" fails before and after this change.
+
 ### v2.71.0 — BULK-1: selection actions beside the count on desktop
 Amanda selected 26 photos on To Do and saw no actions: the fixed bulk bar sits at the window's bottom edge, a screen from "26 selected", and off-screen if the window overhangs the display. From 1000px the same buttons render in the sticky controls (`.bulk-inline`) and the bar is hidden; phone keeps the bar. Buttons come from `inboxBulkActions()` / `galleryBulkActions()` so the two placements cannot drift.
 

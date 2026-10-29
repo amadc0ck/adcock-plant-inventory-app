@@ -1140,7 +1140,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.71.0";
+const APP_VERSION = "2.72.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -2559,9 +2559,9 @@ function directChildLocations(locationId) {
 }
 // Photos primarily attached to this location, plus any tagged onto it via photo_locations
 function photosAtLocation(locationId) {
-  const primary = state.photos.filter((p) => p.location_id === locationId);
-  const taggedIds = state.photoLocations.filter((pl) => pl.location_id === locationId).map((pl) => pl.photo_id);
-  const tagged = state.photos.filter((p) => taggedIds.includes(p.id) && p.location_id !== locationId);
+  const primary = _renderCache ? (photosGroupedBy("location_id").get(locationId) || []).slice() : state.photos.filter((p) => p.location_id === locationId);
+  const taggedIds = new Set((junctionIndex(state.photoLocations, "location_id").get(locationId) || []).map((pl) => pl.photo_id));
+  const tagged = taggedIds.size ? state.photos.filter((p) => taggedIds.has(p.id) && p.location_id !== locationId) : [];
   return [...primary, ...tagged];
 }
 function descendantLocationIds(locationId) {
@@ -2797,7 +2797,13 @@ function locationPicker(onPick, opts) {
 
   const here = state.locPickerParent ? locationById(state.locPickerParent) : null;
   const kids = pickableChildren(state.locPickerParent).filter(allowed);
-  const recents = state.locPickerParent ? [] : recentLocationIds().map(locationById).filter(Boolean).filter(allowed);
+  /* LOC-NB. Filing runs down a row, so the cups either side of the last one
+     used are the likeliest next pick. They were only offered on the one-by-one
+     filing screen; every picker (Add Location, Move, bulk) gets them now. */
+  const nb = state.locPickerParent ? {} : siblingNeighbours(locationById(recentLocationIds()[0]));
+  const near = [nb.prev, nb.next].filter((l) => l && allowed(l));
+  const recents = state.locPickerParent ? [] : recentLocationIds().map(locationById).filter(Boolean).filter(allowed)
+    .filter((l) => !near.includes(l));
   const crumbs = [];
   for (let n = here; n; n = n.parent_location_id ? locationById(n.parent_location_id) : null) crumbs.unshift(n);
 
@@ -2812,9 +2818,13 @@ function locationPicker(onPick, opts) {
     ${here && !o.hideSelf ? `
       <button class="btn btn-secondary btn-block" style="justify-content:flex-start;text-align:left;margin-bottom:10px;"
               onclick="noteRecentLocation('${here.id}');${pick(here)}">${icon("pin")} File into ${escapeHtml(here.name)} itself</button>` : ""}
+    ${near.length ? `
+      <div class="subtle" style="font-size:11px;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">Next to ${escapeHtml(nb.anchor.name)}</div>
+      <div class="stack" style="margin-bottom:14px;">${near.map((l) => row(l, true)).join("")}</div>` : ""}
     ${recents.length ? `
       <div class="subtle" style="font-size:11px;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">Recently used</div>
-      <div class="stack" style="margin-bottom:14px;">${recents.map((l) => row(l, true)).join("")}</div>
+      <div class="stack" style="margin-bottom:14px;">${recents.map((l) => row(l, true)).join("")}</div>` : ""}
+    ${near.length || recents.length ? `
       <div class="subtle" style="font-size:11px;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">All locations</div>` : ""}
     <div class="stack" style="max-height:42vh;overflow-y:auto;">
       ${kids.length ? kids.map((l) => row(l, false)).join("") : `<p class="subtle">Nothing inside ${here ? escapeHtml(here.name) : "here"}.</p>`}
@@ -3029,10 +3039,34 @@ function photoLocationExpectsPlants(p) {
    as unfiled forever and could not be cleared by any action — assigning the
    plant it already had changed nothing. Same class of bug as "Plants missing
    photos" had before v1.70.0. */
+/* PERF-1. The junction tables were scanned once per photo — isInboxPhoto ran
+   photoPlants.some() for every photo, so To Do cost photos x tags (millions of
+   comparisons) on every render, including every tap in select mode. Grouped
+   once and reused until the array is replaced or changes length (loadAll
+   replaces; the optimistic paths push or filter).
+
+   Junction tables ONLY. Photo rows are patched in place (Object.assign after
+   an edit), so an index of photos by plant_id would go stale silently. */
+const _junctionIdx = new Map();
+function junctionIndex(arr, key) {
+  const name = key + (arr === state.photoPlants ? ":pp" : arr === state.photoLocations ? ":pl" : ":?");
+  const c = _junctionIdx.get(name);
+  if (c && c.arr === arr && c.len === arr.length) return c.map;
+  const map = new Map();
+  for (const r of arr) {
+    const k = r[key];
+    if (k == null) continue;
+    let list = map.get(k);
+    if (!list) map.set(k, (list = []));
+    list.push(r);
+  }
+  _junctionIdx.set(name, { arr, len: arr.length, map });
+  return map;
+}
 function photoHasAnyPlant(p) {
   if (!p) return false;
   if (p.plant_id) return true;
-  return state.photoPlants.some((pp) => pp.photo_id === p.id);
+  return junctionIndex(state.photoPlants, "photo_id").has(p.id);
 }
 /* The Inbox set, in one place. The grid, its lightbox, the resume-after-filing
    list, the "File to both" tile and the nav badge are all the same photos and
@@ -5152,9 +5186,35 @@ function selectAllMatchingInbox() {
 }
 
 function toggleInboxPhotoSelected(photoId) {
+  const before = state.inboxSelected.size;
   if (state.inboxSelected.has(photoId)) state.inboxSelected.delete(photoId);
   else state.inboxSelected.add(photoId);
-  render();
+  // PERF-1. A tap redraws its own card, not the page: a full render rebuilt
+  // fifty cards and re-filtered every photo, which was a visible lag per tap
+  // on the iPad. Crossing zero adds or removes the action bars, so that one
+  // still renders whole.
+  if (!before || !state.inboxSelected.size || !patchInboxSelection(photoId)) render();
+}
+function patchInboxSelection(photoId) {
+  const el = document.querySelector(`[data-anchor="${photoId}"]`);
+  const p = state.photos.find((x) => x.id === photoId);
+  if (!el || !p) return false;
+  const v = listView("photos");
+  const html = v === "list" ? inboxCompactRow(p, true)
+    : v === "small" ? photoTiles([p], { selecting: true, picked: (x) => state.inboxSelected.has(x.id),
+        toggle: (x) => `toggleInboxPhotoSelected('${x.id}')`, open: (x) => `openInboxLightbox('${x.id}')` })
+    : photoRow(p, true);
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html.trim();
+  const node = v === "small" ? tmp.firstElementChild && tmp.firstElementChild.firstElementChild : tmp.firstElementChild;
+  if (!node) return false;
+  el.replaceWith(node);
+  const n = state.inboxSelected.size;
+  document.querySelectorAll("[data-sel-count]").forEach((e) => { e.textContent = `${n} selected`; });
+  const ids = visiblePhotoIds("inbox");
+  const all = ids.length && ids.every((id) => state.inboxSelected.has(id));
+  document.querySelectorAll("[data-sel-all]").forEach((e) => { e.textContent = all ? "Clear selection" : `Select all ${ids.length} shown`; });
+  return true;
 }
 // Was one request per photo and cleared only two of the four things that
 // reference a photo — a location hero or a species cover anywhere in the
@@ -5548,9 +5608,14 @@ function openLocation(id) {
   state.gallerySelectMode = false; state.gallerySelected = new Set(); state.wallPaintEdit = false; state.wallBrush = null; state.tab = "locationDetail"; state.currentLocationId = id; render(); window.scrollTo(0, 0); }
 
 function plantPhotosOrdered(plantId) {
-  const taggedPhotoIds = new Set(state.photoPlants.filter((pp) => pp.plant_id === plantId).map((pp) => pp.photo_id));
-  return state.photos
-    .filter((p) => p.plant_id === plantId || taggedPhotoIds.has(p.id))
+  const taggedPhotoIds = new Set((junctionIndex(state.photoPlants, "plant_id").get(plantId) || []).map((pp) => pp.photo_id));
+  // Own photos from the per-render index; tagged ones need the full list only
+  // when there are any. Same set, same order as the plain filter.
+  const own = _renderCache ? (photosGroupedBy("plant_id").get(plantId) || []) : state.photos.filter((p) => p.plant_id === plantId);
+  const tagged = !taggedPhotoIds.size ? []
+    : _renderCache ? [...taggedPhotoIds].map((id) => photoByIdMemo().get(id)).filter((p) => p && p.plant_id !== plantId)
+    : state.photos.filter((p) => p.plant_id !== plantId && taggedPhotoIds.has(p.id));
+  return own.concat(tagged)
     .sort((a, b) => new Date(photoDate(b)) - new Date(photoDate(a)));
 }
 /* COVER-1, 2026-09-08. A record with no `primary_photo_id` is NOT missing a
@@ -5807,7 +5872,10 @@ function locationInArchive(locationId) {
    as people read numbers — "Bucket 9" before "Bucket 10" — give the one
    before and after. */
 function filingNeighbourLocations() {
-  const anchor = locationById(state.filingLastLocationId || recentLocationIds()[0]);
+  return siblingNeighbours(locationById(state.filingLastLocationId || recentLocationIds()[0]));
+}
+// LOC-NB. Shared by filing and the location picker: bucket 91 offers 90 and 92.
+function siblingNeighbours(anchor) {
   if (!anchor) return { anchor: null, prev: null, next: null };
   const sibs = state.locations
     .filter((l) => (l.parent_location_id || null) === (anchor.parent_location_id || null) && !l.archived)
@@ -6344,14 +6412,14 @@ function screenInbox() {
         </div>
         ${selectMode ? `
           <div class="row" style="margin-bottom:10px;">
-            <button class="btn-ghost" style="font-size:12.5px;" onclick="selectAllInboxPhotos()">
+            <button class="btn-ghost" style="font-size:12.5px;" data-sel-all onclick="selectAllInboxPhotos()">
               ${visible.length && visible.every((p) => state.inboxSelected.has(p.id)) ? "Clear selection" : `Select all ${visible.length} shown`}
             </button>
             ${unassigned.length > visible.length ? `
               <button class="btn-ghost" style="font-size:12.5px;color:var(--blue);" onclick="selectAllMatchingInbox()">
                 Select all ${unassigned.length} matching
               </button>` : ""}
-            <span class="subtle" style="font-size:12px;">${state.inboxSelected.size} selected</span>
+            <span class="subtle" style="font-size:12px;" data-sel-count>${state.inboxSelected.size} selected</span>
           </div>
           ${state.inboxSelected.size ? `<div class="bulk-inline">${inboxBulkActions()}</div>` : ""}` : ""}
         <div class="row" style="margin-bottom:12px;">
@@ -6383,7 +6451,7 @@ function screenInbox() {
   ${selectMode && selectedCount > 0 ? `
     <div class="bulk-action-bar">
       <div class="container" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span class="mono" style="font-size:12.5px;color:var(--cream);">${selectedCount} selected</span>
+        <span class="mono" style="font-size:12.5px;color:var(--cream);" data-sel-count>${selectedCount} selected</span>
         ${inboxBulkActions()}
       </div>
     </div>` : ""}`;
@@ -9068,7 +9136,7 @@ function plantsWorkedRecently(days) {
   state.photos.forEach((ph) => {
     const when = ph.uploaded_at;
     if (ph.plant_id) mark(ph.plant_id, when, "photo");
-    state.photoPlants.filter((pp) => pp.photo_id === ph.id).forEach((pp) => mark(pp.plant_id, when, "photo"));
+    (junctionIndex(state.photoPlants, "photo_id").get(ph.id) || []).forEach((pp) => mark(pp.plant_id, when, "photo"));
   });
   state.careNotes.forEach((c) => mark(c.plant_id, c.created_at || c.noted_on, "note"));
   state.wateringEvents.forEach((w) => mark(w.plant_id, w.created_at || w.watered_on, "watered"));
@@ -15178,7 +15246,39 @@ function wireSplitKeys() {
   }
 }
 
+/* PERF-1. Lookups that scan every photo per plant or per location
+   (plantPhotosOrdered, photosAtLocation) are memoised for ONE render only.
+   Photo rows are patched in place after edits, so any cache that outlives a
+   render could serve a photo under its old plant; nothing mutates state while
+   the render itself runs, so within it the index is exact. Outside a render
+   renderMemo just computes. `var` so a render during boot never hits TDZ. */
+var _renderCache = null;
+function renderMemo(key, build) {
+  if (!_renderCache) return build();
+  if (!_renderCache.has(key)) _renderCache.set(key, build());
+  return _renderCache.get(key);
+}
+function photosGroupedBy(field) {
+  return renderMemo("photosBy:" + field, () => {
+    const map = new Map();
+    for (const p of state.photos) {
+      const k = p[field];
+      if (k == null) continue;
+      let list = map.get(k);
+      if (!list) map.set(k, (list = []));
+      list.push(p);
+    }
+    return map;
+  });
+}
+function photoByIdMemo() {
+  return renderMemo("photoById", () => new Map(state.photos.map((p) => [p.id, p])));
+}
 function render() {
+  _renderCache = new Map();
+  try { return renderScreen(); } finally { _renderCache = null; }
+}
+function renderScreen() {
   // A pending debounce is now redundant — this render supersedes it.
   if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
   const app = document.getElementById("app");

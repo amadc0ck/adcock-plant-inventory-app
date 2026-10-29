@@ -605,6 +605,7 @@
   .select-check svg{width:12px;height:12px;}
 
   .bulk-action-bar{position:fixed;left:0;right:0;bottom:76px;background:var(--bg-raised);border-top:1px solid var(--line);padding:12px 0;z-index:28;}
+  .bulk-inline{display:none;}
 
   /* ============================================================
      CARD MEDIA — one image treatment, shared by Plant Detail,
@@ -1024,7 +1025,12 @@
     .navbtn .badge{position:static;transform:none;margin-left:auto;}
     .nav-side-tools{display:flex;order:99;margin-top:auto;gap:2px;padding-top:12px;border-top:1px solid var(--line);}
     .task-banner{left:var(--side-w);}
-    .bulk-action-bar{left:var(--side-w);bottom:0;}
+    /* BULK-1. On a desktop the fixed bar sat at the bottom edge, a screen
+       away from "26 selected" — and off-screen entirely when the window ran
+       past the bottom of the display. The same buttons ride in the sticky
+       controls instead, next to the count. The phone keeps its thumb bar. */
+    .bulk-action-bar{display:none;}
+    .bulk-inline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px;}
     .fab{bottom:24px;}
   }
   /* Was 1100px. The tiers are about how wide the CONTENT is, and from 1000px
@@ -1134,7 +1140,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.70.0";
+const APP_VERSION = "2.71.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -6346,7 +6352,8 @@ function screenInbox() {
                 Select all ${unassigned.length} matching
               </button>` : ""}
             <span class="subtle" style="font-size:12px;">${state.inboxSelected.size} selected</span>
-          </div>` : ""}
+          </div>
+          ${state.inboxSelected.size ? `<div class="bulk-inline">${inboxBulkActions()}</div>` : ""}` : ""}
         <div class="row" style="margin-bottom:12px;">
           <span class="subtle">${filtered ? `${unassigned.length} of ${total}` : countLabel(total, "photo", "photos")} waiting</span>
           <span class="subtle" style="display:flex;align-items:center;gap:6px;">
@@ -6377,12 +6384,27 @@ function screenInbox() {
     <div class="bulk-action-bar">
       <div class="container" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span class="mono" style="font-size:12.5px;color:var(--cream);">${selectedCount} selected</span>
-        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
-        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add Location</button>
-        <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("claude")} Ask Claude</button>
-        <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos()">${icon("trash")} Delete</button>
+        ${inboxBulkActions()}
       </div>
     </div>` : ""}`;
+}
+
+// BULK-1. One source for the selection actions, rendered twice: the fixed
+// bar on a phone, inline in the sticky controls from 1000px (CSS picks).
+function inboxBulkActions() {
+  return `
+    <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
+    <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add Location</button>
+    <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("claude")} Ask Claude</button>
+    <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos()">${icon("trash")} Delete</button>`;
+}
+function galleryBulkActions() {
+  return `
+    <button class="btn btn-accent btn-sm" onclick="openModal('galleryBatch')">Edit</button>
+    <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
+    <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add location</button>
+    <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("claude")} Ask Claude</button>
+    <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos('gallery')">${icon("trash")} Delete</button>`;
 }
 
 /* WEATHER-1. Renders nothing at all when there is no weather, no risk, or the
@@ -9421,11 +9443,7 @@ function screenGallery() {
     <div class="bulk-action-bar">
       <div class="container" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span class="mono" style="font-size:12.5px;color:var(--cream);">${state.gallerySelected.size} selected</span>
-        <button class="btn btn-accent btn-sm" onclick="openModal('galleryBatch')">Edit</button>
-        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachPlant')">Attach to plant</button>
-        <button class="btn btn-secondary btn-sm" onclick="openModal('bulkAttachLocation')">Add location</button>
-        <button class="btn btn-secondary btn-sm icon-btn" onclick="askClaudeAboutSelection()">${icon("claude")} Ask Claude</button>
-        <button class="btn btn-danger btn-sm icon-btn" onclick="bulkDeletePhotos('gallery')">${icon("trash")} Delete</button>
+        ${galleryBulkActions()}
         <button class="btn-ghost" style="margin-left:auto;font-size:12.5px;" onclick="toggleGallerySelectMode()">Cancel</button>
       </div>
     </div>` : "";
@@ -9451,6 +9469,8 @@ function screenGallery() {
           ${listViewSwitch("photos")}
         </div>
       </div>
+      ${state.gallerySelectMode && state.gallerySelected.size ? `
+        <div class="bulk-inline"><span class="subtle" style="font-size:12px;">${state.gallerySelected.size} selected</span>${galleryBulkActions()}</div>` : ""}
       </div>
 
       ${searching ? `

@@ -912,6 +912,9 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.71.0 — BULK-1: selection actions beside the count on desktop
+Amanda selected 26 photos on To Do and saw no actions: the fixed bulk bar sits at the window's bottom edge, a screen from "26 selected", and off-screen if the window overhangs the display. From 1000px the same buttons render in the sticky controls (`.bulk-inline`) and the bar is hidden; phone keeps the bar. Buttons come from `inboxBulkActions()` / `galleryBulkActions()` so the two placements cannot drift.
+
 ### v2.70.0 — BLOOM-3: bloom checks recur through the season instead of making tasks
 "Not this year" wrote a task due next season, filling Tasks with 2027 rows. Now `plants.bloom_deferred_until` (SQL in REFERENCE, BLOOM-3 migration): "Not yet" = +30 days, so an unbloomed plant comes back monthly through its season; "Not this year" = next season opening. No task written.
 A bloom recorded since the season opened — even one already ended — takes the plant off (`bloomedThisSeason`); before, only an OPEN bloom did. A future-dated task still suppresses too.

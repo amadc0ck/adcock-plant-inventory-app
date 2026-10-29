@@ -912,6 +912,11 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.69.0 — TASK-2: tapping a task opens a view you can act from
+Was: the row opened the edit form. Now `openModal('task')`: Mark done/Reopen, push to Tomorrow / Next week (counted from today, not the old due date), "Add an update", and per-subject actions (plant: Note, Photo, Move; location: Photo, Water; all: Open). Edit is a button inside.
+Updates are dated lines appended to `tasks.detail` — no schema change; a `task_notes` table is the long-term shape if updates ever need deleting or their own history.
+`state.taskReturn`: a modal launched from the view reopens the task on ANY close (save, Cancel, backdrop), once. A chained `closeModal();openModal(x)` just replaces it.
+
 ### v2.68.0 — VIEW-2: Large / Small / List on every photo and plant list
 Two choices per device, `photos` and `plants` (Amanda chose per-kind over per-list); VIEW-1's `locationPhotos` is read as `photos` until re-picked. Photos: area feed, bucket photos, plant timeline, species photos, Gallery, To Do — Gallery's Large/Compact and To Do's Full/Compact were replaced (`galleryView`, `setInboxView` removed; inbox prefs still store a dead `view`). Small is the shared `photoTiles()`; List is `.pv-fill`; the thumbnail-row cards get Large by `.pv-big` CSS. Plants: Plants page, unlinked, Plants here — `.plv-small|list` on `.plant-list-card`, `.pl-text` holds the text column. Not switched: specimen lineage tree, pickers, work queue, Claude-proposed photos.
 Gotcha: base `.card-grid` is flex below 700, so a size modifier must set `display:grid` itself; and needs two classes to beat the tier rules.

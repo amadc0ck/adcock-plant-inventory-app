@@ -445,7 +445,10 @@
   .task-check.is-done{background:var(--moss);border-color:var(--moss);}
   .task-check svg{width:13px;height:13px;}
   .task-title{font-size:14px;color:var(--ink);line-height:1.3;}
-  .task-detail{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.45;}
+  .task-detail{font-size:12.5px;color:var(--ink-soft);margin-top:3px;line-height:1.45;white-space:pre-line;}
+  .task-view-subject{background:var(--parchment);color:var(--ink);border-radius:10px;padding:10px 12px;}
+  .task-view-subject > div > svg{width:14px;height:14px;color:var(--moss-dim);}
+  .task-view-subject .row-acts{margin-top:8px;padding-top:8px;}
   .task-due{font-family:'IBM Plex Mono',monospace;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--moss-dim);margin-top:5px;}
   .task-due.is-overdue{color:var(--terracotta);font-weight:700;}
   .task-subjects{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;}
@@ -1131,7 +1134,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.68.0";
+const APP_VERSION = "2.69.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -1188,6 +1191,7 @@ const state = {
   splitCollapsed: (() => { try { return localStorage.getItem("abg-split-collapsed") === "1"; } catch (e) { return false; } })(),
   waterDraft: null,       // {ids:[], label, date, notes, locationId} while the modal is open
   lastWaterBatch: null,   // {batchId, count, label} — powers Undo on To Do
+  taskReturn: null,       // TASK-2: task to reopen once a modal launched from its view closes
   taskSubjectDraft: [],   // subjects picked in the new/edit task modal, before save
   taskSubjectSearch: "",
   taskFilter: "open",     // open | done | all
@@ -5247,7 +5251,19 @@ function openModal(type, data = {}) {
   state.modal = { type, data };
   render();
 }
-function closeModal() { state.modal = null; render(); }
+// TASK-2. A note or photo started from a task's view comes back to that task,
+// so working down its subjects does not mean re-finding it each time. Any close
+// counts — save, Cancel or the backdrop — and it fires once.
+function closeModal() {
+  const back = state.taskReturn;
+  state.taskReturn = null;
+  if (back && state.modal && state.modal.type !== "task" && state.tasks.some((t) => t.id === back)) {
+    state.modal = { type: "task", data: { taskId: back } };
+  } else {
+    state.modal = null;
+  }
+  render();
+}
 /* EGRESS-1. loadAll leaves raw_response out of the bulk fetch. A row that has
    it already (identifyPhoto unshifts the full row from the function, or it was
    fetched before) is left alone; otherwise one small request, then a re-render
@@ -8323,7 +8339,7 @@ function taskRow(t, compact) {
     <div class="task-row ${done ? "is-done" : ""}">
       <button class="task-check ${done ? "is-done" : ""}" title="${done ? "Reopen" : "Mark done"}"
         onclick="event.stopPropagation();toggleTaskDone('${t.id}')">${done ? icon("check") : ""}</button>
-      <div style="flex:1;min-width:0;" onclick="openModal('editTask',{taskId:'${t.id}'})">
+      <div style="flex:1;min-width:0;" onclick="openModal('task',{taskId:'${t.id}'})">
         <div class="task-title">${escapeHtml(t.title)}</div>
         ${t.detail && !compact ? `<div class="task-detail">${escapeHtml(t.detail)}</div>` : ""}
         ${t.due_date ? `<div class="task-due ${overdue ? "is-overdue" : ""}">${overdue ? "Due " : "Due "}${fmtDate(t.due_date)}${overdue ? " — overdue" : ""}</div>` : ""}
@@ -11363,6 +11379,64 @@ function modalContent() {
       <button class="btn-ghost" style="margin-top:10px;" onclick="closeModal()">Cancel</button>`;
   }
 
+  /* TASK-2. Tapping a task used to open the edit form, which answers "change
+     what this says" when the question standing at the bench is "do it". The
+     view leads with what resolves the task — done, push it back, write what
+     happened — and each subject carries the actions for its kind. Edit is one
+     button down, not the default. */
+  if (type === "task") {
+    const t = state.tasks.find((x) => x.id === data.taskId);
+    if (!t) return `<p class="subtle">This task no longer exists.</p><button class="btn-ghost" onclick="closeModal()">Close</button>`;
+    const done = t.status === "done";
+    const overdue = taskIsOverdue(t);
+    const subs = subjectsOfTask(t.id);
+    const act = (label, onclick) => `<button class="row-act" onclick="${onclick}">${label}</button>`;
+    // Opens another modal and returns here when it closes.
+    const sub = (js) => `state.taskReturn='${t.id}';${js}`;
+    const subjectActs = (ts) => {
+      const out = [];
+      if (ts.plant_id && state.plants.some((p) => p.id === ts.plant_id)) {
+        out.push(act("Note", sub(`openModal('addCareNote',{plantId:'${ts.plant_id}'})`)));
+        out.push(act(`${icon("camera")} Photo`, sub(`openModal('upload',{plantId:'${ts.plant_id}'})`)));
+        out.push(act("Move", sub(`openModal('movePlant',{plantId:'${ts.plant_id}'})`)));
+      } else if (ts.location_id && locationById(ts.location_id)) {
+        out.push(act(`${icon("camera")} Photo`, sub(`openModal('upload',{locationId:'${ts.location_id}'})`)));
+        if (locationHoldsPlants(locationById(ts.location_id))) out.push(act("Water", sub(`openWaterModal('location','${ts.location_id}')`)));
+      }
+      out.push(act("Open &rarr;", `openSubjectFromTask('${ts.id}')`));
+      return out.join("");
+    };
+    return `
+      <div class="modal-handle"></div>
+      <div class="tag-id" style="margin-bottom:4px;">${done ? `Done${t.completed_at ? ` ${fmtDate(localDateISO(t.completed_at))}` : ""}` : "Task"}</div>
+      <h3 class="display" style="font-size:19px;font-weight:500;margin:0 0 4px;${done ? "text-decoration:line-through;" : ""}">${escapeHtml(t.title)}</h3>
+      ${t.due_date ? `<div class="task-due ${overdue && !done ? "is-overdue" : ""}" style="margin:0 0 8px;">Due ${fmtDate(t.due_date)}${overdue && !done ? " — overdue" : ""}</div>` : ""}
+      ${t.detail ? `<div class="task-detail" style="font-size:13.5px;margin:0 0 12px;">${escapeHtml(t.detail)}</div>` : ""}
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px;">
+        <button class="btn ${done ? "btn-secondary" : "btn-primary"} btn-sm icon-btn" onclick="closeModal();toggleTaskDone('${t.id}')">${done ? "Reopen" : `${icon("check")} Mark done`}</button>
+        ${done ? "" : `
+        <button class="btn btn-secondary btn-sm" onclick="pushTaskDue('${t.id}',1)">Tomorrow</button>
+        <button class="btn btn-secondary btn-sm" onclick="pushTaskDue('${t.id}',7)">Next week</button>`}
+      </div>
+
+      <label>Add an update</label>
+      <textarea id="task-update" rows="2" placeholder="What happened, what's left…"></textarea>
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="addTaskUpdate('${t.id}')">Add update</button>
+
+      ${subs.length ? `
+      <div class="section-label">Applies to</div>
+      <div class="stack">${subs.map((ts) => `
+        <div class="task-view-subject">
+          <div style="display:flex;align-items:center;gap:6px;font-size:13.5px;">${subjectIcon(ts)} <span style="flex:1;min-width:0;">${escapeHtml(subjectLabel(ts))}</span></div>
+          <div class="row-acts">${subjectActs(ts)}</div>
+        </div>`).join("")}
+      </div>` : ""}
+
+      <button class="btn-ghost" style="margin-top:16px;" onclick="openModal('editTask',{taskId:'${t.id}'})">Edit task</button>
+      <button class="btn-ghost" style="margin-top:6px;" onclick="closeModal()">Close</button>`;
+  }
+
   if (type === "newTask" || type === "editTask") {
     const editing = type === "editTask";
     const t = editing ? state.tasks.find((x) => x.id === data.taskId) : null;
@@ -12852,6 +12926,34 @@ async function saveTask(taskId) {
     state.taskSubjectSearch = "";
     closeModal();
     toast(taskId ? "Task updated" : "Task created");
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// TASK-2. Pushing back counts from today, not from the old due date: a task
+// three weeks overdue pushed "a week" should land next week, not two weeks ago.
+async function pushTaskDue(taskId, days) {
+  const d = new Date(); d.setDate(d.getDate() + days);
+  const due = localDateISO(d);
+  try {
+    await restPatch("tasks", `id=eq.${taskId}`, { due_date: due });
+    toast(`Due ${fmtDate(due)}`);
+    await loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// Updates are dated lines appended to `detail` — no schema change, and the
+// edit form still shows and edits them as plain text. A task_notes table is
+// the long-term shape if updates ever need their own authors or deleting.
+async function addTaskUpdate(taskId) {
+  const t = state.tasks.find((x) => x.id === taskId);
+  const text = (document.getElementById("task-update")?.value || "").trim();
+  if (!t) return;
+  if (!text) { toast("Write the update first", true); return; }
+  const line = `${fmtDate(todayLocalISO())}: ${text}`;
+  try {
+    await restPatch("tasks", `id=eq.${taskId}`, { detail: t.detail ? `${t.detail}\n${line}` : line });
+    toast("Update added");
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

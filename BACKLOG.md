@@ -912,6 +912,11 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.70.0 — BLOOM-3: bloom checks recur through the season instead of making tasks
+"Not this year" wrote a task due next season, filling Tasks with 2027 rows. Now `plants.bloom_deferred_until` (SQL in REFERENCE, BLOOM-3 migration): "Not yet" = +30 days, so an unbloomed plant comes back monthly through its season; "Not this year" = next season opening. No task written.
+A bloom recorded since the season opened — even one already ended — takes the plant off (`bloomedThisSeason`); before, only an OPEN bloom did. A future-dated task still suppresses too.
+Gotcha: schema-check misses bodies after a template filter (`id=eq.${x}` is the first `{`), so it did not see this column.
+
 ### v2.69.0 — TASK-2: tapping a task opens a view you can act from
 Was: the row opened the edit form. Now `openModal('task')`: Mark done/Reopen, push to Tomorrow / Next week (counted from today, not the old due date), "Add an update", and per-subject actions (plant: Note, Photo, Move; location: Photo, Water; all: Open). Edit is a button inside.
 Updates are dated lines appended to `tasks.detail` — no schema change; a `task_notes` table is the long-term shape if updates ever need deleting or their own history.

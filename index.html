@@ -1134,7 +1134,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.69.0";
+const APP_VERSION = "2.70.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -3619,18 +3619,52 @@ function seasonsNow(date) {
 // bloom recorded. This is the "go and look" list — a date comparison against
 // data already held, needing no AI whatever, despite living in an epic named
 // after one.
-function expectedToBloom() {
+/* BLOOM-3. Everything that COULD be on the nudge list, before deferrals:
+   in season, active, and no bloom recorded this season. "This season" counts
+   a bloom that has already ENDED — it flowered, the question is answered —
+   which the old open-blooms-only test missed, so a plant that bloomed in April
+   and closed in May was asked about again in June. */
+function bloomNudgeCandidates() {
   const seasons = seasonsNow();
-  const blooming = new Set(state.bloomEvents.filter((b) => !b.ended_on).map((b) => b.plant_id));
   return state.plants.filter((p) => {
-    if (blooming.has(p.id) || p.status !== "active") return false;
-    // Already scheduled — the task holds it until its due date.
-    if (hasScheduledTask("plant", p.id)) return false;
+    if (p.status !== "active") return false;
     const t = p.taxa_id ? taxonById(p.taxa_id) : null;
     // `monocarpic` is excluded: it blooms once and dies, so nudging every year
     // would be noise. `not_observed` means nobody knows yet.
-    return taxonBloomsNow(t, seasons);
+    return taxonBloomsNow(t, seasons) && !bloomedThisSeason(p, t);
   });
+}
+// The earliest opening, this cycle, of any ticked season that is on now: a
+// spring + summer plant in July counts blooms back to 1 March. No season to
+// open (intermittent, not_observed) means the last 30 days — the same month
+// the "Not yet" cadence uses.
+function bloomSeasonOpenedISO(t) {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const list = Array.isArray(t && t.bloom_season) ? t.bloom_season : [];
+  const live = seasonsNow(now);
+  const opens = list.filter((x) => live.includes(x)).map((x) => {
+    const start = BLOOM_SEASON_START_MONTH[x];
+    // winter opens in December, so in January its opening was last year
+    const year = start > m ? now.getFullYear() - 1 : now.getFullYear();
+    return `${year}-${String(start).padStart(2, "0")}-01`;
+  });
+  if (opens.length) return opens.sort()[0];
+  const d = new Date(now); d.setDate(d.getDate() - 30);
+  return localDateISO(d);
+}
+function bloomedThisSeason(p, t) {
+  const since = bloomSeasonOpenedISO(t);
+  return state.bloomEvents.some((b) => b.plant_id === p.id && (!b.ended_on || String(b.started_on || "") >= since));
+}
+// "Not yet" or "Not this year" — the plant stays quiet until the date.
+function bloomDeferred(p) {
+  return !!p.bloom_deferred_until && p.bloom_deferred_until > todayISO();
+}
+function expectedToBloom() {
+  // A future task still holds it, as before (TODO-2) — "repot next month"
+  // means the plant is in hand.
+  return bloomNudgeCandidates().filter((p) => !bloomDeferred(p) && !hasScheduledTask("plant", p.id));
 }
 
 /* TODO-1. An open bloom is not news forever. Recorded in March and still open
@@ -4713,14 +4747,11 @@ const BLOOM_SEASON_START_MONTH = Object.fromEntries(
    Mirrors expectedToBloom() exactly, minus the suppression, so the two cannot
    drift into disagreeing about what counts as due. */
 function bloomsDeferredCount() {
-  const seasons = seasonsNow();
-  const blooming = new Set(state.bloomEvents.filter((b) => !b.ended_on).map((b) => b.plant_id));
-  return state.plants.filter((p) => {
-    if (blooming.has(p.id) || p.status !== "active") return false;
-    if (!hasScheduledTask("plant", p.id)) return false;
-    const t = p.taxa_id ? taxonById(p.taxa_id) : null;
-    return taxonBloomsNow(t, seasons);
-  }).length;
+  return bloomNudgeCandidates().filter((p) => !bloomDeferred(p) && hasScheduledTask("plant", p.id)).length;
+}
+// BLOOM-3. Said "not yet" / "not this year" and still waiting out the date.
+function bloomsSnoozedCount() {
+  return bloomNudgeCandidates().filter(bloomDeferred).length;
 }
 
 function nextBloomSeasonStart(season) {
@@ -8886,10 +8917,18 @@ function workQueueDetail() {
              worth walking one row at a time. One button turns the whole view
              into dated tasks and empties it. */""}
         ${state.reportView === "dueToBloom" && open.items.length ? `
-          <button class="btn btn-secondary btn-sm" style="margin-bottom:16px;"
-            onclick="deferBloomNudge(${escapeAttr(JSON.stringify(open.items.map((x) => x.id)))})">
-            Not this year &mdash; make ${countLabel(open.items.length, "task", "tasks")}
-          </button>` : ""}
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+            <button class="btn btn-secondary btn-sm"
+              onclick="deferBloomNudge(${escapeAttr(JSON.stringify(open.items.map((x) => x.id)))},'month')">
+              Not yet &mdash; all ${open.items.length} again in a month
+            </button>
+            <button class="btn btn-secondary btn-sm"
+              onclick="deferBloomNudge(${escapeAttr(JSON.stringify(open.items.map((x) => x.id)))},'season')">
+              Not this year &mdash; all ${open.items.length}
+            </button>
+          </div>` : ""}
+        ${state.reportView === "dueToBloom" && bloomsSnoozedCount() ? `
+          <p class="subtle" style="margin:-6px 0 14px;font-size:12.5px;">${countLabel(bloomsSnoozedCount(), "more is", "more are")} waiting out a &ldquo;not yet&rdquo; or &ldquo;not this year&rdquo; &mdash; ${bloomsSnoozedCount() === 1 ? "it comes back on its" : "they come back on their"} own.</p>` : ""}
         ${/* A record with an open task drops out of the count above. Say so, or
              it looks like the app lost track of it. */""}
         ${(() => {
@@ -9045,7 +9084,8 @@ function reportRowActions(pl) {
   }
   if (v === "dueToBloom") {
     out.push(btn("Record a bloom", `startBloom('${pl.id}')`));
-    out.push(btn("Not this year", `deferBloomNudge('${pl.id}')`));
+    out.push(btn("Not yet", `deferBloomNudge('${pl.id}','month')`));
+    out.push(btn("Not this year", `deferBloomNudge('${pl.id}','season')`));
   }
   if (v === "closeBlooms" && open) out.push(btn("It has finished", `endBloom('${open.id}')`));
   if (v === "needsWater") out.push(btn("Water it", `openWaterModal('plant','${pl.id}')`));
@@ -9125,7 +9165,9 @@ function checkInRow(pl, isDone) {
 function reportPlantItem(pl) {
   const cover = plantCoverPhoto(pl);
   const loc = pl.location_id ? locationById(pl.location_id) : null;
-  const st = state.reportView === "checkIns" ? checkInStatus(pl) : null;
+  const st = state.reportView === "checkIns" ? checkInStatus(pl)
+    // BLOOM-3: a past deferral means it has been looked at before.
+    : state.reportView === "dueToBloom" && pl.bloom_deferred_until ? { label: "no bloom at last look" } : null;
   return `
     <div class="tag-card" style="padding:10px 14px;">
       <div style="display:flex;gap:14px;cursor:pointer;" onclick="openFromReport('plant','${pl.id}','${state.reportView || ""}')">
@@ -13040,35 +13082,34 @@ async function snoozeCheckIn(plantId, days) {
   } catch (e) { toast(e.message, true); }
 }
 
-/* TODO-2. "Not this year" for a bloom that is not going to happen. It does not
-   hide anything — it writes a real task carrying the date the question should
-   be asked again, and hasScheduledTask() then keeps the plant off the nudge
-   list until that date arrives. The note stays with the task, so next season
-   the reason is still there.
+/* BLOOM-3 (was TODO-2). "Not yet" and "Not this year" set
+   `plants.bloom_deferred_until` and the plant drops off "Should be blooming"
+   until that date. They used to write a real task due next season, which
+   filled the task list with dozens of "Check for bloom" rows a year out —
+   and the nudge list already reappears at exactly the right time, so the task
+   only duplicated it. No task is written now; "Make a task" is still there
+   for a plant that wants one.
 
-   deferBloomNudge takes a LIST so the same code serves one row and all 24. */
-async function deferBloomNudge(plantIds) {
+   "Not yet" is a month: through the season she is asked about once a month
+   until a bloom is recorded or the season ends. "Not this year" waits for the
+   next opening of the first ticked season (nextBloomSeasonStart; with none,
+   a year). Takes a LIST so one row and the whole view share the code. */
+async function deferBloomNudge(plantIds, mode) {
   const ids = (Array.isArray(plantIds) ? plantIds : [plantIds]).filter(Boolean);
   const plants = ids.map((id) => state.plants.find((p) => p.id === id)).filter(Boolean);
   if (!plants.length) { toast("Nothing to defer", true); return; }
+  const until = (pl) => {
+    if (mode === "month") { const d = new Date(); d.setDate(d.getDate() + 30); return localDateISO(d); }
+    const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
+    return nextBloomSeasonStart(((t && t.bloom_season) || [])[0]);
+  };
   try {
     for (const pl of plants) {
-      const t = pl.taxa_id ? taxonById(pl.taxa_id) : null;
-      // First ticked season decides when to resurface; with none, the fallback
-      // inside nextBloomSeasonStart pushes it a year out, which is right for a
-      // plant whose habit says it has no season at all.
-      const due = nextBloomSeasonStart(((t && t.bloom_season) || [])[0]);
-      const [created] = await restPost("tasks", {
-        title: `Check for bloom — ${taxonDisplayName(t) || pl.accession_number}`,
-        detail: `Expected to bloom but nothing recorded ${fmtDate(new Date().toISOString())}. Resurfacing for the next ${bloomSeasonLabel(t) ? bloomSeasonLabel(t).toLowerCase() : "season"}.`,
-        due_date: due,
-        status: "open",
-      });
-      if (created) await restPost("task_subjects", [{ task_id: created.id, plant_id: pl.id }]);
+      await restPatch("plants", `id=eq.${pl.id}`, { bloom_deferred_until: until(pl), updated_at: new Date().toISOString() });
     }
-    toast(plants.length > 1
-      ? `${plants.length} bloom tasks made`
-      : `Back on the list ${fmtDate(nextBloomSeasonStart((((plants[0].taxa_id ? taxonById(plants[0].taxa_id) : null) || {}).bloom_season || [])[0]))}`);
+    const one = plants.length === 1 ? until(plants[0]) : null;
+    toast(one ? `Back on the list ${fmtDate(one)}`
+      : mode === "month" ? `${plants.length} plants back in a month` : `${plants.length} plants back next season`);
     await loadAll();
   } catch (e) { toast(e.message, true); }
 }

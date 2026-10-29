@@ -343,6 +343,7 @@ One row per individual accessioned specimen.
 - `acquisition_source_name` text, nullable
 - `acquisition_notes` text, nullable
 - `parent_plant_id` uuid FK → plants.id, nullable — propagation lineage
+- `bloom_deferred_until` date, nullable (v2.70.0, BLOOM-3) — "Not yet" (+30 days) / "Not this year" (next season opening) on Should be blooming. The plant is off that list until the date; no task is written. A past date stays and labels the row "no bloom at last look".
 - `native_range` text, nullable
 - `hardy_to` text, nullable — free text ("Zone 9", "20F")
 - `light_conditions` **text[]**, default `{}` — multi-select: direct, indirect, partial, full, shade, morning, afternoon, all_day
@@ -529,6 +530,48 @@ WISH-1 (v2.24.0). Plants Amanda is looking for but does not own.
 **Marking one acquired creates a real specimen** and closes the entry rather than deleting it — `acquireWishlistEntry()` inherits `taxa_id` so the species is not retyped from free text, and carries `source` into `acquisition_source_name`. The entry stays as the record that this was wanted and when it arrived.
 
 All three FKs are `on delete set null`, so a wishlist row never blocks deleting a plant, photo or taxon.
+
+### BLOOM-3 migration (v2.70.0)
+Replaced the TODO-2 "Check for bloom" tasks with `plants.bloom_deferred_until`. Only auto-made tasks with one plant subject, a future due date and an untouched detail were moved and deleted.
+
+```sql
+-- BLOOM-3 (v2.70.0): "Not yet" / "Not this year" store a date on the plant
+-- instead of writing a task. Safe to re-run. Moves each open, future-dated,
+-- auto-made "Check for bloom" task's due date onto its plant, then deletes
+-- those tasks. A task you added an update to (its detail has a second line)
+-- or retitled is left alone.
+begin;
+
+alter table public.plants add column if not exists bloom_deferred_until date;
+
+create temp table bloom3_moving on commit drop as
+select t.id as task_id, ts.plant_id, t.due_date
+from public.tasks t
+join public.task_subjects ts on ts.task_id = t.id
+where t.status = 'open'
+  and t.title like 'Check for bloom — %'
+  and t.due_date > current_date
+  and t.detail like 'Expected to bloom but nothing recorded%'
+  and position(E'\n' in t.detail) = 0
+  and ts.plant_id is not null
+  and (select count(*) from public.task_subjects x where x.task_id = t.id) = 1;
+
+update public.plants p
+set bloom_deferred_until = m.due
+from (select plant_id, max(due_date) as due from bloom3_moving group by plant_id) m
+where p.id = m.plant_id
+  and (p.bloom_deferred_until is null or p.bloom_deferred_until < m.due);
+
+delete from public.tasks t
+using bloom3_moving m
+where t.id = m.task_id;
+
+commit;
+
+select
+  (select count(*) from public.plants where bloom_deferred_until > current_date) as plants_waiting_for_season,
+  (select count(*) from public.tasks where status = 'open' and title like 'Check for bloom — %') as bloom_tasks_left;
+```
 
 ### `cup_paints`
 WALL-1 (v2.59.0). The paints on the wall cups — seven rows: `id`, `name` (unique), `finish`, `hex` (checked

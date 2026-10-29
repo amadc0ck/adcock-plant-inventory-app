@@ -1043,7 +1043,11 @@
      shrinking 31 cups to 9px. Paint swatches come from cup_paints as data, so
      no paint colour lives in this stylesheet. */
   .wall-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;}
-  .wall-tools .search-input{flex:1 1 220px;min-width:0;margin-bottom:0;}
+  .wall-tools .search-input{flex:1 1 220px;min-width:0;margin-bottom:0;padding-top:7px;padding-bottom:7px;}
+  .wall-tools .view-switch{max-width:100%;overflow-x:auto;}
+  .wall-tools .view-switch button{white-space:nowrap;}
+  /* Five views in 358px: they fit at this size and wrap or clip at the default. */
+  @media (max-width:560px){ .wall-tools .view-switch button{font-size:12px;padding:6px 8px;} }
   .wall-box{background:var(--bg-raised);border:1px solid var(--line);border-radius:10px;overflow-x:auto;}
   .wall-box.painting .wall-cup{cursor:crosshair;}
   .wall-inner{min-width:760px;padding:14px 12px 10px;display:flex;flex-direction:column;gap:12px;}
@@ -1064,7 +1068,7 @@
   .wall-cup.dim{opacity:0.22;}
   .wall-cup.hit{box-shadow:0 0 0 2px var(--orange);}
   .wall-cup.current{box-shadow:0 0 0 2px var(--cream);transform:translateY(-3px);opacity:1;z-index:1;}
-  .wall-cup:focus-visible,.wall-sw:focus-visible,.wall-nb:focus-visible{outline:2px solid var(--orange);outline-offset:2px;}
+  .wall-cup:focus-visible,.wall-sw:focus-visible{outline:2px solid var(--orange);outline-offset:2px;}
   .wall-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--on-ground-muted);margin:8px 2px 14px;}
   .wall-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px;background:var(--c);}
   .wall-legend i.hollow{background:transparent;box-shadow:inset 0 0 0 2px var(--c);}
@@ -1074,19 +1078,13 @@
   .wall-swatches{display:flex;flex-wrap:wrap;gap:6px;}
   .wall-sw{width:24px;height:30px;padding:0;border-radius:3px 3px 40% 40% / 3px 3px 26% 26%;border:1px solid rgba(0,0,0,0.35);cursor:pointer;background:var(--paint);}
   .wall-sw.on{outline:2px solid var(--orange);outline-offset:2px;}
-  .wall-card{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px 26px;align-items:start;}
-  .wall-card > div{min-width:0;display:flex;flex-direction:column;gap:10px;}
+  .wall-card{display:grid;grid-template-columns:minmax(200px,1fr) minmax(0,2fr);gap:12px 24px;align-items:start;padding:12px 16px;}
+  @media (max-width:560px){ .wall-card{grid-template-columns:1fr;} }
+  .wall-card > div{min-width:0;display:flex;flex-direction:column;gap:7px;}
   .wall-paintline{display:flex;align-items:center;gap:8px;font-size:13px;}
   .wall-paintline i{width:14px;height:18px;border-radius:2px 2px 40% 40%;border:1px solid rgba(0,0,0,0.35);flex:none;background:var(--paint);}
-  .wall-plant{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px;}
-  .wall-compass{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:280px;}
-  .wall-nb{font:inherit;font-size:12px;padding:7px 4px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--cream);cursor:pointer;
-    display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0;}
-  .wall-nb small{font-size:10px;color:var(--on-ground-muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .wall-nb:disabled{opacity:0.3;cursor:default;}
-  .wall-nb.here{border:0;color:var(--on-ground-muted);font-family:'IBM Plex Mono',monospace;font-size:10px;cursor:default;justify-content:center;}
-  .wall-compass .up{grid-column:2;grid-row:1;} .wall-compass .left{grid-column:1;grid-row:2;} .wall-compass .here{grid-column:2;grid-row:2;}
-  .wall-compass .right{grid-column:3;grid-row:2;} .wall-compass .down{grid-column:2;grid-row:3;}
+  .wall-plant{display:flex;flex-direction:column;gap:5px;}
+  .wall-plant + .wall-plant{border-top:1px solid var(--line);padding-top:8px;}
   @media (prefers-reduced-motion:reduce){ .wall-cup.current{transform:none;} }
 </style>
 </head>
@@ -1108,7 +1106,7 @@ const CONFIG = {
    so you can confirm a push actually took effect after refreshing.
    Check it in Settings, or open the browser console.
    ============================================================ */
-const APP_VERSION = "2.62.0";
+const APP_VERSION = "2.63.0";
 const APP_UPDATED = "2026-10-29";
 console.log(`Adcock Botanical Garden — v${APP_VERSION} (${APP_UPDATED})`);
 
@@ -7518,13 +7516,6 @@ function wallCard(rows, cur, idx) {
     return `<button class="wall-sw${on ? " on" : ""}${cupPaintHammered(p) ? " hammered" : ""}" style="--paint:${h}" onclick="setCupPaint('${c.id}','${p.id}')"
       title="${wallAttr(p.name + (p.finish ? " · " + p.finish : ""))}" aria-label="Paint ${wallAttr(c.name)} ${wallAttr(p.name)}" aria-pressed="${on}"></button>`;
   }).join("");
-  const nb = (dir, arrow) => {
-    const t = wallNeighbour(rows, cur.ri, cur.ci, dir);
-    if (!t) return `<button class="wall-nb ${dir}" disabled aria-label="No cup ${dir}">${arrow}<small>edge</small></button>`;
-    const tp = t.paint_id ? cupPaintById(t.paint_id) : null;
-    const what = tp ? tp.name : plantsAtLocation(t.id).length ? "planted" : "empty";
-    return `<button class="wall-nb ${dir}" onclick="wallSelect('${t.id}')" aria-label="Go ${dir} to ${wallAttr(t.name)}">${arrow} ${escapeHtml(cupNumber(t) || t.name)}<small>${escapeHtml(what)}</small></button>`;
-  };
   const plants = info.plants.length ? info.plants.map((p) => {
     const h = wallHealthOf(p);
     const ck = checkInStatus(p);
@@ -7554,8 +7545,13 @@ function wallCard(rows, cur, idx) {
   return `
     <div class="section-card wall-card">
       <div>
-        <div class="mono" style="font-size:11px;letter-spacing:0.6px;text-transform:uppercase;color:var(--moss);">${escapeHtml(row.row.name)} · ${cur.ci + 1} of ${row.cups.length}</div>
-        <div class="display" style="font-size:22px;font-weight:600;cursor:pointer;" onclick="openLocation('${c.id}')">${escapeHtml(c.name)}</div>
+        ${/* WALL-3. The compass that sat in a third column is gone: tapping
+             the cup on the map is the faster move, and the arrow keys still
+             walk the wall on a keyboard (wireWallKeys). */""}
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+          <span class="display" style="font-size:19px;font-weight:600;cursor:pointer;" onclick="openLocation('${c.id}')">${escapeHtml(c.name)}</span>
+          <span class="mono" style="font-size:10.5px;letter-spacing:0.6px;text-transform:uppercase;color:var(--moss);">${escapeHtml(row.row.name)} · ${cur.ci + 1} of ${row.cups.length}</span>
+        </div>
         ${/* WALL-2, v2.61.0. The swatches sat open on every cup, so a stray tap
              while reading the card repainted it. They and the Repaint bar now
              wait behind one button, and stay open while stepping cup to cup so
@@ -7564,15 +7560,9 @@ function wallCard(rows, cur, idx) {
               : state.cupPaints.length ? `<div class="wall-paintline subtle">No cup colour set${swatches ? wallPaintEditBtn() : ""}</div>` : ""}
         ${swatches && state.wallPaintEdit ? `<div class="wall-swatches" role="group" aria-label="Cup colour">${swatches}</div>` : ""}
         ${undo ? `<div class="subtle">Was ${undoFrom ? escapeHtml(undoFrom.name) : "no colour"} · <button class="btn-ghost" style="padding:0;font-size:12.5px;" onclick="undoCupPaint()">Undo</button></div>` : ""}
-        <div><button class="btn btn-secondary btn-sm" onclick="openLocation('${c.id}')">Open ${escapeHtml(c.name)}</button></div>
+        <div><button class="btn-ghost" style="padding:0;font-size:12.5px;color:var(--blue);" onclick="openLocation('${c.id}')">Open ${escapeHtml(c.name)} →</button></div>
       </div>
       <div>${plants}</div>
-      <div>
-        <div class="wall-compass" aria-label="Neighbouring cups">
-          ${nb("up", "↑")}${nb("left", "←")}<span class="wall-nb here">here</span>${nb("right", "→")}${nb("down", "↓")}
-        </div>
-        <div class="subtle" style="font-size:11.5px;">Arrow keys move along the wall.</div>
-      </div>
     </div>`;
 }
 
@@ -7587,7 +7577,7 @@ function wallMapSection(l) {
   const cur = cups.find((x) => x.c.id === state.wallSelected) || cups[0];
   const brush = lens === "paint" && state.wallPaintEdit ? cupPaintById(state.wallBrush) : null;
 
-  const lensBtn = (k, label) => `<button class="btn btn-sm ${lens === k ? "btn-primary" : "btn-secondary"}" onclick="state.wallLens='${k}';state.wallBrush=null;render()">${label}</button>`;
+  const lensBtn = (k, label) => `<button type="button" class="${lens === k ? "on" : ""}" aria-pressed="${lens === k}" onclick="state.wallLens='${k}';state.wallBrush=null;render()">${label}</button>`;
   const brushBar = lens === "paint" && state.wallPaintEdit ? `
     <div class="wall-brush">
       <span>Repaint:</span>
@@ -7623,7 +7613,7 @@ function wallMapSection(l) {
   return `
     <div class="wall-tools">
       <input class="search-input" id="wall-search" placeholder="Find a plant, cup colour or number" value="${wallAttr(state.wallSearch)}" oninput="wallSearchInput(this.value)" />
-      <div class="wrap-gap" role="group" aria-label="Colour the wall by">
+      <div class="view-switch" role="group" aria-label="Colour the wall by">
         ${hasPaints ? lensBtn("paint", "Cup colour") : ""}${lensBtn("health", "Health")}${lensBtn("photo", "Last photo")}${lensBtn("bloom", "In bloom")}${lensBtn("empty", "Empty")}
       </div>
     </div>
@@ -7849,13 +7839,17 @@ function screenLocationDetail() {
         const asMap = wallRows.length > 0 && state.wallView === "map";
         const rowIds = new Set(wallRows.map((r) => r.row.id));
         const listed = asMap ? children.filter((c) => !rowIds.has(c.id)) : children;
-        const viewBtn = (k, label) => `<button class="btn btn-sm ${state.wallView === k ? "btn-primary" : "btn-secondary"}" onclick="state.wallView='${k}';render()">${label}</button>`;
+        // WALL-3. Map / List and Add sit in the header row rather than a row of
+        // their own — one less band of buttons above the wall.
+        const viewBtn = (k, label) => `<button type="button" class="${state.wallView === k ? "on" : ""}" aria-pressed="${state.wallView === k}" onclick="state.wallView='${k}';render()">${label}</button>`;
         return `
-          <div class="row" style="margin-top:24px;margin-bottom:12px;">
-            <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Inside this ${locationTypeLabel(l.type).toLowerCase()}</h3>
-            <span class="subtle">${children.length} total</span>
+          <div class="row" style="margin-top:24px;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <h3 class="display" style="font-size:17px;font-weight:500;margin:0;">Inside this ${locationTypeLabel(l.type).toLowerCase()}${asMap ? "" : ` <span class="subtle" style="font-family:inherit;font-size:13px;">· ${children.length}</span>`}</h3>
+            <div class="wrap-gap" style="gap:8px;align-items:center;">
+              ${wallRows.length ? `<div class="view-switch" role="group" aria-label="Show as">${viewBtn("map", "Wall map")}${viewBtn("list", "List")}</div>` : ""}
+              ${addHere}
+            </div>
           </div>
-          <div class="wrap-gap" style="margin-bottom:12px;">${wallRows.length ? viewBtn("map", "Wall map") + viewBtn("list", "List") : ""}${addHere}</div>
           ${asMap ? wallMapSection(l) : ""}
           ${listed.length ? `<div class="card-grid"${asMap ? ' style="margin-top:14px;"' : ""}>
             ${listed.map((c) => {

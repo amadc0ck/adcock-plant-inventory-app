@@ -912,6 +912,9 @@ split", which is true; the boundary simply landed 59 versions late.
 
 ## Completed
 
+### v2.63.0 — WALL-3: condensed wall section
+Compass removed (tap a cup instead; arrow keys still walk the wall via `wallNeighbour`). Map/List + Add moved into the "Inside this area" header; lenses are one `.view-switch` segmented control beside search; cup card is two columns, name and row position on one line. Lens switch shrinks below 560px so all five fit on a phone.
+
 ### v2.62.0 — VIEW-1: Large / Small / List switch, first on Location photos
 `listViewSwitch(key)` + `listView(key)`, remembered per device in `abg-list-views`. Sizes are CSS modifiers on the one renderer (`.photo-feed.size-small|list`), never second markup, so select/caption/lightbox behave identically. Only the area/archive feed has it — bucket pages use the identification card grid, which needs its own small/list design. Other lists opt in with a key plus three modifiers on their container class.
 

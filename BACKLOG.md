@@ -9,9 +9,6 @@ Item IDs are permanent. Never renumber.
 
 ## Picking this up cold — state as of 2026-09-12
 
-### EXIF-TZ SQL — given to Amanda 2026-10-30, not confirmed run
-REFERENCE "EXIF-TZ migration". Until it runs, old device uploads stay 7-8h early and their Google Photos twins stay hidden from Duplicate photos. Check: `select * from app_settings where key = 'exif_tz_fixed'`. Delete this entry once a row exists.
-
 ### EGRESS-2 — cache + change-only sync, the long-term egress fix — `ready`
 Supabase free egress is 5 GB/month **shared with the RBG project** (same org); 4.54 GB used by 2026-09-12.
 v2.40.0 (EGRESS-1) cut the two worst costs; ~80 `loadAll()` call sites still reload ~550 KB compressed each.

@@ -9,6 +9,9 @@ Item IDs are permanent. Never renumber.
 
 ## Picking this up cold — state as of 2026-09-12
 
+### EXIF-TZ SQL — given to Amanda 2026-10-30, not confirmed run
+REFERENCE "EXIF-TZ migration". Until it runs, old device uploads stay 7-8h early and their Google Photos twins stay hidden from Duplicate photos. Check: `select * from app_settings where key = 'exif_tz_fixed'`. Delete this entry once a row exists.
+
 ### EGRESS-2 — cache + change-only sync, the long-term egress fix — `ready`
 Supabase free egress is 5 GB/month **shared with the RBG project** (same org); 4.54 GB used by 2026-09-12.
 v2.40.0 (EGRESS-1) cut the two worst costs; ~80 `loadAll()` call sites still reload ~550 KB compressed each.
@@ -911,6 +914,10 @@ split", which is true; the boundary simply landed 59 versions late.
 ---
 
 ## Completed
+
+### v2.73.0 — EXIF-TZ: device photo times stored 7 hours early; duplicates missed
+EXIF holds a zone-less wall clock; the app sent it bare and Postgres read it as UTC, while Google Photos createTime is real UTC. So a phone upload and its Google Photos copy sat 7h apart (28 hidden pairs found) and early-morning photos showed the previous day. `exifTimeToISO` now sends UTC (OffsetTimeOriginal, else browser zone); the backfill uses the same parser. Duplicate finder groups by whole second: createTime carries milliseconds, EXIF never does.
+Existing rows: SQL in REFERENCE (EXIF-TZ migration). Pacific is assumed for old rows without an offset; a photo taken while travelling will be off by the zone difference.
 
 ### v2.72.0 — PERF-1 select lag; LOC-NB neighbours in every location picker
 Each tap in select mode re-rendered the page, and isInboxPhoto scanned photoPlants per photo (photos x tags). Now: a tap redraws only its card (`patchInboxSelection`; full render only when crossing zero); junction tables indexed (`junctionIndex`, keyed on array + length); photo-by-plant/location lookups memoised for ONE render (`renderMemo`) because photo rows are patched in place by Object.assign. Synthetic 4k photos: select screen 94→13ms, tap <1ms, To Do queue 675→148ms.

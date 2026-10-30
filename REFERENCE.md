@@ -531,6 +531,35 @@ WISH-1 (v2.24.0). Plants Amanda is looking for but does not own.
 
 All three FKs are `on delete set null`, so a wishlist row never blocks deleting a plant, photo or taxon.
 
+### EXIF-TZ migration (v2.73.0)
+`photos.taken_at` from a device upload was the EXIF wall clock sent with no zone, which Postgres read as UTC. Since v2.73.0 the browser sends true UTC (`exifTimeToISO`: OffsetTimeOriginal if the photo has it, else the browser's zone). Rows to correct were told apart by the live data, 2026-10-30: device rows' UTC hours fall only in 06-18 (local daylight read as UTC), Google Photos rows in 12-04; the 875 null-id rows uploaded between the v1.48.0 and v1.54.0 commits pair with device rows at +7h exactly like id-carrying imports, so they are imports. 2168 rows expected. Marker row `app_settings.exif_tz_fixed`.
+
+```sql
+-- EXIF-TZ (v2.73.0). Device uploads stored the EXIF wall clock as if it were
+-- UTC, 7-8 hours early. Re-reads each affected time as Pacific (DST-aware).
+-- Safe to re-run: the app_settings marker makes a second run change nothing.
+-- Skipped: Google Photos imports (true UTC createTime) - every row with a
+-- google_photos_id, plus the v1.48.0-v1.54.0 window when imports carried none.
+with already as (
+  select 1 from public.app_settings where key = 'exif_tz_fixed'
+), fixed as (
+  update public.photos
+     set taken_at = (taken_at at time zone 'UTC') at time zone 'America/Los_Angeles'
+   where not exists (select 1 from already)
+     and google_photos_id is null
+     and taken_at is not null
+     and not (uploaded_at >= '2026-08-26 03:07:24+00' and uploaded_at <= '2026-08-26 15:09:21+00')
+  returning id
+), mark as (
+  insert into public.app_settings (key, value, updated_at)
+  values ('exif_tz_fixed', '1', now())
+  on conflict (key) do nothing
+  returning key
+)
+select (select count(*) from fixed) as photos_fixed,
+       exists (select 1 from already) as was_already_done;
+```
+
 ### BLOOM-3 migration (v2.70.0)
 Replaced the TODO-2 "Check for bloom" tasks with `plants.bloom_deferred_until`. Only auto-made tasks with one plant subject, a future due date and an untouched detail were moved and deleted.
 
